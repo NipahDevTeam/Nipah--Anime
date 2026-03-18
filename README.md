@@ -20,7 +20,7 @@ Puedes descargar la versión más reciente desde la sección de [Releases]
 - Reproducción de anime con subtitulos en español
 - Instalación rápida
 
-Para saber mas, visitar nuestra pagina:
+Para saber mas, visitar nuestra pagina: https://nipah-anime.pages.dev/
 
 ## Requisitos
 
