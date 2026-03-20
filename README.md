@@ -17,7 +17,7 @@ Puedes descargar la versión más reciente desde la sección de [Releases]
 ## Características
 
 - Interfaz simple y fácil de usar
-- Reproducción de anime con subtitulos en español
+- Reproducción de anime con subtitulos en español por fuentes externas
 - Instalación rápida
 
 Para saber mas, visitar nuestra pagina: https://nipah-anime.pages.dev/
