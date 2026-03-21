@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-blue?style=flat-square&logo=windows)](https://github.com)
 [![Built with Wails](https://img.shields.io/badge/built%20with-Wails-ff3e00?style=flat-square)](https://wails.io)
 [![AniList](https://img.shields.io/badge/sync-AniList-02a9ff?style=flat-square)](https://anilist.co)
-[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 <br/>
 
@@ -31,7 +31,9 @@ Nipah! Anime is a **desktop client** for anime and manga fans who want everythin
 
 ## Screenshots
 
-> *(Screenshots coming soon — check the [Releases](../../releases) page for previews)*
+<img width="2559" height="1355" alt="search" src="https://github.com/user-attachments/assets/91965ff8-5ebb-429a-96c9-b51ffcd7d2dc" />
+<img width="2559" height="1358" alt="discover" src="https://github.com/user-attachments/assets/d2057270-fd08-45e9-a7a5-52ef5fa8870b" />
+<img width="2559" height="1365" alt="my_lists" src="https://github.com/user-attachments/assets/b0f020db-4828-4a94-ae77-cd652cd9dbb0" />
 
 ---
 
@@ -87,12 +89,12 @@ Nipah! Anime is a **desktop client** for anime and manga fans who want everythin
 | AnimePahe | English |
 
 ### Manga
-| Source | Notes |
-|--------|-------|
-| SenshiManga | — |
-| MangaOni | — |
-| TempleToons | — |
-| MangaFire | — |
+| Source | Language |
+|--------|----------|
+| SenshiManga | Spanish |
+| MangaOni | Spanish |
+| TempleToons | English |
+| MangaFire | English |
 
 ---
 
@@ -134,10 +136,9 @@ Nipah! Anime uses **AniList** as its primary account and sync provider.
 
 ### MPV Setup
 
-Nipah! Anime uses **MPV** as its video player. You need to have MPV installed and accessible on your system `PATH`, or placed in the app directory.
+Nipah! Anime uses **MPV** as its video player. MPV is automatically installed along with the app if you don't already have it. You can also install it manually and add the folder containing `mpv.exe` to your system PATH, or place it alongside the app executable.
 
 - Download MPV from [mpv.io](https://mpv.io/installation/)
-- Add the folder containing `mpv.exe` to your system PATH, or place it alongside the app executable.
 
 ---
 
@@ -180,7 +181,9 @@ Nipah! Anime es un **cliente de escritorio** para fans del anime y el manga que 
 
 ## Capturas de pantalla
 
-> *(Próximamente — revisa la página de [Releases](../../releases) para previsualizaciones)*
+<img width="2559" height="1351" alt="buscar" src="https://github.com/user-attachments/assets/1dc1f9b5-7368-46c5-9648-c812a5a8282b" />
+<img width="2559" height="1351" alt="mi_lista" src="https://github.com/user-attachments/assets/8aa1c331-4d3c-494e-8ea9-ee40739da89e" />
+<img width="2559" height="1361" alt="descubrir" src="https://github.com/user-attachments/assets/e3a618c5-aa2c-4c95-80b2-d8f0d3c36601" />
 
 ---
 
@@ -236,12 +239,12 @@ Nipah! Anime es un **cliente de escritorio** para fans del anime y el manga que 
 | AnimePahe | Inglés |
 
 ### Manga
-| Fuente | Notas |
-|--------|-------|
-| SenshiManga | — |
-| MangaOni | — |
-| TempleToons | — |
-| MangaFire | — |
+| Fuente | Idioma |
+|--------|--------|
+| SenshiManga | Español |
+| MangaOni | Español |
+| TempleToons | Inglés |
+| MangaFire | Inglés |
 
 ---
 
@@ -283,10 +286,9 @@ Nipah! Anime usa **AniList** como su proveedor principal de cuenta y sincronizac
 
 ### Configuración de MPV
 
-Nipah! Anime utiliza **MPV** como reproductor de video. Necesitas tener MPV instalado y accesible desde el `PATH` del sistema, o colocarlo en el directorio de la aplicación.
+Nipah! Anime utiliza **MPV** como reproductor de video. MPV se instala automáticamente junto con la app si no lo tienes ya. También puedes instalarlo manualmente y agregar la carpeta que contiene `mpv.exe` al PATH del sistema, o colocarlo junto al ejecutable de la app.
 
 - Descarga MPV desde [mpv.io](https://mpv.io/installation/)
-- Agrega la carpeta que contiene `mpv.exe` al PATH del sistema, o colócalo junto al ejecutable de la app.
 
 ---
 
