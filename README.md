@@ -273,7 +273,7 @@ Nipah! Anime usa **AniList** como su proveedor principal de cuenta y sincronizac
 
 ### Configuración de MPV
 
-Nipah! Anime utiliza **MPV** como reproductor de video. Necesitas tener MPV instalado y accesible desde el `PATH` del sistema, o colocarlo en el directorio de la aplicación.
+Nipah! Anime utiliza **MPV** como reproductor de video. MPV se instal automaticamente junto con la app. Necesitas tener MPV instalado y accesible desde el `PATH` del sistema, o colocarlo en el directorio de la aplicación.
 
 - Descarga MPV desde [mpv.io](https://mpv.io/installation/)
 - Agrega la carpeta que contiene `mpv.exe` al PATH del sistema, o colócalo junto al ejecutable de la app.
