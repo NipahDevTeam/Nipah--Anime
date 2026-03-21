@@ -31,7 +31,9 @@ Nipah! Anime is a **desktop client** for anime and manga fans who want everythin
 
 ## Screenshots
 
-> *(Screenshots coming soon — check the [Releases](../../releases) page for previews)*
+> *(Screenshots)*
+> <img width="2559" height="1355" alt="search" src="https://github.com/user-attachments/assets/91965ff8-5ebb-429a-96c9-b51ffcd7d2dc" />
+
 
 ---
 
