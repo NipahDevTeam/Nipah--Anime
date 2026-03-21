@@ -43,7 +43,7 @@ Nipah! Anime is a **desktop client** for anime and manga fans who want everythin
 ## Features
 
 ###  Anime
-- Online anime search and streaming from multiple sources
+- Online anime search and streaming
 - Direct playback through **MPV** (no browser needed)
 - Episode progress tracking with **Continue Watching** on Home
 - AniList-powered title matching for hard-to-find aliases
@@ -51,7 +51,6 @@ Nipah! Anime is a **desktop client** for anime and manga fans who want everythin
 
 ###  Manga
 - Online manga search and in-app reader
-- Multiple manga source support
 - Chapter progress persistence with **Continue Reading** on Home
 - AniList-backed cover and identity matching
 - Automatic chapter backfill when jumping ahead
@@ -92,12 +91,12 @@ Nipah! Anime is a **desktop client** for anime and manga fans who want everythin
 | AnimePahe | English |
 
 ### Manga
-| Source | Notes |
+| Source | Language |
 |--------|-------|
-| SenshiManga | — |
-| MangaOni | — |
-| TempleToons | — |
-| MangaFire | — |
+| SenshiManga | Spanish |
+| MangaOni | Spanish |
+| TempleToons | English |
+| MangaFire | English |
 
 ---
 
@@ -109,8 +108,6 @@ Nipah! Anime uses **AniList** as its primary account and sync provider.
 -  Anime list sync (watch status, progress, score)
 -  Manga list sync (read status, chapter progress, score)
 -  Automatic progress push from playback and reading sessions
-
-> **Note:** MyAnimeList support has been deprecated for this release. MAL-related UI has been removed.
 
 ---
 
@@ -133,7 +130,7 @@ Nipah! Anime uses **AniList** as its primary account and sync provider.
 
 ### MPV Setup
 
-Nipah! Anime uses **MPV** as its video player. You need to have MPV installed and accessible on your system `PATH`, or placed in the app directory.
+Nipah! Anime uses **MPV** as its video player. MPV is automatically installed along with the app if you don't already have it. You need to have MPV installed and accessible on your system `PATH`, or placed in the app directory.
 
 - Download MPV from [mpv.io](https://mpv.io/installation/)
 - Add the folder containing `mpv.exe` to your system PATH, or place it alongside the app executable.
@@ -188,34 +185,33 @@ Nipah! Anime es un **cliente de escritorio** para fans del anime y el manga que 
 
 ## Funcionalidades
 
-### 🎬 Anime
-- Búsqueda y reproducción de anime en línea desde múltiples fuentes
+###  Anime
+- Búsqueda y reproducción de anime en línea 
 - Reproducción directa con **MPV** (sin necesidad de un navegador)
 - Seguimiento de episodios con **Continuar viendo** en la pantalla principal
 - Coincidencia de títulos con AniList para aliases difíciles de encontrar
 - Sincronización automática del progreso con AniList mientras ves
 
-### 📖 Manga
+###  Manga
 - Búsqueda de manga en línea con lector integrado en la app
-- Soporte para múltiples fuentes de manga
 - Persistencia del progreso por capítulo con **Continuar leyendo** en el inicio
 - Identificación de portadas y títulos mediante AniList
 - Marcado automático de capítulos anteriores al abrir uno más avanzado
 - Sincronización del progreso de manga con AniList
 
-### 📁 Biblioteca Local
+###  Biblioteca Local
 - Importa carpetas locales de anime y manga
 - Escaneo automático al iniciar la aplicación
 - Persistencia del progreso local para contenido sin conexión
 
-### 📋 Listas y Seguimiento
+###  Listas y Seguimiento
 - Vistas separadas para tu lista de anime y manga
 - Agrega títulos manualmente desde la búsqueda de AniList
 - Edita el estado, el progreso de episodios/capítulos y la puntuación
 - Elimina de tu lista local o también de AniList al mismo tiempo
 - Cola de sincronización local con reintento automático para trabajos fallidos de AniList
 
-### 🌐 Interfaz y Experiencia
+###  Interfaz y Experiencia
 - **Interfaz bilingüe** — Español e inglés, cambiable en cualquier momento
 - Pantalla de inicio rediseñada con secciones de anime y manga
 - Pantalla de bienvenida para nuevos usuarios
@@ -238,12 +234,12 @@ Nipah! Anime es un **cliente de escritorio** para fans del anime y el manga que 
 | AnimePahe | Inglés |
 
 ### Manga
-| Fuente | Notas |
+| Fuente | Idioma |
 |--------|-------|
-| SenshiManga | — |
-| MangaOni | — |
-| TempleToons | — |
-| MangaFire | — |
+| SenshiManga | Español |
+| MangaOni | Español |
+| TempleToons | Ingles |
+| MangaFire | Ingles |
 
 ---
 
@@ -251,12 +247,10 @@ Nipah! Anime es un **cliente de escritorio** para fans del anime y el manga que 
 
 Nipah! Anime usa **AniList** como su proveedor principal de cuenta y sincronización.
 
-- ✅ Inicio de sesión con AniList
-- ✅ Sincronización de lista de anime (estado, progreso, puntuación)
-- ✅ Sincronización de lista de manga (estado, capítulo, puntuación)
-- ✅ Envío automático del progreso desde la reproducción y la lectura
-
-> **Nota:** El soporte para MyAnimeList ha sido deprecado en esta versión. La interfaz relacionada con MAL ha sido eliminada.
+-  Inicio de sesión con AniList
+-  Sincronización de lista de anime (estado, progreso, puntuación)
+-  Sincronización de lista de manga (estado, capítulo, puntuación)
+-  Envío automático del progreso desde la reproducción y la lectura
 
 ---
 
