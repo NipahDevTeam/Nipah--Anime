@@ -1,0 +1,49 @@
+# === Secrets & Credentials ===
+.env
+.env.local
+.env.*
+!.env.example
+
+# === Go Build Cache ===
+.gocache/
+build/
+
+# === Frontend Dependencies & Artifacts ===
+frontend/node_modules/
+frontend/dist/
+frontend/wailsjs/
+frontend/package.json.md5
+
+# === Database Files ===
+*.db
+*.sqlite
+*.sqlite3
+
+# === IDE & Editor ===
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === Temporary & Scrape Cache Files ===
+.tmp_*
+*.tmp
+
+# === Build Outputs ===
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+
+# === Auth & OAuth ===
+backend/auth/
+
+# === Claude Code (local tool config) ===
+.claude/
+
+# === Personal / Internal Files ===
+backup/
+PROJECT_HANDOFF*.md
+RELEASE_README_DRAFT*.md

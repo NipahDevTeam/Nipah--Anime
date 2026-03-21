@@ -1,0 +1,19 @@
+{
+  "name": "Nipah! Anime",
+  "outputfilename": "Nipah! Anime",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "info": {
+    "companyName": "Nipah! Anime",
+    "productName": "Nipah! Anime",
+    "productVersion": "2.1.0",
+    "copyright": "Copyright © 2026 Nipah! Anime",
+    "comments": "Anime streaming desktop app for Spanish-speaking audiences"
+  },
+  "author": {
+    "name": "Nipah! Anime",
+    "email": ""
+  }
+}
