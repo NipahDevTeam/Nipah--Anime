@@ -33,20 +33,23 @@ Nipah! Anime is a **desktop client** for anime and manga fans who want everythin
 
 > *(Screenshots)*
 > <img width="2559" height="1355" alt="search" src="https://github.com/user-attachments/assets/91965ff8-5ebb-429a-96c9-b51ffcd7d2dc" />
+<img width="2559" height="1358" alt="discover" src="https://github.com/user-attachments/assets/d2057270-fd08-45e9-a7a5-52ef5fa8870b" />
+<img width="2559" height="1365" alt="my_lists" src="https://github.com/user-attachments/assets/b0f020db-4828-4a94-ae77-cd652cd9dbb0" />
+
 
 
 ---
 
 ## Features
 
-### 🎬 Anime
+###  Anime
 - Online anime search and streaming from multiple sources
 - Direct playback through **MPV** (no browser needed)
 - Episode progress tracking with **Continue Watching** on Home
 - AniList-powered title matching for hard-to-find aliases
 - Automatic AniList progress sync as you watch
 
-### 📖 Manga
+###  Manga
 - Online manga search and in-app reader
 - Multiple manga source support
 - Chapter progress persistence with **Continue Reading** on Home
@@ -54,26 +57,26 @@ Nipah! Anime is a **desktop client** for anime and manga fans who want everythin
 - Automatic chapter backfill when jumping ahead
 - AniList manga progress sync
 
-### 📁 Local Library
+###  Local Library
 - Import local anime and manga folders
 - Automatic scan on startup
 - Local progress persistence for offline content
 
-### 📋 Lists & Tracking
+###  Lists & Tracking
 - Separate anime and manga list views
 - Add titles manually from AniList search
 - Edit status, episode/chapter progress, and score
 - Remove from local list or from AniList simultaneously
 - Local-first sync queue with automatic retry for failed AniList jobs
 
-### 🌐 UI & Experience
+###  UI & Experience
 - **Bilingual interface** — Español and English, switchable at any time
 - Redesigned Home with anime and manga sections
 - Onboarding screen for new users
 - Discover page with curated AniList trending content
 - Clean typography and focused visual design
 
-### 🔄 Auto-Updater
+###  Auto-Updater
 - In-app update checker connected to GitHub Releases
 - Changelog shown directly in the update popup
 - One-click download and launch of the newest installer
@@ -102,10 +105,10 @@ Nipah! Anime is a **desktop client** for anime and manga fans who want everythin
 
 Nipah! Anime uses **AniList** as its primary account and sync provider.
 
-- ✅ AniList login
-- ✅ Anime list sync (watch status, progress, score)
-- ✅ Manga list sync (read status, chapter progress, score)
-- ✅ Automatic progress push from playback and reading sessions
+-  AniList login
+-  Anime list sync (watch status, progress, score)
+-  Manga list sync (read status, chapter progress, score)
+-  Automatic progress push from playback and reading sessions
 
 > **Note:** MyAnimeList support has been deprecated for this release. MAL-related UI has been removed.
 
@@ -176,7 +179,10 @@ Nipah! Anime es un **cliente de escritorio** para fans del anime y el manga que 
 
 ## Capturas de pantalla
 
-> *(Próximamente — revisa la página de [Releases](../../releases) para previsualizaciones)*
+> <img width="2559" height="1351" alt="buscar" src="https://github.com/user-attachments/assets/1dc1f9b5-7368-46c5-9648-c812a5a8282b" />
+<img width="2559" height="1351" alt="mi_lista" src="https://github.com/user-attachments/assets/8aa1c331-4d3c-494e-8ea9-ee40739da89e" />
+<img width="2559" height="1361" alt="descubrir" src="https://github.com/user-attachments/assets/e3a618c5-aa2c-4c95-80b2-d8f0d3c36601" />
+
 
 ---
 
