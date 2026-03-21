@@ -4,7 +4,7 @@
 
 **A bilingual desktop app for watching anime, reading manga, and syncing your progress with AniList.**
 
-[![Platform](https://img.shields.io/badge/platform-Windows-blue?style=flat-square&logo=windows)](https://github.com)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue?style=flat-square)](https://github.com)
 [![Built with Wails](https://img.shields.io/badge/built%20with-Wails-ff3e00?style=flat-square)](https://wails.io)
 [![AniList](https://img.shields.io/badge/sync-AniList-02a9ff?style=flat-square)](https://anilist.co)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
@@ -23,7 +23,7 @@
 
 ## What is Nipah! Anime?
 
-Nipah! Anime is a **desktop client** for anime and manga fans who want everything in one place — streaming, reading, progress tracking, and AniList sync — without opening a browser. Built with Go, React, and Wails, it runs as a native Windows app with a polished bilingual UI designed for both Spanish-speaking and English-speaking audiences.
+Nipah! Anime is a **desktop client** for anime and manga fans who want everything in one place — streaming, reading, progress tracking, and AniList sync — without opening a browser. Built with Go, React, and Wails, running on both Windos and Linux with a polished bilingual UI designed for both Spanish-speaking and English-speaking audiences.
 
 > **Watch anime. Read manga. Track everything. Sync with AniList. All from your desktop.**
 
@@ -95,6 +95,8 @@ Nipah! Anime is a **desktop client** for anime and manga fans who want everythin
 | MangaOni | Spanish |
 | TempleToons | English |
 | MangaFire | English |
+| WeebCentral | English |
+| MangaPill | English |
 
 ---
 
@@ -130,7 +132,7 @@ Nipah! Anime uses **AniList** as its primary account and sync provider.
 
 | Requirement | Details |
 |-------------|---------|
-| OS | Windows 10 / 11 (64-bit) |
+| OS | Windows 10 / 11 (64-bit) / Linux (Ubuntu/Debian-based, 64-bit) |
 | MPV | Required for anime playback ([mpv.io](https://mpv.io)) |
 | Internet | Required for online sources and AniList sync |
 
@@ -173,7 +175,7 @@ Use responsibly and in accordance with the laws of your country.
 
 ## ¿Qué es Nipah! Anime?
 
-Nipah! Anime es un **cliente de escritorio** para fans del anime y el manga que quieren tenerlo todo en un solo lugar — streaming, lectura, seguimiento de progreso y sincronización con AniList — sin necesidad de abrir un navegador. Construido con Go, React y Wails, funciona como una aplicación nativa de Windows con una interfaz bilingüe pensada tanto para hispanohablantes como para angloparlantes.
+Nipah! Anime es un **cliente de escritorio** para fans del anime y el manga que quieren tenerlo todo en un solo lugar — streaming, lectura, seguimiento de progreso y sincronización con AniList — sin necesidad de abrir un navegador. Construido con Go, React y Wails, funciona como una aplicación para Windows y Linux con una interfaz bilingüe pensada tanto para hispanohablantes como para angloparlantes.
 
 > **Mira anime. Lee manga. Registra tu progreso. Sincroniza con AniList. Todo desde tu escritorio.**
 
@@ -245,6 +247,8 @@ Nipah! Anime es un **cliente de escritorio** para fans del anime y el manga que 
 | MangaOni | Español |
 | TempleToons | Inglés |
 | MangaFire | Inglés |
+| WeebCentral | Inglés |
+| MangaPill | Inglés |
 
 ---
 
@@ -280,7 +284,7 @@ Nipah! Anime usa **AniList** como su proveedor principal de cuenta y sincronizac
 
 | Requisito | Detalles |
 |-----------|---------|
-| Sistema Operativo | Windows 10 / 11 (64-bit) |
+| Sistema Operativo | Windows 10 / 11 (64-bit) / Linux (Ubuntu/Debian-based, 64-bit) |
 | MPV | Necesario para reproducir anime ([mpv.io](https://mpv.io)) |
 | Internet | Necesario para fuentes en línea y sincronización con AniList |
 
