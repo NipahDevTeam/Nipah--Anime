@@ -86,13 +86,17 @@ Nipah! Anime is a **desktop client** for anime and manga fans who want everythin
 | Source | Language |
 |--------|----------|
 | JKAnime | Spanish |
+| AnimeAV1 | Spanish |
 | AnimePahe | English |
+| AnimeHeaven | English |
+| AnimeGG | English
 
 ### Manga
 | Source | Language |
 |--------|----------|
 | SenshiManga | Spanish |
 | MangaOni | Spanish |
+| m440/MangaIn | Spanish |
 | TempleToons | English |
 | MangaFire | English |
 | WeebCentral | English |
@@ -238,13 +242,17 @@ Nipah! Anime es un **cliente de escritorio** para fans del anime y el manga que 
 | Fuente | Idioma |
 |--------|--------|
 | JKAnime | Español |
+| AnimeAV1 | Español |
 | AnimePahe | Inglés |
+| AnimeHeaven | Inglés |
+| AnimeGG | Inglés |
 
 ### Manga
 | Fuente | Idioma |
 |--------|--------|
 | SenshiManga | Español |
 | MangaOni | Español |
+| m440/MangaIn | Español |
 | TempleToons | Inglés |
 | MangaFire | Inglés |
 | WeebCentral | Inglés |
