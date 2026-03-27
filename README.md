@@ -33,10 +33,10 @@ Built with **Go, React, and Wails**, it aims to feel fast, native, and focused, 
 
 ## Screenshots
 
-![Home](./readme/home.png)
-![My Lists](./readme/my-lists.png)
-![Anime Online](./readme/anime-online.png)
-![Manga Online](./readme/manga-online.png)
+![Home](./docs/readme/1.png)
+![My Lists](./docs/readme/2.png)
+![Anime Online](./docs/readme/3.png)
+![Manga Online](./docs/readme/4.png)
 
 ---
 
@@ -203,10 +203,10 @@ Construido con **Go, React y Wails**, busca sentirse rápido, nativo y enfocado,
 
 ## Capturas de pantalla
 
-![Inicio](./readme/home.png)
-![Mis Listas](./readme/my-lists.png)
-![Anime Online](./readme/anime-online.png)
-![Manga Online](./readme/manga-online.png)
+![Inicio](./docs/readme/1.png)
+![Mis Listas](./docs/readme/2.png)
+![Anime Online](./docs/readme/3.png)
+![Manga Online](./docs/readme/4.png)
 
 ---
 
