@@ -11,7 +11,7 @@
 
 <br/>
 
-<a href="#english-readme">English</a> &nbsp;|&nbsp; <a href="#readme-espanol">Espanol</a>
+<a href="#english-readme">English</a> &nbsp;|&nbsp; <a href="#readme-espanol">Español</a>
 
 </div>
 
@@ -19,7 +19,7 @@
 
 <a id="english-readme"></a>
 
-<div align="right"><a href="#readme-espanol">Ver en Espanol</a></div>
+<div align="right"><a href="#readme-espanol">Ver en Español</a></div>
 
 ## What is Nipah! Anime?
 
