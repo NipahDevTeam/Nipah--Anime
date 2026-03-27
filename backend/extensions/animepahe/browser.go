@@ -14,14 +14,19 @@ package animepahe
 import (
 	"fmt"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	"miruro/backend/logger"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 )
+
+var browserLog = logger.For("AnimePahe")
 
 var (
 	cachedCookies []*http.Cookie
@@ -46,7 +51,7 @@ func getValidCookies() ([]*http.Cookie, error) {
 
 	cachedCookies = cookies
 	cachedExpiry = time.Now().Add(cookieTTL)
-	fmt.Printf("[AnimePahe] DDoS-Guard solved, %d cookies cached for %v\n", len(cookies), cookieTTL)
+	browserLog.Info().Int("cookies", len(cookies)).Dur("ttl", cookieTTL).Msg("DDoS-Guard solved")
 	return cookies, nil
 }
 
@@ -63,9 +68,12 @@ func solveDDoSGuard() ([]*http.Cookie, error) {
 	// Find a Chromium-based browser on the system
 	browserPath, found := launcher.LookPath()
 	if !found {
+		if runtime.GOOS == "linux" {
+			return nil, fmt.Errorf("animepahe: no Chromium-based browser found for DDoS-Guard bypass; install Chromium or Chrome to use AnimePahe on Linux")
+		}
 		return nil, fmt.Errorf("animepahe: no Chrome/Edge browser found for DDoS-Guard bypass")
 	}
-	fmt.Printf("[AnimePahe] Solving DDoS-Guard using browser: %s\n", browserPath)
+	browserLog.Info().Str("browser", browserPath).Msg("Solving DDoS-Guard")
 
 	// Launch headless browser — explicitly set Bin to avoid rod downloading Chromium
 	l := launcher.New().
@@ -93,9 +101,9 @@ func solveDDoSGuard() ([]*http.Cookie, error) {
 	}
 
 	// Give the page a brief chance to settle, then poll until cookies are ready.
-	err = page.WaitStable(1500 * time.Millisecond)
+	err = page.WaitStable(500 * time.Millisecond)
 	if err != nil {
-		fmt.Printf("[AnimePahe] WaitStable timeout (may still have cookies): %v\n", err)
+		browserLog.Warn().Err(err).Msg("WaitStable timeout (may still have cookies)")
 	}
 
 	deadline := time.Now().Add(12 * time.Second)

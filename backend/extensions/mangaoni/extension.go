@@ -5,18 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"io"
-	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
+
+	azuretls "github.com/Noooste/azuretls-client"
 
 	"miruro/backend/extensions"
 	"miruro/backend/extensions/animeflv"
+	"miruro/backend/httpclient"
 )
 
 const baseURL = "https://manga-oni.com"
@@ -43,7 +42,7 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 		return []extensions.SearchResult{}, nil
 	}
 
-	token, client, err := newSearchClient()
+	token, session, err := newSearchSession()
 	if err != nil {
 		return nil, fmt.Errorf("mangaoni search init: %w", err)
 	}
@@ -52,29 +51,25 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 	form.Set("buscar", query)
 	form.Set("_token", token)
 
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/buscar", strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, err
+	req := &azuretls.Request{
+		Url:    baseURL + "/buscar",
+		Method: "POST",
+		Body:   form.Encode(),
+		OrderedHeaders: azuretls.OrderedHeaders{
+			{"Referer", baseURL + "/"},
+			{"Origin", baseURL},
+			{"Accept", "application/json, text/plain, */*"},
+			{"Accept-Language", "es-419,es;q=0.9,en;q=0.8"},
+			{"Content-Type", "application/x-www-form-urlencoded; charset=UTF-8"},
+			{"X-Requested-With", "XMLHttpRequest"},
+		},
 	}
-	req.Header.Set("User-Agent", browserUA)
-	req.Header.Set("Referer", baseURL+"/")
-	req.Header.Set("Origin", baseURL)
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("Accept-Language", "es-419,es;q=0.9,en;q=0.8")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 
-	resp, err := client.Do(req)
+	resp, err := session.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("mangaoni search request: %w", err)
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("mangaoni search http %d", resp.StatusCode)
 	}
 
@@ -88,7 +83,7 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 			Autor       string `json:"autor"`
 		} `json:"mangas"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := json.Unmarshal(resp.Body, &payload); err != nil {
 		return nil, fmt.Errorf("mangaoni search parse: %w", err)
 	}
 
@@ -205,44 +200,32 @@ func (e *Extension) GetPages(chapterID string) ([]extensions.PageSource, error) 
 
 const browserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
-func newSearchClient() (string, *http.Client, error) {
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		return "", nil, err
-	}
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-		Jar:     jar,
+func newSearchSession() (string, *azuretls.Session, error) {
+	session := httpclient.NewSession(15)
+
+	req := &azuretls.Request{
+		Url:    baseURL + "/",
+		Method: "GET",
+		OrderedHeaders: azuretls.OrderedHeaders{
+			{"Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
+			{"Accept-Language", "es-419,es;q=0.9,en;q=0.8"},
+			{"Referer", baseURL + "/"},
+		},
 	}
 
-	req, err := http.NewRequest(http.MethodGet, baseURL+"/", nil)
+	resp, err := session.Do(req)
 	if err != nil {
 		return "", nil, err
 	}
-	req.Header.Set("User-Agent", browserUA)
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "es-419,es;q=0.9,en;q=0.8")
-	req.Header.Set("Referer", baseURL+"/")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != 200 {
 		return "", nil, fmt.Errorf("mangaoni home http %d", resp.StatusCode)
 	}
 
-	match := csrfTokenRe.FindStringSubmatch(string(body))
+	match := csrfTokenRe.FindStringSubmatch(string(resp.Body))
 	if len(match) < 2 {
 		return "", nil, fmt.Errorf("mangaoni csrf token not found")
 	}
-	return match[1], client, nil
+	return match[1], session, nil
 }
 
 func fetchPage(pageURL, referer string) (string, error) {

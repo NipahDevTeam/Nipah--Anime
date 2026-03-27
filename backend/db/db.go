@@ -6,8 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"miruro/backend/logger"
+
 	_ "modernc.org/sqlite"
 )
+
+var log = logger.For("DB")
 
 // Database wraps the SQLite connection.
 type Database struct {
@@ -31,10 +35,18 @@ func New() (*Database, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not open database: %w", err)
 	}
+	conn.SetMaxOpenConns(1)
+	conn.SetMaxIdleConns(1)
 
 	db := &Database{conn: conn}
 
+	if err := db.configureConnection(); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("database tuning failed: %w", err)
+	}
+
 	if err := db.migrate(); err != nil {
+		_ = conn.Close()
 		return nil, fmt.Errorf("migration failed: %w", err)
 	}
 
@@ -77,6 +89,7 @@ func (d *Database) migrate() error {
 		anilist_id     INTEGER,
 		anidb_id       INTEGER,
 		cover_image    TEXT,
+		cover_blurhash TEXT,
 		banner_image   TEXT,
 		synopsis       TEXT,
 		synopsis_es    TEXT,
@@ -112,6 +125,7 @@ func (d *Database) migrate() error {
 		mangadex_id    TEXT,
 		anilist_id     INTEGER,
 		cover_image    TEXT,
+		cover_blurhash TEXT,
 		synopsis       TEXT,
 		synopsis_es    TEXT,
 		year           INTEGER,
@@ -302,6 +316,7 @@ func (d *Database) migrate() error {
 		('auto_scan_on_startup', 'true'),
 		('preferred_quality', '1080p'),
 		('preferred_audio', 'sub'),
+		('anime4k_level', 'off'),
 		('torrent_client_path', ''),
 		('torrent_download_path', '');
 	`
@@ -311,10 +326,31 @@ func (d *Database) migrate() error {
 		return err
 	}
 	_, _ = d.conn.Exec(`ALTER TABLE anime ADD COLUMN banner_image TEXT`)
+	_, _ = d.conn.Exec(`ALTER TABLE anime ADD COLUMN cover_blurhash TEXT`)
+	_, _ = d.conn.Exec(`ALTER TABLE manga ADD COLUMN cover_blurhash TEXT`)
 	_, _ = d.conn.Exec(`ALTER TABLE anime_list ADD COLUMN banner_image TEXT`)
 	// Add hidden column to existing DBs — ignore error if already exists
 	_, _ = d.conn.Exec(`ALTER TABLE watch_history ADD COLUMN hidden BOOLEAN DEFAULT FALSE`)
 	_, _ = d.conn.Exec(`ALTER TABLE remote_list_sync_queue ADD COLUMN last_attempt_at DATETIME`)
+	return nil
+}
+
+func (d *Database) configureConnection() error {
+	pragmas := []string{
+		`PRAGMA journal_mode=WAL`,
+		`PRAGMA synchronous=NORMAL`,
+		`PRAGMA foreign_keys=ON`,
+		`PRAGMA cache_size=-32000`,
+		`PRAGMA temp_store=MEMORY`,
+		`PRAGMA mmap_size=134217728`,
+		`PRAGMA busy_timeout=5000`,
+	}
+
+	for _, pragma := range pragmas {
+		if _, err := d.conn.Exec(pragma); err != nil {
+			return fmt.Errorf("%s: %w", pragma, err)
+		}
+	}
 	return nil
 }
 
@@ -334,6 +370,90 @@ func getDBPath() (string, error) {
 		dataDir = filepath.Dir(exe)
 	}
 	dbPath := filepath.Join(dataDir, "Nipah", "nipah.db")
-	fmt.Printf("[DB] Database path: %s\n", dbPath)
+	if err := migrateLegacyDBIfNeeded(dbPath); err != nil {
+		log.Warn().Err(err).Str("path", dbPath).Msg("legacy database migration skipped")
+	}
+	log.Info().Str("path", dbPath).Msg("database path")
 	return dbPath, nil
+}
+
+func migrateLegacyDBIfNeeded(targetPath string) error {
+	if targetPath == "" {
+		return nil
+	}
+	if _, err := os.Stat(targetPath); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+		return err
+	}
+
+	for _, candidate := range legacyDBCandidates(targetPath) {
+		if candidate == "" || candidate == targetPath {
+			continue
+		}
+		if _, err := os.Stat(candidate); err != nil {
+			continue
+		}
+		if err := copyFile(candidate, targetPath); err != nil {
+			return err
+		}
+		for _, suffix := range []string{"-wal", "-shm"} {
+			srcSidecar := candidate + suffix
+			if _, err := os.Stat(srcSidecar); err == nil {
+				_ = copyFile(srcSidecar, targetPath+suffix)
+			}
+		}
+		log.Info().Str("from", candidate).Str("to", targetPath).Msg("migrated legacy database path")
+		return nil
+	}
+	return nil
+}
+
+func legacyDBCandidates(targetPath string) []string {
+	candidates := []string{}
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		candidates = append(candidates,
+			filepath.Join(exeDir, "nipah.db"),
+			filepath.Join(exeDir, "Nipah", "nipah.db"),
+			filepath.Join(exeDir, "Nipah! Anime", "nipah.db"),
+		)
+	}
+	if configDir, err := os.UserConfigDir(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(configDir, "Nipah! Anime", "nipah.db"),
+			filepath.Join(configDir, "nipah-anime", "nipah.db"),
+		)
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidate = filepath.Clean(candidate)
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		out = append(out, candidate)
+	}
+	return out
+}
+
+func copyFile(srcPath, dstPath string) error {
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dst, err := os.Create(dstPath)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	if _, err := dst.ReadFrom(src); err != nil {
+		return err
+	}
+	return nil
 }

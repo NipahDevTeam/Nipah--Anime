@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"html"
+	neturl "net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -19,22 +20,30 @@ const (
 	sourceID         = "weebcentral-en"
 	baseURL          = "https://weebcentral.com"
 	sitemapURL       = baseURL + "/sitemap.xml"
+	quickSearchURL   = baseURL + "/search/simple?location=main"
 	inventoryTTL     = 6 * time.Hour
 	detailCacheTTL   = 6 * time.Hour
 	maxSearchResults = 12
-	maxHydratedItems = 6
+	maxHydratedItems = 2
 )
 
 var (
-	seriesLocRe      = regexp.MustCompile(`https://weebcentral\.com/series/([^/]+)/([^<]+)`)
-	chapterRowRe     = regexp.MustCompile(`(?is)<a[^>]+href="((?:https://weebcentral\.com)?/chapters/[^"]+)"[^>]*>(.*?)</a>`)
-	imageRe          = regexp.MustCompile(`(?is)<img[^>]+(?:src|data-src)="([^"]+)"`)
-	numberRe         = regexp.MustCompile(`(?i)(?:chapter|chap|ch\.?|episode|ep\.?)\s*#?\s*([0-9]+(?:\.[0-9]+)?)`)
-	trailingNumberRe = regexp.MustCompile(`([0-9]+(?:\.[0-9]+)?)`)
-	ogTitleRe        = regexp.MustCompile(`(?is)<meta\s+property="og:title"\s+content="([^"]+)"`)
-	ogImageRe        = regexp.MustCompile(`(?is)<meta\s+property="og:image"\s+content="([^"]+)"`)
-	tagRe            = regexp.MustCompile(`(?s)<[^>]+>`)
-	spaceRe          = regexp.MustCompile(`\s+`)
+	quickResultRe = regexp.MustCompile(`(?is)<a[^>]+href="https://weebcentral\.com/series/([^"]+)"[^>]*>(.*?)</a>`)
+	seriesLocRe   = regexp.MustCompile(`https://weebcentral\.com/series/([^/]+)/([^<]+)`)
+	chapterRowRe  = regexp.MustCompile(`(?is)<a[^>]+href="((?:https://weebcentral\.com)?/chapters/[^"]+)"[^>]*>(.*?)</a>`)
+	showAllChRe   = regexp.MustCompile(`(?is)<(?:a|button)[^>]+(?:href|hx-get)="((?:https://weebcentral\.com)?/series/[^"]+/full-chapter-list[^"]*)"[^>]*>.*?show all chapters.*?</(?:a|button)>`)
+	imageRe       = regexp.MustCompile(`(?is)<img[^>]+(?:src|data-src)="([^"]+)"`)
+	sourceSetRe   = regexp.MustCompile(`(?is)<source[^>]+srcset="([^"]+)"`)
+	altRe         = regexp.MustCompile(`(?is)<img[^>]+alt="([^"]+)"`)
+	titleBlockRe  = regexp.MustCompile(`(?is)<div[^>]*line-clamp-2[^>]*>(.*?)</div>`)
+	numberRe      = regexp.MustCompile(`(?i)(?:chapter|chap|ch\.?|episode|ep\.?)\s*#?\s*([0-9]+(?:\.[0-9]+)?)`)
+	urlNumberRe   = regexp.MustCompile(`(?i)(?:chapter|chap|ch|episode|ep)[^0-9]*([0-9]+(?:\.[0-9]+)?)`)
+	spanTextRe    = regexp.MustCompile(`(?is)<span[^>]*>(.*?)</span>`)
+	labelNumberRe = regexp.MustCompile(`([0-9]+(?:\.[0-9]+)?)\s*$`)
+	ogTitleRe     = regexp.MustCompile(`(?is)<meta\s+property="og:title"\s+content="([^"]+)"`)
+	ogImageRe     = regexp.MustCompile(`(?is)<meta\s+property="og:image"\s+content="([^"]+)"`)
+	tagRe         = regexp.MustCompile(`(?s)<[^>]+>`)
+	spaceRe       = regexp.MustCompile(`\s+`)
 )
 
 type Extension struct{}
@@ -95,6 +104,10 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 		return []extensions.SearchResult{}, nil
 	}
 
+	if quickResults, err := quickSearch(query); err == nil && len(quickResults) > 0 {
+		return quickResults, nil
+	}
+
 	seriesIDs, err := loadInventory()
 	if err != nil {
 		return nil, fmt.Errorf("weebcentral search inventory: %w", err)
@@ -132,40 +145,99 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 	return results, nil
 }
 
+func quickSearch(query string) ([]extensions.SearchResult, error) {
+	form := neturl.Values{}
+	form.Set("text", query)
+	body, err := sourceaccess.FetchHTML(sourceID, quickSearchURL, sourceaccess.RequestOptions{
+		Method:  "POST",
+		Body:    []byte(form.Encode()),
+		Referer: baseURL + "/search",
+		Headers: map[string]string{
+			"Content-Type": "application/x-www-form-urlencoded",
+			"HX-Request":   "true",
+			"Accept":       "text/html, */*; q=0.01",
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return parseQuickSearch(body), nil
+}
+
+func parseQuickSearch(body string) []extensions.SearchResult {
+	matches := quickResultRe.FindAllStringSubmatch(body, maxSearchResults)
+	results := make([]extensions.SearchResult, 0, len(matches))
+	seen := map[string]bool{}
+	for _, match := range matches {
+		if len(match) < 3 {
+			continue
+		}
+		seriesID := normalizeSeriesID(match[1])
+		if seriesID == "" || seen[seriesID] {
+			continue
+		}
+		seen[seriesID] = true
+		inner := match[2]
+		title := cleanText(firstMatch(titleBlockRe, inner))
+		if title == "" {
+			title = strings.TrimSuffix(cleanText(firstMatch(altRe, inner)), " cover")
+		}
+		if title == "" {
+			title = humanizeSlug(strings.SplitN(seriesID, "/", 2)[1])
+		}
+		cover := absoluteURL(firstMatch(sourceSetRe, inner))
+		if cover == "" {
+			cover = absoluteURL(firstMatch(imageRe, inner))
+		}
+		results = append(results, extensions.SearchResult{
+			ID:        seriesID,
+			Title:     title,
+			CoverURL:  cover,
+			Languages: []extensions.Language{extensions.LangEnglish},
+		})
+	}
+	return results
+}
+
 func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]extensions.Chapter, error) {
 	seriesID := normalizeSeriesID(mangaID)
 	if seriesID == "" {
 		return nil, fmt.Errorf("weebcentral: invalid manga id")
 	}
 
-	seriesKey := strings.SplitN(seriesID, "/", 2)[0]
 	seriesURL := fmt.Sprintf("%s/series/%s", baseURL, seriesID)
-	listURL := fmt.Sprintf("%s/series/%s/full-chapter-list", baseURL, seriesKey)
+	listURL := fmt.Sprintf("%s/full-chapter-list", seriesURL)
 
-	body, err := sourceaccess.FetchHTML(sourceID, listURL, sourceaccess.RequestOptions{
-		Referer: seriesURL,
-	})
+	body, err := sourceaccess.FetchHTML(sourceID, seriesURL, sourceaccess.RequestOptions{})
 	if err != nil {
-		body, err = sourceaccess.FetchHTML(sourceID, seriesURL, sourceaccess.RequestOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("weebcentral chapters: %w", err)
-		}
+		return nil, fmt.Errorf("weebcentral chapters: %w", err)
 	}
+	teaserChapters := parseWeebCentralChapters(body)
 
-	matches := chapterRowRe.FindAllStringSubmatch(body, -1)
-	if len(matches) == 0 {
-		if body != "" && listURL != seriesURL {
-			fallbackBody, fallbackErr := sourceaccess.FetchHTML(sourceID, seriesURL, sourceaccess.RequestOptions{})
-			if fallbackErr == nil {
-				body = fallbackBody
-				matches = chapterRowRe.FindAllStringSubmatch(body, -1)
+	showAllURL := ""
+	if match := showAllChRe.FindStringSubmatch(body); len(match) >= 2 {
+		showAllURL = absoluteURL(match[1])
+	}
+	if showAllURL == "" {
+		showAllURL = listURL
+	}
+	if showAllURL != "" {
+		if listBody, listErr := sourceaccess.FetchHTML(sourceID, showAllURL, sourceaccess.RequestOptions{Referer: seriesURL}); listErr == nil {
+			fullChapters := parseWeebCentralChapters(listBody)
+			if len(fullChapters) > 0 {
+				return fullChapters, nil
 			}
 		}
-		if len(matches) == 0 {
-			return nil, fmt.Errorf("weebcentral: no chapters found")
-		}
 	}
+	chapters := teaserChapters
+	if len(chapters) == 0 {
+		return nil, fmt.Errorf("weebcentral: no valid chapters found")
+	}
+	return chapters, nil
+}
 
+func parseWeebCentralChapters(body string) []extensions.Chapter {
+	matches := chapterRowRe.FindAllStringSubmatch(body, -1)
 	chapters := make([]extensions.Chapter, 0, len(matches))
 	seen := map[string]bool{}
 	for _, match := range matches {
@@ -176,7 +248,7 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 		if chapterURL == "" || seen[chapterURL] {
 			continue
 		}
-		label := cleanText(match[2])
+		label := extractChapterLabel(match[2])
 		number := parseChapterNumber(label)
 		if number <= 0 {
 			number = parseChapterNumber(chapterURL)
@@ -185,21 +257,35 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 			continue
 		}
 		seen[chapterURL] = true
-		title := chapterDisplayTitle(label, number)
-
 		chapters = append(chapters, extensions.Chapter{
 			ID:       chapterURL,
 			Number:   number,
-			Title:    title,
+			Title:    chapterDisplayTitle(label, number),
 			Language: extensions.LangEnglish,
 		})
 	}
-
 	sort.Slice(chapters, func(i, j int) bool { return chapters[i].Number < chapters[j].Number })
-	if len(chapters) == 0 {
-		return nil, fmt.Errorf("weebcentral: no valid chapters found")
+	return chapters
+}
+
+func mergeWeebCentralChapters(primary, secondary []extensions.Chapter) []extensions.Chapter {
+	if len(primary) == 0 {
+		return secondary
 	}
-	return chapters, nil
+	if len(secondary) == 0 {
+		return primary
+	}
+	seen := map[string]bool{}
+	merged := make([]extensions.Chapter, 0, len(primary)+len(secondary))
+	for _, chapter := range append(primary, secondary...) {
+		if chapter.ID == "" || seen[chapter.ID] {
+			continue
+		}
+		seen[chapter.ID] = true
+		merged = append(merged, chapter)
+	}
+	sort.Slice(merged, func(i, j int) bool { return merged[i].Number < merged[j].Number })
+	return merged
 }
 
 func (e *Extension) GetPages(chapterID string) ([]extensions.PageSource, error) {
@@ -395,11 +481,10 @@ func firstMatch(re *regexp.Regexp, raw string) string {
 func parseChapterNumber(raw string) float64 {
 	match := numberRe.FindStringSubmatch(raw)
 	if len(match) < 2 {
-		allMatches := trailingNumberRe.FindAllStringSubmatch(raw, -1)
-		if len(allMatches) == 0 {
-			return 0
+		match = labelNumberRe.FindStringSubmatch(strings.TrimSpace(raw))
+		if len(match) < 2 {
+			match = urlNumberRe.FindStringSubmatch(raw)
 		}
-		match = allMatches[len(allMatches)-1]
 		if len(match) < 2 {
 			return 0
 		}
@@ -410,10 +495,33 @@ func parseChapterNumber(raw string) float64 {
 
 func chapterDisplayTitle(raw string, number float64) string {
 	raw = cleanText(raw)
+	if raw != "" {
+		return raw
+	}
 	if strings.Contains(strings.ToLower(raw), "episode") {
 		return fmt.Sprintf("Episode %s", formatNumber(number))
 	}
 	return fmt.Sprintf("Chapter %s", formatNumber(number))
+}
+
+func extractChapterLabel(raw string) string {
+	matches := spanTextRe.FindAllStringSubmatch(raw, -1)
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		text := cleanText(match[1])
+		if text == "" {
+			continue
+		}
+		if strings.EqualFold(text, "Last Read") {
+			continue
+		}
+		if numberRe.MatchString(text) || labelNumberRe.MatchString(text) {
+			return text
+		}
+	}
+	return cleanText(raw)
 }
 
 func bestTitle(values ...string) string {

@@ -5,6 +5,7 @@ import "time"
 // WatchHistoryEntry represents a single online episode watch event.
 type WatchHistoryEntry struct {
 	ID           int       `json:"id"`
+	AniListID    int       `json:"anilist_id"`
 	SourceID     string    `json:"source_id"`
 	SourceName   string    `json:"source_name"`
 	AnimeID      string    `json:"anime_id"`
@@ -17,6 +18,7 @@ type WatchHistoryEntry struct {
 	WatchedAt    time.Time `json:"watched_at"`
 	DurationSec  int       `json:"duration_sec"`
 	Completed    bool      `json:"completed"`
+	MediaFormat  string    `json:"media_format"`
 }
 
 // RecordOnlineWatch inserts or updates an online watch history entry.

@@ -1,19 +1,37 @@
-export const DEFAULT_MANGA_SOURCE = 'senshimanga-es'
+export const DEFAULT_MANGA_SOURCE = 'm440-es'
+export const DEFAULT_MANGA_SOURCE_BY_LANG = {
+  es: 'm440-es',
+  en: 'weebcentral-en',
+}
 
 export const MANGA_SOURCE_OPTIONS = [
   {
-    value: 'senshimanga-es',
-    label: 'SenshiManga',
+    value: 'm440-es',
+    label: 'M440',
     badge: 'badge-accent',
     note: 'Espanol - Principal',
+    languages: ['es'],
+  },
+  {
+    value: 'senshimanga-es',
+    label: 'SenshiManga',
+    badge: 'badge-muted',
+    note: 'Espanol - Secundaria',
     languages: ['es'],
   },
   {
     value: 'mangaoni-es',
     label: 'MangaOni',
     badge: 'badge-muted',
-    note: 'Espanol - Fallback',
+    note: 'Espanol - Beta',
     languages: ['es'],
+  },
+  {
+    value: 'weebcentral-en',
+    label: 'WeebCentral',
+    badge: 'badge-accent',
+    note: 'English - Primary',
+    languages: ['en'],
   },
   {
     value: 'templetoons-en',
@@ -23,17 +41,10 @@ export const MANGA_SOURCE_OPTIONS = [
     languages: ['en'],
   },
   {
-    value: 'weebcentral-en',
-    label: 'WeebCentral',
-    badge: 'badge-muted',
-    note: 'English - Fallback',
-    languages: ['en'],
-  },
-  {
     value: 'mangapill-en',
     label: 'MangaPill',
     badge: 'badge-muted',
-    note: 'English - Fallback',
+    note: 'English - Beta',
     languages: ['en'],
   },
   {
@@ -52,6 +63,8 @@ const MANGA_SOURCE_ALIASES = {
   'lectormanga-es': 'lectormanga-es',
   mangaoni: 'mangaoni-es',
   'mangaoni-es': 'mangaoni-es',
+  m440: 'm440-es',
+  'm440-es': 'm440-es',
   senshimanga: 'senshimanga-es',
   'senshimanga-es': 'senshimanga-es',
   templetoons: 'templetoons-en',
@@ -87,6 +100,10 @@ export function normalizeMangaSourceID(sourceID) {
 export function getMangaSourceMeta(sourceID) {
   const normalized = normalizeMangaSourceID(sourceID)
   return MANGA_SOURCE_META.get(normalized) ?? MANGA_SOURCE_OPTIONS[0]
+}
+
+export function getDefaultMangaSource(lang = 'es') {
+  return DEFAULT_MANGA_SOURCE_BY_LANG[lang] || DEFAULT_MANGA_SOURCE
 }
 
 export function buildMangaSourceOptions(extensions = []) {

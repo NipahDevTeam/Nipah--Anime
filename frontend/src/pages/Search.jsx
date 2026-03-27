@@ -1,14 +1,21 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { wails, proxyImage } from '../lib/wails'
 import OnlineAnimeDetail from '../components/ui/OnlineAnimeDetail'
 import { toastError } from '../components/ui/Toast'
 import { enrichJKAnimeHit, resolveAniListToJKAnime } from '../lib/onlineAnimeResolver'
+import VirtualMediaGrid from '../components/ui/VirtualMediaGrid'
 import { useI18n } from '../lib/i18n'
 
+// Spanish sources: purple family  |  English sources: blue family
 const SOURCE_META = {
-  'jkanime-es':   { label: 'JKAnime',   color: '#c084fc' },
-  'animepahe-en': { label: 'AnimePahe', color: '#38bdf8' },
+  'jkanime-es':     { label: 'JKAnime',     color: '#c084fc' }, // purple-400
+  'animeflv-es':    { label: 'AnimeFLV',    color: '#b7791f' }, // amber-700
+  'animeav1-es':    { label: 'AnimeAV1',    color: '#9333ea' }, // purple-600
+  'animepahe-en':   { label: 'AnimePahe',   color: '#38bdf8' }, // sky-400
+  'animeheaven-en': { label: 'AnimeHeaven', color: '#0ea5e9' }, // sky-500
+  'animegg-en':     { label: 'AnimeGG',     color: '#6366f1' }, // indigo-500
 }
 
 function getSortOptions(lang) {
@@ -88,6 +95,20 @@ function SectionHeader({ title, subtitle, action }) {
         {subtitle ? <p className="online-section-copy">{subtitle}</p> : null}
       </div>
       {action}
+    </div>
+  )
+}
+
+function OnlinePosterSkeletonGrid({ count = 10 }) {
+  return (
+    <div className="skeleton-poster-grid">
+      {Array.from({ length: count }).map((_, index) => (
+        <div key={index} className="skeleton-poster-card">
+          <div className="skeleton-block skeleton-poster-image" />
+          <div className="skeleton-block skeleton-line skeleton-line-md" />
+          <div className="skeleton-block skeleton-line skeleton-line-xs" />
+        </div>
+      ))}
     </div>
   )
 }
@@ -321,18 +342,13 @@ export default function Search() {
   const [searched, setSearched] = useState(false)
   const [selected, setSelected] = useState(() => location.state?.selectedAnime ?? null)
   const [resolvingKey, setResolvingKey] = useState('')
-  const [activeSource, setActiveSource] = useState(() => (appLang === 'en' ? 'animepahe-en' : 'jkanime-es'))
-  const [catalog, setCatalog] = useState([])
-  const [catalogLoading, setCatalogLoading] = useState(true)
-  const [catalogHasNext, setCatalogHasNext] = useState(false)
-  const [catalogPage, setCatalogPage] = useState(1)
+  const [activeSource, setActiveSource] = useState(() => (appLang === 'en' ? 'animeheaven-en' : 'animeav1-es'))
   const [catalogSort, setCatalogSort] = useState('TRENDING_DESC')
   const [catalogGenres, setCatalogGenres] = useState([])
   const [catalogSeason, setCatalogSeason] = useState('')
   const [catalogYear, setCatalogYear] = useState(0)
   const inputRef = useRef(null)
   const searchRequestRef = useRef(0)
-  const catalogRequestRef = useRef(0)
 
   const openResolvedHit = useCallback(async (hit) => {
     try {
@@ -363,28 +379,29 @@ export default function Search() {
     if (clearSelected) setSelected(null)
 
     try {
-      let preferredMeta = null
-      if (preferredAnilistID > 0) {
-        try {
-          preferredMeta = await wails.getAniListAnimeByID(preferredAnilistID)
-        } catch {}
-      }
-
-      let candidates = buildAniListSeededAnimeCandidates(term, alt, preferredMeta)
-      if (!preferredMeta) {
-        try {
-          const aniListSearch = await wails.searchAniList(term, appLang)
-          const media = aniListSearch?.data?.Page?.media ?? []
-          candidates = buildAniListSearchMediaCandidates(term, alt, media)
-        } catch {}
-      }
+      let candidates = buildAniListSeededAnimeCandidates(term, alt, null)
+      try {
+        const aniListSearch = await wails.searchAniList(term, appLang)
+        const media = aniListSearch?.data?.Page?.media ?? []
+        const seeded = buildAniListSearchMediaCandidates(term, alt, media)
+        if (seeded.length > 0) {
+          candidates = seeded
+        }
+      } catch {}
       candidates = candidates.slice(0, preferredAnilistID > 0 ? 10 : 8)
       const aggregateResults = []
       const seen = new Set()
       let preferredMatch = null
+      let lastSourceError = null
 
       for (const candidate of candidates) {
-        const res = await wails.searchOnline(candidate, activeSource)
+        let res
+        try {
+          res = await wails.searchOnline(candidate, activeSource)
+        } catch (error) {
+          lastSourceError = error
+          continue
+        }
         if (requestID !== searchRequestRef.current) return []
         const currentResults = res ?? []
 
@@ -412,6 +429,10 @@ export default function Search() {
         }
 
         if (aggregateResults.length > 0) break
+      }
+
+      if (!preferredMatch && aggregateResults.length === 0 && lastSourceError) {
+        throw lastSourceError
       }
 
       const finalResults = aggregateResults
@@ -450,9 +471,11 @@ export default function Search() {
   const resolveAniListMedia = useCallback(async (media, key) => {
     setResolvingKey(key)
     try {
-      const { hit, searchedTitle } = await resolveAniListToJKAnime(media, wails, activeSource)
+      const { hit, searchedTitle, error } = await resolveAniListToJKAnime(media, wails, activeSource)
       if (hit) {
         setSelected(hit)
+      } else if (error) {
+        toastError(error)
       } else {
         toastError(ui.sourceNotFound(searchedTitle, SOURCE_META[activeSource]?.label ?? activeSource))
       }
@@ -463,54 +486,68 @@ export default function Search() {
 
   useEffect(() => {
     setActiveSource((current) => {
+      const esSourceIDs = ['jkanime-es', 'animeflv-es', 'animeav1-es']
+      const enSourceIDs = ['animepahe-en', 'animeheaven-en', 'animegg-en']
       if (appLang === 'en') {
-        return current === 'jkanime-es' ? 'animepahe-en' : current
+        return esSourceIDs.includes(current) ? 'animeheaven-en' : current
       }
-      return current === 'animepahe-en' ? 'jkanime-es' : current
+      return enSourceIDs.includes(current) ? 'animeav1-es' : current
     })
   }, [appLang])
 
-  useEffect(() => {
-    const requestID = ++catalogRequestRef.current
-    setCatalogLoading(true)
-
-    fetchCatalogPage({
-      sort: catalogSort,
-      page: catalogPage,
-      genres: catalogGenres,
-      season: catalogSeason,
-      year: catalogYear,
-    })
-      .catch(async (error) => {
-        if (catalogPage !== 1 || catalogGenres.length || catalogSeason || catalogYear) throw error
-        return fetchCatalogFallback(catalogPage)
-      })
-      .then((res) => {
-        if (requestID !== catalogRequestRef.current) return
+  const catalogQuery = useInfiniteQuery({
+    queryKey: ['anime-catalog', appLang, catalogSort, catalogGenres.join(','), catalogSeason, catalogYear],
+    initialPageParam: 1,
+    queryFn: async ({ pageParam }) => {
+      try {
+        const res = await fetchCatalogPage({
+          sort: catalogSort,
+          page: pageParam,
+          genres: catalogGenres,
+          season: catalogSeason,
+          year: catalogYear,
+        })
         const pageData = res?.data?.Page
-        const media = pageData?.media ?? []
+        return {
+          media: pageData?.media ?? [],
+          hasNextPage: pageData?.pageInfo?.hasNextPage ?? false,
+          page: pageParam,
+        }
+      } catch (error) {
+        if (pageParam !== 1 || catalogGenres.length || catalogSeason || catalogYear) {
+          throw error
+        }
+        const res = await fetchCatalogFallback(pageParam)
+        const pageData = res?.data?.Page
+        return {
+          media: pageData?.media ?? [],
+          hasNextPage: pageData?.pageInfo?.hasNextPage ?? false,
+          page: pageParam,
+        }
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => lastPage?.hasNextPage ? allPages.length + 1 : undefined,
+    staleTime: 20 * 60_000,
+    gcTime: 45 * 60_000,
+    placeholderData: previousData => previousData,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  })
 
-        if (catalogPage === 1) {
-          setCatalog(media)
-        } else {
-          setCatalog(prev => [...prev, ...media])
-        }
-        setCatalogHasNext(pageData?.pageInfo?.hasNextPage ?? false)
-      })
-      .catch(() => {
-        if (requestID !== catalogRequestRef.current) return
-        if (catalogPage === 1) {
-          setCatalog([])
-          setCatalogHasNext(false)
-        }
-        toastError(ui.catalogError)
-      })
-      .finally(() => {
-        if (requestID === catalogRequestRef.current) {
-          setCatalogLoading(false)
-        }
-      })
-  }, [catalogGenres, catalogPage, catalogSeason, catalogSort, catalogYear, ui.catalogError])
+  useEffect(() => {
+    if (catalogQuery.error) {
+      toastError(ui.catalogError)
+    }
+  }, [catalogQuery.error, ui.catalogError])
+
+  const catalog = useMemo(
+    () => (catalogQuery.data?.pages ?? []).flatMap((page) => page.media ?? []),
+    [catalogQuery.data],
+  )
+  const catalogLoading = catalog.length === 0 && (catalogQuery.isLoading || catalogQuery.isFetching)
+  const catalogFetchingMore = catalogQuery.isFetchingNextPage
+  const catalogHasNext = Boolean(catalogQuery.hasNextPage)
 
   useEffect(() => {
     const navState = location.state
@@ -559,7 +596,6 @@ export default function Search() {
 
   const handleCatalogSort = useCallback((value) => {
     setCatalogSort(value)
-    setCatalogPage(1)
   }, [])
 
   const toggleGenre = useCallback((genre) => {
@@ -568,17 +604,14 @@ export default function Search() {
         ? current.filter(item => item !== genre)
         : [...current, genre]
     ))
-    setCatalogPage(1)
   }, [])
 
   const handleSeasonChange = useCallback((value) => {
     setCatalogSeason(value)
-    setCatalogPage(1)
   }, [])
 
   const handleYearChange = useCallback((value) => {
     setCatalogYear(Number(value) || 0)
-    setCatalogPage(1)
   }, [])
 
   const clearCatalogFilters = useCallback(() => {
@@ -586,13 +619,12 @@ export default function Search() {
     setCatalogSeason('')
     setCatalogYear(0)
     setCatalogSort('TRENDING_DESC')
-    setCatalogPage(1)
   }, [])
 
   const handleLoadMore = useCallback(() => {
-    if (catalogLoading || !catalogHasNext) return
-    setCatalogPage(prev => prev + 1)
-  }, [catalogHasNext, catalogLoading])
+    if (catalogFetchingMore || !catalogHasNext) return
+    void catalogQuery.fetchNextPage()
+  }, [catalogFetchingMore, catalogHasNext, catalogQuery])
 
   const hasCatalogFilters = catalogGenres.length > 0 || Boolean(catalogSeason) || Boolean(catalogYear)
   const catalogSummary = [
@@ -637,8 +669,12 @@ export default function Search() {
               <div className="online-directory-upper">
                 <div className="online-directory-badges">
                   {[
-                    { id: 'jkanime-es', label: 'JKAnime' },
-                    { id: 'animepahe-en', label: 'AnimePahe' },
+                    { id: 'jkanime-es',     label: 'JKAnime' },
+                    { id: 'animeflv-es',    label: 'AnimeFLV' },
+                    { id: 'animeav1-es',    label: 'AnimeAV1' },
+                    { id: 'animepahe-en',   label: 'AnimePahe' },
+                    { id: 'animeheaven-en', label: 'AnimeHeaven' },
+                    { id: 'animegg-en',     label: 'AnimeGG' },
                   ].map(src => (
                     <button
                       key={src.id}
@@ -722,14 +758,13 @@ export default function Search() {
         </header>
 
         {loading ? (
-          <div className="empty-state">
-            <div style={{ display: 'flex', gap: 6 }}>
-              <span className="loading-dot" /><span className="loading-dot" /><span className="loading-dot" />
-            </div>
-            <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-              {ui.sourceSearching(SOURCE_META[activeSource]?.label ?? activeSource)}
-            </p>
-          </div>
+          <section className="online-directory-results">
+            <SectionHeader
+              title={ui.foundResults}
+              subtitle={ui.sourceSearching(SOURCE_META[activeSource]?.label ?? activeSource)}
+            />
+            <OnlinePosterSkeletonGrid count={8} />
+          </section>
         ) : null}
 
         {(() => {
@@ -751,8 +786,11 @@ export default function Search() {
                     title={ui.foundResults}
                     subtitle={ui.readyToOpen(filtered.length)}
                   />
-                  <div className="online-results-grid">
-                    {filtered.map((item, index) => (
+                  <VirtualMediaGrid
+                    items={filtered}
+                    listClassName="virtuoso-online-grid"
+                    itemClassName="virtuoso-online-grid-item"
+                    itemContent={(item, index) => (
                       <OnlinePosterCard
                         key={`${item.source_id}-${item.id}-${index}`}
                         cover={item.cover_url}
@@ -764,15 +802,15 @@ export default function Search() {
                         noCoverLabel={ui.noCover}
                         onClick={() => openResolvedHit(item)}
                       />
-                    ))}
-                  </div>
+                    )}
+                  />
                 </section>
               ) : null}
             </>
           )
         })()}
 
-        {!searched ? (
+        {!searched && !loading ? (
           <section className="online-directory-results">
             <SectionHeader
               title={ui.exploreTitle}
@@ -780,11 +818,7 @@ export default function Search() {
             />
 
             {catalogLoading && catalog.length === 0 ? (
-              <div className="empty-state">
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <span className="loading-dot" /><span className="loading-dot" /><span className="loading-dot" />
-                </div>
-              </div>
+              <OnlinePosterSkeletonGrid count={12} />
             ) : !catalogLoading && catalog.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-state-title">{ui.noCatalog}</div>
@@ -793,8 +827,11 @@ export default function Search() {
                 </p>
               </div>
             ) : (
-              <div className="online-results-grid">
-                {catalog.map((media) => {
+              <VirtualMediaGrid
+                items={catalog}
+                listClassName="virtuoso-online-grid"
+                itemClassName="virtuoso-online-grid-item"
+                itemContent={(media) => {
                   const title = getCatalogTitle(media)
                   const key = `catalog-${media.id}`
                   return (
@@ -809,8 +846,8 @@ export default function Search() {
                       onClick={() => resolveAniListMedia(media, key)}
                     />
                   )
-                })}
-              </div>
+                }}
+              />
             )}
 
             {!catalogLoading && catalogHasNext ? (
@@ -819,16 +856,18 @@ export default function Search() {
                   type="button"
                   className="btn btn-ghost online-directory-loadmore-btn"
                   onClick={handleLoadMore}
+                  disabled={catalogFetchingMore}
                 >
-                  {ui.loadMore}
+                  {catalogFetchingMore ? ui.searching : ui.loadMore}
                 </button>
               </div>
             ) : null}
 
             {catalogLoading && catalog.length > 0 ? (
               <div className="online-directory-loadmore">
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <span className="loading-dot" /><span className="loading-dot" /><span className="loading-dot" />
+                <div className="skeleton-inline-row">
+                  <span className="skeleton-inline-chip" />
+                  <span className="skeleton-inline-chip short" />
                 </div>
               </div>
             ) : null}

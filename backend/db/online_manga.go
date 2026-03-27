@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -68,6 +69,59 @@ func (d *Database) UpsertOnlineMangaSourceMap(entry OnlineMangaSourceMap) error 
 	return err
 }
 
+func (d *Database) GetOnlineMangaSourceMapsByAniListID(anilistID int) ([]OnlineMangaSourceMap, error) {
+	rows, err := d.conn.Query(`
+		SELECT source_id, source_manga_id, COALESCE(source_title, ''), COALESCE(anilist_id, 0),
+		       COALESCE(matched_title, ''), COALESCE(confidence, 0), last_seen_at
+		FROM online_manga_source_map
+		WHERE anilist_id = ?
+		ORDER BY confidence DESC, last_seen_at DESC, id DESC
+	`, anilistID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []OnlineMangaSourceMap
+	for rows.Next() {
+		var item OnlineMangaSourceMap
+		var lastSeenAt string
+		if err := rows.Scan(
+			&item.SourceID, &item.SourceMangaID, &item.SourceTitle, &item.AniListID,
+			&item.MatchedTitle, &item.Confidence, &lastSeenAt,
+		); err != nil {
+			continue
+		}
+		item.LastSeenAt, _ = time.Parse("2006-01-02 15:04:05", lastSeenAt)
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (d *Database) GetPreferredOnlineMangaSourceMap(sourceID string, anilistID int) (*OnlineMangaSourceMap, error) {
+	var entry OnlineMangaSourceMap
+	var lastSeenAt string
+	err := d.conn.QueryRow(`
+		SELECT source_id, source_manga_id, COALESCE(source_title, ''), COALESCE(anilist_id, 0),
+		       COALESCE(matched_title, ''), COALESCE(confidence, 0), last_seen_at
+		FROM online_manga_source_map
+		WHERE source_id = ? AND anilist_id = ?
+		ORDER BY confidence DESC, last_seen_at DESC, id DESC
+		LIMIT 1
+	`, sourceID, anilistID).Scan(
+		&entry.SourceID, &entry.SourceMangaID, &entry.SourceTitle, &entry.AniListID,
+		&entry.MatchedTitle, &entry.Confidence, &lastSeenAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	entry.LastSeenAt, _ = time.Parse("2006-01-02 15:04:05", lastSeenAt)
+	return &entry, nil
+}
+
 func (d *Database) RecordOnlineMangaRead(entry OnlineMangaHistoryEntry) error {
 	_, err := d.conn.Exec(`
 		INSERT INTO online_manga_history
@@ -90,6 +144,30 @@ func (d *Database) RecordOnlineMangaRead(entry OnlineMangaHistoryEntry) error {
 			END
 	`, entry.AniListID, entry.SourceID, entry.SourceName, entry.SourceMangaID, entry.SourceMangaTitle,
 		entry.CoverURL, entry.BannerImage, entry.ChapterID, entry.ChapterNum, entry.ChapterTitle, entry.Completed)
+	return err
+}
+
+func (d *Database) PromoteOnlineMangaHistoryIdentity(sourceID, sourceMangaID string, anilistID int, title, coverURL, bannerURL string) error {
+	if anilistID <= 0 || strings.TrimSpace(sourceID) == "" || strings.TrimSpace(sourceMangaID) == "" {
+		return nil
+	}
+	_, err := d.conn.Exec(`
+		UPDATE online_manga_history
+		SET anilist_id = ?,
+		    source_manga_title = CASE
+		    	WHEN COALESCE(source_manga_title, '') = '' THEN ?
+		    	ELSE source_manga_title
+		    END,
+		    cover_url = CASE
+		    	WHEN COALESCE(cover_url, '') = '' THEN ?
+		    	ELSE cover_url
+		    END,
+		    banner_image = CASE
+		    	WHEN COALESCE(banner_image, '') = '' THEN ?
+		    	ELSE banner_image
+		    END
+		WHERE source_id = ? AND source_manga_id = ?
+	`, anilistID, strings.TrimSpace(title), strings.TrimSpace(coverURL), strings.TrimSpace(bannerURL), sourceID, sourceMangaID)
 	return err
 }
 
@@ -124,10 +202,33 @@ func (d *Database) GetOnlineMangaHistoryEntry(sourceID, chapterID string) (*Onli
 
 func (d *Database) GetRecentlyReadManga(limit int) ([]OnlineMangaHistoryEntry, error) {
 	rows, err := d.conn.Query(`
-		SELECT h.id, COALESCE(h.anilist_id, 0), h.source_id, h.source_name, h.source_manga_id, h.source_manga_title,
-		       COALESCE(h.cover_url, ''), COALESCE(h.banner_image, ''), h.chapter_id, COALESCE(h.chapter_num, 0),
+		SELECT h.id,
+		       COALESCE(NULLIF(h.anilist_id, 0), sm.anilist_id, 0),
+		       h.source_id,
+		       h.source_name,
+		       h.source_manga_id,
+		       CASE
+		       	WHEN COALESCE(NULLIF(h.anilist_id, 0), sm.anilist_id, 0) > 0
+		       		THEN COALESCE(NULLIF(ml.title_english, ''), NULLIF(ml.title, ''), h.source_manga_title)
+		       	ELSE h.source_manga_title
+		       END,
+		       CASE
+		       	WHEN COALESCE(NULLIF(h.anilist_id, 0), sm.anilist_id, 0) > 0
+		       		THEN COALESCE(NULLIF(ml.cover_image, ''), NULLIF(h.cover_url, ''), '')
+		       	ELSE COALESCE(h.cover_url, '')
+		       END,
+		       CASE
+		       	WHEN COALESCE(NULLIF(h.anilist_id, 0), sm.anilist_id, 0) > 0
+		       		THEN COALESCE(NULLIF(ml.banner_image, ''), NULLIF(h.banner_image, ''), '')
+		       	ELSE COALESCE(h.banner_image, '')
+		       END,
+		       h.chapter_id, COALESCE(h.chapter_num, 0),
 		       COALESCE(h.chapter_title, ''), h.read_at, h.completed
 		FROM online_manga_history h
+		LEFT JOIN online_manga_source_map sm
+		  ON sm.source_id = h.source_id AND sm.source_manga_id = h.source_manga_id
+		LEFT JOIN manga_list ml
+		  ON ml.anilist_id = COALESCE(NULLIF(h.anilist_id, 0), sm.anilist_id, 0)
 		WHERE h.id = (
 			SELECT x.id
 			FROM online_manga_history x
@@ -148,10 +249,33 @@ func (d *Database) GetRecentlyReadManga(limit int) ([]OnlineMangaHistoryEntry, e
 
 func (d *Database) GetContinueReadingOnline(limit int) ([]OnlineMangaHistoryEntry, error) {
 	rows, err := d.conn.Query(`
-		SELECT h.id, COALESCE(h.anilist_id, 0), h.source_id, h.source_name, h.source_manga_id, h.source_manga_title,
-		       COALESCE(h.cover_url, ''), COALESCE(h.banner_image, ''), h.chapter_id, COALESCE(h.chapter_num, 0),
+		SELECT h.id,
+		       COALESCE(NULLIF(h.anilist_id, 0), sm.anilist_id, 0),
+		       h.source_id,
+		       h.source_name,
+		       h.source_manga_id,
+		       CASE
+		       	WHEN COALESCE(NULLIF(h.anilist_id, 0), sm.anilist_id, 0) > 0
+		       		THEN COALESCE(NULLIF(ml.title_english, ''), NULLIF(ml.title, ''), h.source_manga_title)
+		       	ELSE h.source_manga_title
+		       END,
+		       CASE
+		       	WHEN COALESCE(NULLIF(h.anilist_id, 0), sm.anilist_id, 0) > 0
+		       		THEN COALESCE(NULLIF(ml.cover_image, ''), NULLIF(h.cover_url, ''), '')
+		       	ELSE COALESCE(h.cover_url, '')
+		       END,
+		       CASE
+		       	WHEN COALESCE(NULLIF(h.anilist_id, 0), sm.anilist_id, 0) > 0
+		       		THEN COALESCE(NULLIF(ml.banner_image, ''), NULLIF(h.banner_image, ''), '')
+		       	ELSE COALESCE(h.banner_image, '')
+		       END,
+		       h.chapter_id, COALESCE(h.chapter_num, 0),
 		       COALESCE(h.chapter_title, ''), h.read_at, h.completed
 		FROM online_manga_history h
+		LEFT JOIN online_manga_source_map sm
+		  ON sm.source_id = h.source_id AND sm.source_manga_id = h.source_manga_id
+		LEFT JOIN manga_list ml
+		  ON ml.anilist_id = COALESCE(NULLIF(h.anilist_id, 0), sm.anilist_id, 0)
 		WHERE h.completed = FALSE
 		  AND h.id = (
 			SELECT x.id

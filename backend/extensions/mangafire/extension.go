@@ -19,6 +19,8 @@ import (
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 
+	"github.com/sourcegraph/conc/pool"
+
 	"miruro/backend/extensions"
 	"miruro/backend/extensions/sourceaccess"
 )
@@ -186,68 +188,41 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 	if len(detailCandidates) > maxDetailCandidates {
 		detailCandidates = detailCandidates[:maxDetailCandidates]
 	}
-	type detailResult struct {
-		item scoredResult
-	}
-	resultsCh := make(chan detailResult, len(detailCandidates))
-
-	var wg sync.WaitGroup
 	// MangaFire rate-limits aggressively; keep detail fan-out small so
 	// search itself doesn't poison the next chapter/detail request.
-	workerCount := 2
-	if workerCount > len(detailCandidates) {
-		workerCount = len(detailCandidates)
-	}
-	jobs := make(chan searchCandidate, len(detailCandidates))
+	p := pool.NewWithResults[scoredResult]().WithMaxGoroutines(2)
 	for _, candidate := range detailCandidates {
-		jobs <- candidate
-	}
-	close(jobs)
-
-	for worker := 0; worker < workerCount; worker++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for candidate := range jobs {
-				meta, err := loadDetail(candidate.slug)
-				if err != nil {
-					resultsCh <- detailResult{item: scoredResult{
-						result: extensions.SearchResult{
-							ID:        candidate.slug,
-							Title:     candidate.searchName,
-							Languages: []extensions.Language{extensions.LangEnglish},
-						},
-						score: candidate.score,
-					}}
-					continue
-				}
-
-				score := scoreDetail(queryNorm, meta)
-				if score == 0 {
-					score = candidate.score
-				}
-				resultsCh <- detailResult{item: scoredResult{
+		candidate := candidate
+		p.Go(func() scoredResult {
+			meta, err := loadDetail(candidate.slug)
+			if err != nil {
+				return scoredResult{
 					result: extensions.SearchResult{
-						ID:          meta.slug,
-						Title:       meta.title,
-						CoverURL:    meta.coverURL,
-						Description: meta.description,
-						Languages:   []extensions.Language{extensions.LangEnglish},
+						ID:        candidate.slug,
+						Title:     candidate.searchName,
+						Languages: []extensions.Language{extensions.LangEnglish},
 					},
-					score: score,
-				}}
+					score: candidate.score,
+				}
 			}
-		}()
-	}
 
-	go func() {
-		wg.Wait()
-		close(resultsCh)
-	}()
-
-	for item := range resultsCh {
-		scored = append(scored, item.item)
+			score := scoreDetail(queryNorm, meta)
+			if score == 0 {
+				score = candidate.score
+			}
+			return scoredResult{
+				result: extensions.SearchResult{
+					ID:          meta.slug,
+					Title:       meta.title,
+					CoverURL:    meta.coverURL,
+					Description: meta.description,
+					Languages:   []extensions.Language{extensions.LangEnglish},
+				},
+				score: score,
+			}
+		})
 	}
+	scored = append(scored, p.Wait()...)
 	for _, candidate := range fallbackCandidates {
 		scored = append(scored, scoredResult{
 			result: extensions.SearchResult{
@@ -462,61 +437,48 @@ func refreshInventoryNow() ([]string, error) {
 	seenMu := sync.Mutex{}
 	slugsMu := sync.Mutex{}
 
-	jobs := make(chan string, len(listURLs))
+	p2 := pool.New().WithMaxGoroutines(8)
 	for _, rawURL := range listURLs {
-		jobs <- rawURL
-	}
-	close(jobs)
-
-	var wg sync.WaitGroup
-	workerCount := 8
-	if workerCount > len(listURLs) {
-		workerCount = len(listURLs)
-	}
-	for worker := 0; worker < workerCount; worker++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for rawURL := range jobs {
-				body, err := sourceaccess.FetchHTML(sourceID, rawURL, sourceaccess.RequestOptions{})
-				if err != nil {
-					continue
-				}
-
-				var sitemap sitemapIndex
-				if err := xml.Unmarshal([]byte(body), &sitemap); err != nil {
-					continue
-				}
-
-				local := make([]string, 0, len(sitemap.URLs))
-				for _, entry := range sitemap.URLs {
-					slug := normalizeSlug(entry.Loc)
-					if slug == "" {
-						continue
-					}
-
-					seenMu.Lock()
-					if seen[slug] {
-						seenMu.Unlock()
-						continue
-					}
-					seen[slug] = true
-					seenMu.Unlock()
-
-					local = append(local, slug)
-				}
-
-				if len(local) == 0 {
-					continue
-				}
-
-				slugsMu.Lock()
-				slugs = append(slugs, local...)
-				slugsMu.Unlock()
+		rawURL := rawURL
+		p2.Go(func() {
+			body, err := sourceaccess.FetchHTML(sourceID, rawURL, sourceaccess.RequestOptions{})
+			if err != nil {
+				return
 			}
-		}()
+
+			var sitemap sitemapIndex
+			if err := xml.Unmarshal([]byte(body), &sitemap); err != nil {
+				return
+			}
+
+			local := make([]string, 0, len(sitemap.URLs))
+			for _, entry := range sitemap.URLs {
+				slug := normalizeSlug(entry.Loc)
+				if slug == "" {
+					continue
+				}
+
+				seenMu.Lock()
+				if seen[slug] {
+					seenMu.Unlock()
+					continue
+				}
+				seen[slug] = true
+				seenMu.Unlock()
+
+				local = append(local, slug)
+			}
+
+			if len(local) == 0 {
+				return
+			}
+
+			slugsMu.Lock()
+			slugs = append(slugs, local...)
+			slugsMu.Unlock()
+		})
 	}
-	wg.Wait()
+	p2.Wait()
 
 	if len(slugs) == 0 {
 		return nil, fmt.Errorf("no manga slugs discovered from sitemap list")

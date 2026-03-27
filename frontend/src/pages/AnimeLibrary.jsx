@@ -1,27 +1,33 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { wails } from '../lib/wails'
 import { toastError } from '../components/ui/Toast'
 import TorrentSearch from '../components/ui/TorrentSearch'
+import VirtualMediaGrid from '../components/ui/VirtualMediaGrid'
+import BlurhashImage from '../components/ui/BlurhashImage'
 import { useI18n } from '../lib/i18n'
 
 export default function AnimeLibrary() {
-  const [anime, setAnime]           = useState([])
-  const [loading, setLoading]       = useState(true)
   const [scanning, setScanning]     = useState(false)
   const [scanResult, setScanResult] = useState(null)
   const [showTorrent, setShowTorrent] = useState(false)
   const navigate = useNavigate()
   const { t } = useI18n()
 
-  const load = useCallback(() => {
-    wails.getAnimeList()
-      .then(list => setAnime(list ?? []))
-      .catch(() => setAnime([]))
-      .finally(() => setLoading(false))
-  }, [])
-
-  useEffect(() => { load() }, [load])
+  const {
+    data: anime = [],
+    isLoading: loading,
+    refetch,
+  } = useQuery({
+    queryKey: ['anime-library'],
+    queryFn: async () => {
+      const list = await wails.getAnimeList()
+      return list ?? []
+    },
+    staleTime: 2 * 60_000,
+    gcTime: 15 * 60_000,
+  })
 
   const handleScan = useCallback(async () => {
     setScanning(true)
@@ -30,14 +36,14 @@ export default function AnimeLibrary() {
       const result = await wails.scanWithPicker()
       if (!result?.cancelled) {
         setScanResult(result)
-        load()
+        await refetch()
       }
     } catch (e) {
       toastError(`Error al escanear: ${e?.message ?? 'error desconocido'}`)
     } finally {
       setScanning(false)
     }
-  }, [load])
+  }, [refetch])
 
   if (loading) return (
     <div className="empty-state">
@@ -91,11 +97,12 @@ export default function AnimeLibrary() {
           </div>
         </div>
       ) : (
-        <div className="media-grid">
-          {anime.map(item => (
+        <VirtualMediaGrid
+          items={anime}
+          itemContent={(item) => (
             <div key={item.id} className="media-card" onClick={() => navigate(`/anime/${item.id}`)}>
               {item.cover_image
-                ? <img src={item.cover_image} alt={item.display_title} className="media-card-cover" />
+                ? <BlurhashImage src={item.cover_image} blurhash={item.cover_blurhash} alt={item.display_title} imgClassName="media-card-cover" />
                 : <div className="media-card-cover-placeholder">sin portada</div>
               }
               <div className="media-card-overlay" />
@@ -107,8 +114,8 @@ export default function AnimeLibrary() {
                 </div>
               </div>
             </div>
-          ))}
-        </div>
+          )}
+        />
       )}
     </div>
   )

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { proxyImage, wails } from '../../lib/wails'
 import {
   getMangaReaderProgress,
@@ -8,6 +8,10 @@ import {
   saveReaderViewMode,
 } from '../../lib/mangaReaderProgress'
 import { useI18n } from '../../lib/i18n'
+
+const INITIAL_VERTICAL_PAGE_BATCH = 8
+const VERTICAL_PAGE_BATCH_STEP = 6
+const VERTICAL_NEAR_END_PX = 1400
 
 export default function MangaReader({
   chapterID,
@@ -30,9 +34,11 @@ export default function MangaReader({
   const [rtl, setRtl] = useState(false)
   const [showControls, setShowControls] = useState(true)
   const [viewMode, setViewMode] = useState(getSavedReaderViewMode)
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VERTICAL_PAGE_BATCH)
 
   const hideTimer = useRef(null)
   const persistTimer = useRef(null)
+  const scrollFrame = useRef(0)
   const currentPageRef = useRef(0)
   const pageRefs = useRef([])
   const verticalRef = useRef(null)
@@ -41,6 +47,7 @@ export default function MangaReader({
   const chapterIndex = chapters.findIndex((chapter) => chapter.id === chapterID)
   const prevChapter = chapterIndex > 0 ? chapters[chapterIndex - 1] : null
   const nextChapter = chapterIndex >= 0 ? chapters[chapterIndex + 1] ?? null : null
+  const renderedPages = useMemo(() => pages.slice(0, visibleCount), [pages, visibleCount])
 
   const persistProgress = useCallback((pageIndex) => {
     if (!chapterID || pages.length === 0) return
@@ -109,17 +116,23 @@ export default function MangaReader({
     setError(null)
     setPages([])
     setCurrentPage(0)
+    setVisibleCount(INITIAL_VERTICAL_PAGE_BATCH)
     restoredRef.current = false
     pageRefs.current = []
 
     wails.getChapterPagesSource(sourceID, chapterID, dataSaver)
       .then((loadedPages) => {
-        const nextPages = loadedPages ?? []
+        const nextPages = (loadedPages ?? []).map((page, index) => ({
+          ...page,
+          proxy_url: proxyImage(page.url, { sourceID }),
+          key: page.index ?? index,
+        }))
         setPages(nextPages)
 
         const saved = getMangaReaderProgress(sourceID, mangaID, chapterID)
         if (saved?.progress_page > 1 && saved.progress_page <= nextPages.length) {
           setCurrentPage(saved.progress_page - 1)
+          setVisibleCount(Math.max(INITIAL_VERTICAL_PAGE_BATCH, saved.progress_page + 2))
         }
       })
       .catch((e) => setError(e?.message ?? (isEnglish ? 'Error loading pages' : 'Error al cargar paginas')))
@@ -175,9 +188,23 @@ export default function MangaReader({
   }, [currentPage, error, loading, mode, pages.length, schedulePersist])
 
   useEffect(() => {
+    if (mode !== 'paged' || pages.length === 0) return
+
+    const preloadTargets = [pages[currentPage - 1], pages[currentPage + 1]].filter(Boolean)
+    preloadTargets.forEach((page) => {
+      const image = new Image()
+      image.decoding = 'async'
+      image.src = page.proxy_url
+    })
+  }, [currentPage, mode, pages])
+
+  useEffect(() => {
     return () => {
       clearTimeout(hideTimer.current)
       clearTimeout(persistTimer.current)
+      if (scrollFrame.current) {
+        window.cancelAnimationFrame(scrollFrame.current)
+      }
       if (pages.length > 0) {
         persistProgress(currentPageRef.current)
       }
@@ -202,19 +229,32 @@ export default function MangaReader({
     const container = verticalRef.current
     if (!container || pageRefs.current.length === 0) return
 
-    const marker = container.scrollTop + (container.clientHeight * 0.35)
-    let visibleIndex = 0
+    if (scrollFrame.current) return
 
-    pageRefs.current.forEach((node, index) => {
-      if (!node) return
-      if (node.offsetTop <= marker) {
-        visibleIndex = index
+    scrollFrame.current = window.requestAnimationFrame(() => {
+      scrollFrame.current = 0
+
+      const marker = container.scrollTop + (container.clientHeight * 0.35)
+      let visibleIndex = 0
+
+      for (let index = 0; index < pageRefs.current.length; index += 1) {
+        const node = pageRefs.current[index]
+        if (!node) continue
+        if (node.offsetTop <= marker) {
+          visibleIndex = index
+          continue
+        }
+        break
       }
-    })
 
-    setCurrentPage((page) => (page === visibleIndex ? page : visibleIndex))
-    schedulePersist(visibleIndex)
-  }, [schedulePersist])
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - VERTICAL_NEAR_END_PX) {
+        setVisibleCount((count) => Math.min(count + VERTICAL_PAGE_BATCH_STEP, pages.length))
+      }
+
+      setCurrentPage((page) => (page === visibleIndex ? page : visibleIndex))
+      schedulePersist(visibleIndex)
+    })
+  }, [pages.length, schedulePersist])
 
   return (
     <div
@@ -359,16 +399,29 @@ export default function MangaReader({
           className="reader-vertical"
           onScroll={handleVerticalScroll}
         >
-          {pages.map((page, index) => (
+          {renderedPages.map((page, index) => (
             <img
-              key={page.index ?? index}
+              key={page.key}
               ref={(node) => { pageRefs.current[index] = node }}
-              src={proxyImage(page.url, { sourceID })}
+              src={page.proxy_url}
               alt={`${isEnglish ? 'Page' : 'Pagina'} ${index + 1}`}
               className="reader-page-vertical"
               loading="lazy"
+              decoding="async"
             />
           ))}
+
+          {visibleCount < pages.length && (
+            <div className="reader-loadmore-shell">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setVisibleCount((count) => Math.min(count + VERTICAL_PAGE_BATCH_STEP, pages.length))}
+              >
+                {isEnglish ? `Load more pages (${pages.length - visibleCount} left)` : `Cargar mas paginas (${pages.length - visibleCount} restantes)`}
+              </button>
+            </div>
+          )}
 
           <div className="reader-end-marker">
             <span>{isEnglish ? 'End of chapter' : 'Fin del capitulo'}</span>
@@ -392,10 +445,11 @@ export default function MangaReader({
       {!loading && !error && mode === 'paged' && pages.length > 0 && (
         <div className="reader-paged">
           <img
-            key={pages[currentPage]?.url}
-            src={proxyImage(pages[currentPage]?.url, { sourceID })}
+            key={pages[currentPage]?.proxy_url}
+            src={pages[currentPage]?.proxy_url}
             alt={`${isEnglish ? 'Page' : 'Pagina'} ${currentPage + 1}`}
             className="reader-page-single"
+            decoding="async"
           />
 
           <div

@@ -11,14 +11,48 @@ package animeflv
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
+	neturl "net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	azuretls "github.com/Noooste/azuretls-client"
+	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/launcher"
+	"github.com/go-rod/rod/lib/proto"
+	"miruro/backend/httpclient"
 )
 
-var resolverClient = &http.Client{Timeout: 12 * time.Second}
+var resolverSession = httpclient.NewSession(12)
+
+type cachedResolvedStream struct {
+	stream    *ResolvedStream
+	expiresAt time.Time
+}
+
+var (
+	resolvePlayableCache   sync.Map
+	resolvePlayableSuccess = 30 * time.Minute
+	resolvePlayableFailure = 2 * time.Minute
+)
+
+// IsAnalyticsURL returns true if the URL belongs to a known analytics/tracking
+// service. These must never be returned as stream URLs.
+func IsAnalyticsURL(u string) bool {
+	for _, domain := range []string{
+		"mc.yandex.ru", "yandex.ru/metrika",
+		"google-analytics.com", "googletagmanager.com",
+		"googlesyndication.com", "doubleclick.net",
+		"facebook.com/tr", "connect.facebook.net",
+	} {
+		if strings.Contains(u, domain) {
+			return true
+		}
+	}
+	return false
+}
 
 // ResolvedStream is a direct playable URL returned by a resolver.
 type ResolvedStream struct {
@@ -47,6 +81,8 @@ func Resolve(embedURL string) (*ResolvedStream, error) {
 		strings.Contains(embedURL, "sfastwish"), strings.Contains(embedURL, "streamwish.to"),
 		strings.Contains(embedURL, "awish"):
 		return resolveStreamwish(embedURL)
+	case strings.Contains(embedURL, "megaup"):
+		return resolveMegaUp(embedURL)
 	case strings.Contains(embedURL, "dood"), strings.Contains(embedURL, "doodstream"):
 		return resolveDoodstream(embedURL)
 	case strings.Contains(embedURL, "streamhide"), strings.Contains(embedURL, "guccihide"),
@@ -66,35 +102,339 @@ func Resolve(embedURL string) (*ResolvedStream, error) {
 	}
 }
 
+func inferResolvedType(raw string) string {
+	if strings.Contains(strings.ToLower(strings.TrimSpace(raw)), ".m3u8") {
+		return "hls"
+	}
+	return "mp4"
+}
+
+func extractAnalyticsWrappedURL(raw string) string {
+	parsed, err := neturl.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+
+	for _, key := range []string{"page-url", "url", "target"} {
+		value := strings.TrimSpace(parsed.Query().Get(key))
+		if strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://") {
+			return value
+		}
+	}
+	return ""
+}
+
+// LooksLikePlayableURL returns true for URLs that can be handed to MPV or the
+// integrated player directly without another embed-resolution pass.
+func LooksLikePlayableURL(raw string) bool {
+	value := strings.TrimSpace(raw)
+	return (strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://")) &&
+		!IsAnalyticsURL(value) &&
+		!IsEmbedPageURL(value)
+}
+
+// ResolvePlayable follows nested embed pages until it reaches a direct stream
+// URL or clearly fails. This protects the player from opening HTML/embed pages
+// that only look like media URLs.
+func ResolvePlayable(embedURL string) (*ResolvedStream, error) {
+	current := strings.TrimSpace(embedURL)
+	if current == "" {
+		return nil, fmt.Errorf("empty embed url")
+	}
+	if cached, ok := cachedPlayableStream(current); ok {
+		return cached, nil
+	}
+
+	seen := map[string]bool{}
+	for depth := 0; depth < 4; depth++ {
+		if seen[current] {
+			return nil, fmt.Errorf("embed resolution loop detected")
+		}
+		seen[current] = true
+
+		if LooksLikePlayableURL(current) {
+			resolved := &ResolvedStream{
+				URL:     current,
+				Quality: "unknown",
+				Type:    inferResolvedType(current),
+			}
+			storePlayableStream(current, resolved, true)
+			return resolved, nil
+		}
+
+		resolved, err := Resolve(current)
+		if err != nil || resolved == nil || strings.TrimSpace(resolved.URL) == "" {
+			resolved, err = BrowserResolveMedia(current)
+			if err != nil || resolved == nil || strings.TrimSpace(resolved.URL) == "" {
+				if err != nil {
+					storePlayableStream(embedURL, nil, false)
+					return nil, err
+				}
+				storePlayableStream(embedURL, nil, false)
+				return nil, fmt.Errorf("resolver returned empty stream")
+			}
+		}
+
+		next := strings.TrimSpace(resolved.URL)
+		if IsAnalyticsURL(next) {
+			if wrapped := extractAnalyticsWrappedURL(next); wrapped != "" {
+				current = wrapped
+				continue
+			}
+			return nil, fmt.Errorf("resolver returned analytics url")
+		}
+
+		if LooksLikePlayableURL(next) {
+			final := &ResolvedStream{
+				URL:     next,
+				Quality: firstNonEmptyResolvedQuality(resolved.Quality),
+				Type:    firstNonEmptyResolvedType(resolved.Type, inferResolvedType(next)),
+			}
+			storePlayableStream(embedURL, final, true)
+			return final, nil
+		}
+
+		if !IsEmbedPageURL(next) {
+			storePlayableStream(embedURL, nil, false)
+			return nil, fmt.Errorf("resolver returned non-playable url")
+		}
+		current = next
+	}
+
+	storePlayableStream(embedURL, nil, false)
+	return nil, fmt.Errorf("could not resolve playable stream")
+}
+
+func cachedPlayableStream(embedURL string) (*ResolvedStream, bool) {
+	value, ok := resolvePlayableCache.Load(strings.TrimSpace(embedURL))
+	if !ok {
+		return nil, false
+	}
+	entry, ok := value.(cachedResolvedStream)
+	if !ok || time.Now().After(entry.expiresAt) {
+		resolvePlayableCache.Delete(strings.TrimSpace(embedURL))
+		return nil, false
+	}
+	if entry.stream == nil {
+		return nil, false
+	}
+	copy := *entry.stream
+	return &copy, true
+}
+
+func storePlayableStream(embedURL string, stream *ResolvedStream, success bool) {
+	ttl := resolvePlayableFailure
+	if success {
+		ttl = resolvePlayableSuccess
+	}
+	var copyStream *ResolvedStream
+	if stream != nil {
+		copyValue := *stream
+		copyStream = &copyValue
+	}
+	resolvePlayableCache.Store(strings.TrimSpace(embedURL), cachedResolvedStream{
+		stream:    copyStream,
+		expiresAt: time.Now().Add(ttl),
+	})
+}
+
+func firstNonEmptyResolvedQuality(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return "unknown"
+}
+
+func firstNonEmptyResolvedType(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return "mp4"
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Streamtape
 // Streamtape obfuscates the download link by splitting a token across two
 // JS variables and concatenating them. We fetch the page and reconstruct it.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Streamtape obfuscation patterns — they periodically change the JS format
+// but the CDN URL always comes from tapecontent.net.
 var streamtapeTokenA = regexp.MustCompile(`robotlink'\)\.innerHTML = '(.+?)'`)
 var streamtapeTokenB = regexp.MustCompile(`\+ '(.+?)'`)
 
+// Broader patterns that survive obfuscation changes:
+// Matches two adjacent string concatenations forming the CDN path
+var streamtapeInnerRe = regexp.MustCompile(`innerHTML\s*=\s*["']([^"']+)["']\s*\+\s*["']([^"']+)["']`)
+var streamtapeInner2Re = regexp.MustCompile(`innerHTML\s*=\s*["']([^"']+)["']`)
+var streamtapeSubstrRe = regexp.MustCompile(`innerHTML\s*=\s*\(["']([^"']+)["']\)\.substring\((\d+)\)`)
+var streamtapeVarConcatRe = regexp.MustCompile(`(?:var\s+\w+\s*=\s*|=\s*)["'](/[^"']*tapecontent[^"']+)["']`)
+
+// Last resort: find any tapecontent.net path fragment in the JS
+var streamtapeCDNRe = regexp.MustCompile(`//([\d]+\.tapecontent\.net/[^"'\s<>\]\\)]+)`)
+
 func resolveStreamtape(embedURL string) (*ResolvedStream, error) {
-	body, err := fetchPage(embedURL, embedURL)
+	// Streamtape redirects /e/ to /v/ sometimes — normalise
+	body, err := fetchPage(embedURL, "https://streamtape.com")
 	if err != nil {
 		return nil, fmt.Errorf("streamtape fetch: %w", err)
 	}
 
+	// Pattern 1 (classic): robotlink innerHTML = 'A' + 'B'
 	matchA := streamtapeTokenA.FindStringSubmatch(body)
 	matchB := streamtapeTokenB.FindStringSubmatch(body)
-	if len(matchA) < 2 || len(matchB) < 2 {
-		return nil, fmt.Errorf("streamtape: token not found in page")
+	if len(matchA) >= 2 && len(matchB) >= 2 {
+		tokenA := matchA[1]
+		tokenB := matchB[1]
+		combined := tokenA[:len(tokenA)-len(tokenB)] + tokenB
+		directURL := "https:" + combined
+		if isValidStreamURL(directURL) {
+			return &ResolvedStream{URL: directURL, Quality: "720p", Type: "mp4"}, nil
+		}
 	}
 
-	// Combine token parts — Streamtape's obfuscation is just string concatenation
-	tokenA := matchA[1]
-	tokenB := matchB[1]
-	// tokenA ends partway through, tokenB overlaps — trim tokenA to the overlap
-	combined := tokenA[:len(tokenA)-len(tokenB)] + tokenB
-	directURL := "https:" + combined
+	// Pattern 2: innerHTML = 'A' + 'B'  (newer format, no robotlink prefix)
+	if m := streamtapeInnerRe.FindStringSubmatch(body); len(m) >= 3 {
+		directURL := "https:" + m[1] + m[2]
+		if isValidStreamURL(directURL) && !IsEmbedPageURL(directURL) {
+			return &ResolvedStream{URL: directURL, Quality: "720p", Type: "mp4"}, nil
+		}
+	}
 
-	return &ResolvedStream{URL: directURL, Quality: "720p", Type: "mp4"}, nil
+	// Pattern 3: innerHTML = ('longstring').substring(N)
+	if m := streamtapeSubstrRe.FindStringSubmatch(body); len(m) >= 3 {
+		var start int
+		if _, err := fmt.Sscanf(m[2], "%d", &start); err != nil {
+			start = -1
+		}
+		if start >= 0 && start < len(m[1]) {
+			directURL := "https:" + m[1][start:]
+			if isValidStreamURL(directURL) && !IsEmbedPageURL(directURL) {
+				return &ResolvedStream{URL: directURL, Quality: "720p", Type: "mp4"}, nil
+			}
+		}
+	}
+
+	// Pattern 4: variable assignment with tapecontent in value
+	if m := streamtapeVarConcatRe.FindStringSubmatch(body); len(m) >= 2 {
+		directURL := "https:" + m[1]
+		if isValidStreamURL(directURL) {
+			return &ResolvedStream{URL: directURL, Quality: "720p", Type: "mp4"}, nil
+		}
+	}
+
+	// Pattern 5: raw CDN URL fragment anywhere in the page JS
+	if m := streamtapeCDNRe.FindStringSubmatch(body); len(m) >= 2 {
+		directURL := "https://" + m[1]
+		if isValidStreamURL(directURL) {
+			return &ResolvedStream{URL: directURL, Quality: "720p", Type: "mp4"}, nil
+		}
+	}
+
+	// Browser fallback — also tries clicking Streamtape's download/play button
+	if resolved, err := browserResolveStreamtape(embedURL); err == nil {
+		return resolved, nil
+	}
+	return nil, fmt.Errorf("streamtape: CDN URL not found in page")
+}
+
+func isValidStreamURL(u string) bool {
+	return strings.HasPrefix(u, "https://") &&
+		!strings.ContainsAny(u, "<>\"' \t\n") &&
+		len(u) < 600
+}
+
+// browserResolveStreamtape uses a headless browser to load the Streamtape embed,
+// captures the tapecontent.net CDN request via network events, and returns it.
+func browserResolveStreamtape(embedURL string) (*ResolvedStream, error) {
+	browserPath, found := launcher.LookPath()
+	if !found {
+		return nil, fmt.Errorf("browser not found")
+	}
+
+	controlURL, err := launcher.New().
+		Bin(browserPath).
+		Leakless(false).
+		Headless(true).
+		Set("disable-gpu").
+		Set("no-first-run").
+		Set("no-default-browser-check").
+		Launch()
+	if err != nil {
+		return nil, err
+	}
+
+	browser := rod.New().ControlURL(controlURL)
+	if err := browser.Connect(); err != nil {
+		return nil, err
+	}
+	defer browser.Close()
+
+	// Capture tapecontent.net CDN requests via network events
+	var capturedURL string
+	var captureMu sync.Mutex
+	go browser.EachEvent(func(ev *proto.NetworkResponseReceived) bool {
+		u := ev.Response.URL
+		if strings.Contains(u, "tapecontent.net") {
+			captureMu.Lock()
+			capturedURL = u
+			captureMu.Unlock()
+		}
+		return false
+	})()
+
+	page, err := browser.Page(proto.TargetCreateTarget{URL: embedURL})
+	if err != nil {
+		return nil, err
+	}
+	defer page.Close()
+
+	time.Sleep(1500 * time.Millisecond)
+
+	// Click Streamtape's download/play button
+	shortPage := page.Timeout(1500 * time.Millisecond)
+	for _, sel := range []string{"#downloadbtn", ".downloadbtn", ".btn-download", "#btn-download", "video", "[id*=download]"} {
+		if el, clickErr := shortPage.Element(sel); clickErr == nil {
+			_ = el.Click(proto.InputMouseButtonLeft, 1)
+			break
+		}
+	}
+
+	// Wait for the CDN request
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		captureMu.Lock()
+		u := capturedURL
+		captureMu.Unlock()
+		if u != "" {
+			return &ResolvedStream{URL: u, Quality: "720p", Type: "mp4"}, nil
+		}
+
+		// Also check JS for the CDN URL
+		result, evalErr := page.Eval(`() => {
+			const el = document.getElementById('robotlink');
+			if (el && el.innerHTML) return el.innerHTML;
+			return null;
+		}`)
+		if evalErr == nil && result.Value.Str() != "" {
+			v := strings.TrimSpace(result.Value.Str())
+			if strings.Contains(v, "tapecontent.net") {
+				directURL := "https:" + v
+				if !strings.HasPrefix(v, "//") {
+					directURL = v
+				}
+				if isValidStreamURL(directURL) {
+					return &ResolvedStream{URL: directURL, Quality: "720p", Type: "mp4"}, nil
+				}
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("streamtape browser: CDN URL not captured")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,15 +531,33 @@ func resolveYourUpload(embedURL string) (*ResolvedStream, error) {
 // Mp4Upload embeds the URL in a player config script block.
 // ─────────────────────────────────────────────────────────────────────────────
 
-var mp4UploadSrcRe = regexp.MustCompile(`src:"(https?://[^"]+\.mp4[^"]*)"`)
+// MP4Upload uses Video.js: player.src({src: "https://a4.mp4upload.com:183/d/.../video.mp4", type: "video/mp4"})
+// The src key may use single or double quotes, with optional whitespace.
+var mp4UploadSrcRe = regexp.MustCompile(`src:\s*["'](https?://[^"']+\.mp4[^"']*)["']`)
+var mp4UploadFileRe = regexp.MustCompile(`file:\s*["'](https?://[^"']+\.mp4[^"']*)["']`)
 
 func resolveMp4Upload(embedURL string) (*ResolvedStream, error) {
+	// Normalize URL: /embed-CODE.html and /CODE both need the embed format
+	if !strings.Contains(embedURL, "/embed-") {
+		parts := strings.Split(strings.TrimRight(embedURL, "/"), "/")
+		code := parts[len(parts)-1]
+		embedURL = fmt.Sprintf("https://www.mp4upload.com/embed-%s.html", code)
+	}
+
 	body, err := fetchPage(embedURL, embedURL)
 	if err != nil {
 		return nil, fmt.Errorf("mp4upload fetch: %w", err)
 	}
 
 	match := mp4UploadSrcRe.FindStringSubmatch(body)
+	if len(match) < 2 {
+		match = mp4UploadFileRe.FindStringSubmatch(body)
+	}
+	if len(match) < 2 {
+		// Last resort: any mp4upload CDN URL in the page
+		cdnRe := regexp.MustCompile(`(https?://[a-z0-9]+\.mp4upload\.com[^\s"'<>]+\.mp4[^\s"'<>]*)`)
+		match = cdnRe.FindStringSubmatch(body)
+	}
 	if len(match) < 2 {
 		return nil, fmt.Errorf("mp4upload: src URL not found")
 	}
@@ -249,6 +607,17 @@ func resolveFilemoon(embedURL string) (*ResolvedStream, error) {
 		return &ResolvedStream{URL: m[1], Quality: "1080p", Type: "hls"}, nil
 	}
 
+	// Filemoon also uses eval-packed JS
+	for _, unpacked := range unpackAllEvals(body) {
+		if m := filemoonM3U8Re.FindStringSubmatch(unpacked); len(m) >= 2 {
+			return &ResolvedStream{URL: m[1], Quality: "1080p", Type: "hls"}, nil
+		}
+		// Broader search in unpacked JS
+		if m := streamwishM3U8Re.FindStringSubmatch(unpacked); len(m) >= 2 {
+			return &ResolvedStream{URL: m[1], Quality: "1080p", Type: "hls"}, nil
+		}
+	}
+
 	return nil, fmt.Errorf("filemoon: m3u8 not found")
 }
 
@@ -258,8 +627,8 @@ func resolveFilemoon(embedURL string) (*ResolvedStream, error) {
 // Stores the HLS URL in a jwplayer setup call or sources array.
 // ─────────────────────────────────────────────────────────────────────────────
 
-var streamwishM3U8Re  = regexp.MustCompile(`file\s*:\s*"(https?://[^"]+\.m3u8[^"]*)"`)
-var streamwishSrcRe   = regexp.MustCompile(`sources\s*:\s*\[\s*\{[^}]*file\s*:\s*"(https?://[^"]+)"`)
+var streamwishM3U8Re = regexp.MustCompile(`file\s*:\s*"(https?://[^"]+\.m3u8[^"]*)"`)
+var streamwishSrcRe = regexp.MustCompile(`sources\s*:\s*\[\s*\{[^}]*file\s*:\s*"(https?://[^"]+)"`)
 
 func resolveStreamwish(embedURL string) (*ResolvedStream, error) {
 	body, err := fetchPage(embedURL, embedURL)
@@ -267,13 +636,34 @@ func resolveStreamwish(embedURL string) (*ResolvedStream, error) {
 		return nil, fmt.Errorf("streamwish fetch: %w", err)
 	}
 
+	// Try direct extraction first (unobfuscated pages)
 	if m := streamwishM3U8Re.FindStringSubmatch(body); len(m) >= 2 {
 		return &ResolvedStream{URL: m[1], Quality: "1080p", Type: "hls"}, nil
 	}
 	if m := streamwishSrcRe.FindStringSubmatch(body); len(m) >= 2 {
 		return &ResolvedStream{URL: m[1], Quality: "720p", Type: "mp4"}, nil
 	}
+
+	// Streamwish often uses eval(function(p,a,c,k,e,d){...}) packing.
+	// Unpack all eval blocks and search for the m3u8 URL inside.
+	for _, unpacked := range unpackAllEvals(body) {
+		if m := streamwishM3U8Re.FindStringSubmatch(unpacked); len(m) >= 2 {
+			return &ResolvedStream{URL: m[1], Quality: "1080p", Type: "hls"}, nil
+		}
+		if m := streamwishSrcRe.FindStringSubmatch(unpacked); len(m) >= 2 {
+			return &ResolvedStream{URL: m[1], Quality: "720p", Type: "mp4"}, nil
+		}
+	}
+	// Browser fallback intentionally omitted — too slow when many providers are tried
+	// sequentially. Faster providers (Streamtape, OkRu, YourUpload) are preferred.
 	return nil, fmt.Errorf("streamwish: stream URL not found")
+}
+
+func resolveMegaUp(embedURL string) (*ResolvedStream, error) {
+	if resolved, err := browserResolveMedia(embedURL); err == nil {
+		return resolved, nil
+	}
+	return nil, fmt.Errorf("megaup: stream URL not found")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -282,8 +672,8 @@ func resolveStreamwish(embedURL string) (*ResolvedStream, error) {
 // then combines them for the final stream URL.
 // ─────────────────────────────────────────────────────────────────────────────
 
-var doodPassRe    = regexp.MustCompile(`\$\.get\('/pass_md5/([^']+)'`)
-var doodTokenRe   = regexp.MustCompile(`token=([a-zA-Z0-9]+)`)
+var doodPassRe = regexp.MustCompile(`\$\.get\('/pass_md5/([^']+)'`)
+var doodTokenRe = regexp.MustCompile(`token=([a-zA-Z0-9]+)`)
 
 func resolveDoodstream(embedURL string) (*ResolvedStream, error) {
 	body, err := fetchPage(embedURL, embedURL)
@@ -342,7 +732,7 @@ func resolveStreamhide(embedURL string) (*ResolvedStream, error) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 var genericM3U8Re = regexp.MustCompile(`https?://[^\s"'<>]+\.m3u8[^\s"'<>]*`)
-var genericMP4Re  = regexp.MustCompile(`https?://[^\s"'<>]+\.mp4[^\s"'<>]*`)
+var genericMP4Re = regexp.MustCompile(`https?://[^\s"'<>]+\.mp4[^\s"'<>]*`)
 
 func resolveGenericM3U8(embedURL string) (*ResolvedStream, error) {
 	body, err := fetchPage(embedURL, embedURL)
@@ -357,6 +747,135 @@ func resolveGenericM3U8(embedURL string) (*ResolvedStream, error) {
 		return &ResolvedStream{URL: m, Quality: "unknown", Type: "mp4"}, nil
 	}
 	return nil, fmt.Errorf("generic: no stream URL found in page")
+}
+
+func browserResolveMedia(embedURL string) (*ResolvedStream, error) {
+	browserPath, found := launcher.LookPath()
+	if !found {
+		return nil, fmt.Errorf("browser not found")
+	}
+
+	controlURL, err := launcher.New().
+		Bin(browserPath).
+		Leakless(false).
+		Headless(true).
+		Set("disable-gpu").
+		Set("no-first-run").
+		Set("no-default-browser-check").
+		Launch()
+	if err != nil {
+		return nil, err
+	}
+
+	browser := rod.New().ControlURL(controlURL)
+	if err := browser.Connect(); err != nil {
+		return nil, err
+	}
+	defer browser.Close()
+
+	page, err := browser.Page(proto.TargetCreateTarget{URL: embedURL})
+	if err != nil {
+		return nil, err
+	}
+	defer page.Close()
+
+	// Give the page a moment to start loading, then trigger play.
+	time.Sleep(2 * time.Second)
+
+	// Try clicking play buttons with a SHORT timeout per selector.
+	// rod's default Element() timeout is ~30s which causes multi-minute hangs
+	// when selectors don't exist on the page.
+	shortPage := page.Timeout(1500 * time.Millisecond)
+	for _, selector := range []string{
+		".play-btn", "#play-btn", ".plyr__control--overlaid",
+		".jw-icon-display", ".jw-display-icon-container",
+		".vjs-big-play-button", "button[title='Play']",
+		"video",
+	} {
+		if el, clickErr := shortPage.Element(selector); clickErr == nil {
+			_ = el.Click(proto.InputMouseButtonLeft, 1)
+			break // no sleep — polling loop below handles waiting
+		}
+	}
+	// Also try JS-level play trigger
+	_, _ = page.Eval(`() => { const v = document.querySelector('video'); if(v) v.play(); }`)
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		result, evalErr := page.Eval(`() => JSON.stringify({
+			media: Array.from(document.querySelectorAll('video, video source')).map(node => node.currentSrc || node.src || '').filter(Boolean),
+			resources: (performance.getEntriesByType ? performance.getEntriesByType('resource') : []).map(entry => entry.name || '').filter(Boolean),
+			html: document.documentElement.outerHTML || '',
+		})`)
+		if evalErr == nil {
+			var payload struct {
+				Media     []string `json:"media"`
+				Resources []string `json:"resources"`
+				HTML      string   `json:"html"`
+			}
+			if json.Unmarshal([]byte(result.Value.Str()), &payload) == nil {
+				for _, mediaURL := range payload.Media {
+					if IsAnalyticsURL(mediaURL) {
+						continue
+					}
+					if strings.Contains(mediaURL, ".m3u8") {
+						return &ResolvedStream{URL: mediaURL, Quality: "unknown", Type: "hls"}, nil
+					}
+					if strings.Contains(mediaURL, ".mp4") {
+						return &ResolvedStream{URL: mediaURL, Quality: "unknown", Type: "mp4"}, nil
+					}
+				}
+				for _, resourceURL := range payload.Resources {
+					if IsAnalyticsURL(resourceURL) {
+						continue
+					}
+					// Check only the URL path — not query string — so analytics
+					// pixels (e.g. Yandex Metrica) that encode ".mp4" in their
+					// page-url query param are not mistaken for video streams.
+					rp := resourceURL
+					if parsed, parseErr := neturl.Parse(resourceURL); parseErr == nil {
+						rp = parsed.Path
+					}
+					if strings.Contains(rp, ".m3u8") {
+						return &ResolvedStream{URL: resourceURL, Quality: "unknown", Type: "hls"}, nil
+					}
+					if strings.Contains(rp, ".mp4") {
+						return &ResolvedStream{URL: resourceURL, Quality: "unknown", Type: "mp4"}, nil
+					}
+				}
+				if m := genericM3U8Re.FindString(payload.HTML); m != "" {
+					if !IsAnalyticsURL(m) {
+						return &ResolvedStream{URL: m, Quality: "unknown", Type: "hls"}, nil
+					}
+				}
+				if m := genericMP4Re.FindString(payload.HTML); m != "" {
+					// genericMP4Re can match embed-page URLs whose path contains
+					// ".mp4" as a filename (e.g. streamtape.com/e/xxx/video.mp4).
+					// These are HTML pages, not playable streams — never return them raw.
+					if IsEmbedPageURL(m) || IsAnalyticsURL(m) {
+						// silently skip — returning an embed page URL to MPV is fatal
+					} else {
+						return &ResolvedStream{URL: m, Quality: "unknown", Type: "mp4"}, nil
+					}
+				}
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	return nil, fmt.Errorf("browser media url not found")
+}
+
+// IsEmbedPageURL returns true if the URL is clearly an embed *page* (HTML)
+// rather than a direct video stream file. These must never be sent to MPV.
+func IsEmbedPageURL(u string) bool {
+	return strings.Contains(u, "streamtape.com/e/") ||
+		strings.Contains(u, "mp4upload.com/embed") ||
+		strings.Contains(u, "filemoon.") && strings.Contains(u, "/e/") ||
+		strings.Contains(u, "streamwish.") && strings.Contains(u, "/e/") ||
+		strings.Contains(u, "ok.ru/videoembed") ||
+		strings.Contains(u, "saidochesto.") ||
+		strings.Contains(u, "/embed")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -430,44 +949,101 @@ func FetchPage(url, referer string) (string, error) {
 	return fetchPage(url, referer)
 }
 
+// BrowserResolveMedia is an exported wrapper around browserResolveMedia,
+// allowing other extension packages to leverage the shared rod-based resolver.
+func BrowserResolveMedia(embedURL string) (*ResolvedStream, error) {
+	return browserResolveMedia(embedURL)
+}
+
 // FetchPageWithHeaders fetches a URL with additional custom headers.
 func FetchPageWithHeaders(url, referer string, headers map[string]string) (string, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", err
+	oh := azuretls.OrderedHeaders{
+		{"Referer", referer},
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", referer)
-	req.Header.Set("Accept-Language", "es-419,es;q=0.9")
 	for k, v := range headers {
-		req.Header.Set(k, v)
+		oh = append(oh, []string{k, v})
 	}
-	resp, err := resolverClient.Do(req)
+	req := &azuretls.Request{
+		Url:            url,
+		Method:         "GET",
+		OrderedHeaders: oh,
+	}
+	resp, err := resolverSession.Do(req)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(resp.Body)
-	return string(b), err
+	return string(resp.Body), nil
 }
 
 func fetchPage(url, referer string) (string, error) {
-	req, err := http.NewRequest("GET", url, nil)
+	resp, err := httpclient.Get(resolverSession, url, referer)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", referer)
-	req.Header.Set("Accept-Language", "es-419,es;q=0.9")
+	return string(resp.Body), nil
+}
 
-	resp, err := resolverClient.Do(req)
-	if err != nil {
-		return "", err
+// ─────────────────────────────────────────────────────────────────────────────
+// eval(function(p,a,c,k,e,d){...}) unpacker
+// Many embed providers (Streamwish, Filemoon, etc.) hide the real stream URL
+// inside a JavaScript packer. This unpacker extracts the encoded string and
+// keyword table, then reconstructs the original JS containing the stream URL.
+// ─────────────────────────────────────────────────────────────────────────────
+
+func unpackAllEvals(body string) []string {
+	evalRe := regexp.MustCompile(`eval\(function\(p,a,c,k,e,(?:r|d)\)`)
+	argsRe := regexp.MustCompile(`\}\s*\('([\s\S]+?)',\s*(\d+),\s*\d+,\s*'([\s\S]+?)'\.split\('\|'\)`)
+	wordRe := regexp.MustCompile(`\b(\w+)\b`)
+
+	locs := evalRe.FindAllStringIndex(body, -1)
+	var results []string
+
+	for _, loc := range locs {
+		packed := body[loc[0]:]
+		m := argsRe.FindStringSubmatch(packed)
+		if len(m) < 4 {
+			continue
+		}
+		encodedStr := m[1]
+		base, err := strconv.Atoi(m[2])
+		if err != nil || base < 2 {
+			continue
+		}
+		keywords := strings.Split(m[3], "|")
+
+		result := wordRe.ReplaceAllStringFunc(encodedStr, func(token string) string {
+			idx := parseBaseN(token, base)
+			if idx < 0 || idx >= len(keywords) || keywords[idx] == "" {
+				return token
+			}
+			return keywords[idx]
+		})
+		results = append(results, result)
 	}
-	defer resp.Body.Close()
+	return results
+}
 
-	b, err := io.ReadAll(resp.Body)
-	return string(b), err
+func parseBaseN(s string, base int) int {
+	if s == "" {
+		return -1
+	}
+	if base <= 36 {
+		n, err := strconv.ParseInt(s, base, 64)
+		if err != nil {
+			return -1
+		}
+		return int(n)
+	}
+	const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	result := 0
+	for _, c := range s {
+		idx := strings.IndexRune(chars, c)
+		if idx == -1 {
+			return -1
+		}
+		result = result*base + idx
+	}
+	return result
 }
 
 func htmlDecode(s string) string {

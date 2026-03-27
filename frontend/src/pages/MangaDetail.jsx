@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { wails } from '../lib/wails'
 import { toastError } from '../components/ui/Toast'
+import BlurhashImage from '../components/ui/BlurhashImage'
 
 function ChapterRow({ ch, onOpen }) {
   return (
@@ -88,7 +89,7 @@ export default function MangaDetail() {
 
         <div className="detail-hero-content">
           {manga.cover_image && (
-            <img src={manga.cover_image} alt={manga.display_title} className="detail-cover" />
+            <BlurhashImage src={manga.cover_image} blurhash={manga.cover_blurhash} alt={manga.display_title} imgClassName="detail-cover" />
           )}
           <div className="detail-info">
             <h1 className="detail-title">{manga.display_title}</h1>

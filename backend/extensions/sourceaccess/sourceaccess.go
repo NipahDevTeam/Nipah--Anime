@@ -1,18 +1,19 @@
 package sourceaccess
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	azuretls "github.com/Noooste/azuretls-client"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
+
+	"miruro/backend/httpclient"
 )
 
 const browserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -57,15 +58,7 @@ var (
 	sessionMu sync.Mutex
 	sessions  = map[string]*sessionCache{}
 
-	httpClient = &http.Client{
-		Timeout: 20 * time.Second,
-		Transport: &http.Transport{
-			Proxy:               http.ProxyFromEnvironment,
-			MaxIdleConns:        64,
-			MaxIdleConnsPerHost: 16,
-			IdleConnTimeout:     90 * time.Second,
-		},
-	}
+	session = httpclient.NewSession(20)
 )
 
 func RegisterProfile(profile SourceAccessProfile) {
@@ -200,17 +193,7 @@ func doRequest(profile SourceAccessProfile, rawURL string, opts RequestOptions, 
 func performRequest(profile SourceAccessProfile, rawURL string, opts RequestOptions) (*responseData, error) {
 	method := strings.TrimSpace(opts.Method)
 	if method == "" {
-		method = http.MethodGet
-	}
-
-	var bodyReader io.Reader
-	if len(opts.Body) > 0 {
-		bodyReader = bytes.NewReader(opts.Body)
-	}
-
-	req, err := http.NewRequest(method, rawURL, bodyReader)
-	if err != nil {
-		return nil, err
+		method = "GET"
 	}
 
 	referer := opts.Referer
@@ -218,35 +201,48 @@ func performRequest(profile SourceAccessProfile, rawURL string, opts RequestOpti
 		referer = profile.DefaultReferer
 	}
 
-	req.Header.Set("User-Agent", browserUA)
-	req.Header.Set("Referer", referer)
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9,es;q=0.8")
+	// Build per-request headers (merged on top of session defaults)
+	reqHeaders := azuretls.OrderedHeaders{
+		{"Referer", referer},
+	}
 	for k, v := range opts.Headers {
-		req.Header.Set(k, v)
+		reqHeaders = append(reqHeaders, []string{k, v})
 	}
 
-	if session := validSession(profile.SourceID); session != nil {
-		for _, cookie := range session {
-			req.AddCookie(cookie)
+	// Inject browser-solved cookies if available
+	if cookies := validSession(profile.SourceID); cookies != nil {
+		var parts []string
+		for _, c := range cookies {
+			parts = append(parts, c.Name+"="+c.Value)
 		}
+		reqHeaders = append(reqHeaders, []string{"Cookie", strings.Join(parts, "; ")})
 	}
 
-	resp, err := httpClient.Do(req)
+	req := &azuretls.Request{
+		Method:         method,
+		Url:            rawURL,
+		OrderedHeaders: reqHeaders,
+	}
+	if len(opts.Body) > 0 {
+		req.Body = opts.Body
+	}
+
+	resp, err := session.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	// Convert fhttp.Header to net/http.Header for downstream compatibility
+	stdHeaders := make(http.Header)
+	for k, v := range resp.Header {
+		stdHeaders[k] = v
 	}
 
 	data := &responseData{
 		status:      resp.StatusCode,
-		contentType: resp.Header.Get("Content-Type"),
-		body:        body,
-		headers:     resp.Header.Clone(),
+		contentType: stdHeaders.Get("Content-Type"),
+		body:        resp.Body,
+		headers:     stdHeaders,
 	}
 	return data, nil
 }
@@ -495,32 +491,20 @@ func IsBlocked(sourceID string, status int, headers http.Header, body []byte) bo
 }
 
 func FetchExternalImage(rawURL, referer string) ([]byte, string, int, error) {
-	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	resp, err := httpclient.Get(session, rawURL, referer)
 	if err != nil {
 		return nil, "", 0, err
 	}
-	req.Header.Set("User-Agent", browserUA)
-	if referer != "" {
-		req.Header.Set("Referer", referer)
+	ct := ""
+	if resp.Header != nil {
+		ct = resp.Header.Get("Content-Type")
 	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, "", 0, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", 0, err
-	}
-
-	return body, resp.Header.Get("Content-Type"), resp.StatusCode, nil
+	return resp.Body, ct, resp.StatusCode, nil
 }
 
 func ContentTypeOrJPEG(contentType string, body []byte) string {
 	if strings.HasPrefix(strings.ToLower(contentType), "image/") {
 		return contentType
 	}
-	return http.DetectContentType(bytes.TrimSpace(body))
+	return http.DetectContentType(body)
 }
