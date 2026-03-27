@@ -72,7 +72,7 @@ Built with **Go, React, and Wails**, it aims to feel fast, native, and focused, 
 - Local-first sync queue with retry behavior for AniList jobs
 
 ### UI and Experience
-- Bilingual interface: **English / Espanol**
+- Bilingual interface: **English / Español**
 - Catalog-first Home with anime and manga sections
 - Cleaner featured hero, tighter layout, and auto-rotating spotlight
 - BlurHash support for local covers
