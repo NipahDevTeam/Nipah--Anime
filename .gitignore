@@ -40,7 +40,7 @@ frontend/package.json.md5
 # === Auth & OAuth ===
 backend/auth/
 
-# === Claude Code (local tool config) ===
+# === Local Tool Config ===
 .claude/
 
 # === Personal / Internal Files ===
