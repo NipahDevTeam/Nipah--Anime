@@ -11,7 +11,7 @@
 
 <br/>
 
-<a href="#english-readme">English</a> &nbsp;|&nbsp; <a href="#readme-espanol">Español</a>
+<a href="#english-readme">English</a> &nbsp;|&nbsp; <a href="#readme-espanol">Espanol</a>
 
 </div>
 
@@ -19,11 +19,11 @@
 
 <a id="english-readme"></a>
 
-<div align="right"><a href="#readme-espanol">Ver en Español</a></div>
+<div align="right"><a href="#readme-espanol">Ver en Espanol</a></div>
 
 ## What is Nipah! Anime?
 
-Nipah! Anime is a **desktop client** for anime and manga fans who want everything in one place: streaming, reading, progress tracking, lists, and AniList sync, without living inside a browser.
+Nipah! Anime is a desktop client for anime and manga fans who want everything in one place: streaming, reading, progress tracking, lists, and AniList sync, without living inside a browser.
 
 Built with **Go, React, and Wails**, it aims to feel fast, native, and focused, with a bilingual UI designed for both Spanish-speaking and English-speaking users.
 
@@ -33,10 +33,14 @@ Built with **Go, React, and Wails**, it aims to feel fast, native, and focused, 
 
 ## Screenshots
 
-![Home](./docs/readme/1.png)
-![My Lists](./docs/readme/2.png)
-![Anime Online](./docs/readme/3.png)
-![Manga Online](./docs/readme/4.png)
+<p align="center">
+  <img src="./docs/readme/1.png" alt="Home" width="49%" />
+  <img src="./docs/readme/2.png" alt="My Lists" width="49%" />
+</p>
+<p align="center">
+  <img src="./docs/readme/3.png" alt="Anime Online" width="49%" />
+  <img src="./docs/readme/4.png" alt="Manga Online" width="49%" />
+</p>
 
 ---
 
@@ -68,9 +72,12 @@ Built with **Go, React, and Wails**, it aims to feel fast, native, and focused, 
 - Local-first sync queue with retry behavior for AniList jobs
 
 ### UI and Experience
-- Bilingual interface: **English / Español**
+- Bilingual interface: **English / Espanol**
 - Catalog-first Home with anime and manga sections
 - Cleaner featured hero, tighter layout, and auto-rotating spotlight
+- BlurHash support for local covers
+- Desktop notifications
+- Anime4K MPV preset support
 - Dark desktop-first visual design with black/orange direction
 
 ### Updates
@@ -174,9 +181,19 @@ Official site: [mpv.io](https://mpv.io)
 
 ---
 
+## Updates
+
+The app includes a built-in updater for Windows releases. When a new version is available:
+
+1. A notification appears on launch.
+2. You can read the changelog directly in the popup.
+3. Click **Download & Install** to fetch and launch the new installer.
+
+---
+
 ## Disclaimer
 
-Nipah! Anime is a **desktop client**. It does not host, store, or distribute media content. Anime and manga are accessed through third-party sources whose availability may change over time.
+Nipah! Anime is a desktop client. It does not host, store, or distribute media content. Anime and manga are accessed through third-party sources whose availability may change over time.
 
 Use responsibly and according to the laws of your country.
 
@@ -191,11 +208,11 @@ Use responsibly and according to the laws of your country.
 
 <div align="right"><a href="#english-readme">View in English</a></div>
 
-## ¿Qué es Nipah! Anime?
+## Que es Nipah! Anime?
 
-Nipah! Anime es un **cliente de escritorio** para fans del anime y el manga que quieren tener todo en un solo lugar: streaming, lectura, seguimiento de progreso, listas y sincronización con AniList, sin depender del navegador.
+Nipah! Anime es un cliente de escritorio para fans del anime y el manga que quieren tener todo en un solo lugar: streaming, lectura, seguimiento de progreso, listas y sincronizacion con AniList, sin depender del navegador.
 
-Construido con **Go, React y Wails**, busca sentirse rápido, nativo y enfocado, con una interfaz bilingüe pensada tanto para hispanohablantes como para usuarios en inglés.
+Construido con **Go, React y Wails**, busca sentirse rapido, nativo y enfocado, con una interfaz bilingue pensada tanto para hispanohablantes como para usuarios en ingles.
 
 > **Mira anime. Lee manga. Registra tu progreso. Sincroniza con AniList. Todo desde tu escritorio.**
 
@@ -203,49 +220,56 @@ Construido con **Go, React y Wails**, busca sentirse rápido, nativo y enfocado,
 
 ## Capturas de pantalla
 
-![Inicio](./docs/readme/1.png)
-![Mis Listas](./docs/readme/2.png)
-![Anime Online](./docs/readme/3.png)
-![Manga Online](./docs/readme/4.png)
+<p align="center">
+  <img src="./docs/readme/1.png" alt="Inicio" width="49%" />
+  <img src="./docs/readme/2.png" alt="Mis Listas" width="49%" />
+</p>
+<p align="center">
+  <img src="./docs/readme/3.png" alt="Anime Online" width="49%" />
+  <img src="./docs/readme/4.png" alt="Manga Online" width="49%" />
+</p>
 
 ---
 
 ## Funcionalidades
 
 ### Anime
-- Búsqueda y streaming de anime en línea desde múltiples fuentes
-- Reproducción directa con **MPV**
-- Sección de **Continuar viendo** en Inicio
-- Coincidencia de títulos con AniList para aliases difíciles
-- Sincronización automática del progreso con AniList mientras ves
+- Busqueda y streaming de anime en linea desde multiples fuentes
+- Reproduccion directa con **MPV**
+- Seccion de **Continuar viendo** en Inicio
+- Coincidencia de titulos con AniList para aliases dificiles
+- Sincronizacion automatica del progreso con AniList mientras ves
 
 ### Manga
-- Búsqueda de manga en línea con flujo de lectura dentro de la app
-- Soporte para múltiples fuentes de manga
-- Sección de **Continuar leyendo** en Inicio
+- Busqueda de manga en linea con flujo de lectura dentro de la app
+- Soporte para multiples fuentes de manga
+- Seccion de **Continuar leyendo** en Inicio
 - Identidad y portadas apoyadas por AniList
-- Sincronización de progreso de capítulos con AniList
+- Sincronizacion de progreso de capitulos con AniList
 
 ### Biblioteca local
 - Importa carpetas locales de anime y manga
-- Escaneo automático al iniciar
+- Escaneo automatico al iniciar
 - Persistencia de progreso para contenido offline
 
 ### Listas y seguimiento
 - Vistas separadas para anime y manga
-- Agregar títulos manualmente desde AniList
-- Editar estado, progreso y puntuación
-- Cola de sincronización local con reintentos para trabajos de AniList
+- Agregar titulos manualmente desde AniList
+- Editar estado, progreso y puntuacion
+- Cola de sincronizacion local con reintentos para trabajos de AniList
 
 ### Interfaz y experiencia
-- Interfaz bilingüe: **Español / English**
-- Inicio orientado a catálogo con secciones de anime y manga
-- Hero destacado más limpio, compacto y rotatorio
-- Diseño oscuro con dirección visual negro/naranja
+- Interfaz bilingue: **Espanol / English**
+- Inicio orientado a catalogo con secciones de anime y manga
+- Hero destacado mas limpio, compacto y rotatorio
+- BlurHash para portadas locales
+- Notificaciones de escritorio
+- Soporte para preset Anime4K en MPV
+- Diseno oscuro con direccion visual negro/naranja
 
 ### Actualizaciones
 - Verificador integrado conectado a GitHub Releases
-- Changelog visible dentro del flujo de actualización
+- Changelog visible dentro del flujo de actualizacion
 - Lanzamiento con un clic del instalador nuevo en Windows
 
 ---
@@ -279,24 +303,24 @@ Construido con **Go, React y Wails**, busca sentirse rápido, nativo y enfocado,
 - MangaPill
 - MangaFire
 
-La disponibilidad de las fuentes puede cambiar con el tiempo según los sitios externos.
+La disponibilidad de las fuentes puede cambiar con el tiempo segun los sitios externos.
 
 ---
 
-## Integración con AniList
+## Integracion con AniList
 
-Nipah! Anime usa **AniList** como proveedor principal de cuenta y sincronización.
+Nipah! Anime usa **AniList** como proveedor principal de cuenta y sincronizacion.
 
-- Inicio de sesión con AniList
-- Sincronización de lista de anime
-- Sincronización de lista de manga
-- Envío automático del progreso desde reproducción y lectura
+- Inicio de sesion con AniList
+- Sincronizacion de lista de anime
+- Sincronizacion de lista de manga
+- Envio automatico del progreso desde reproduccion y lectura
 
 ---
 
-## Compilar desde el código fuente
+## Compilar desde el codigo fuente
 
-Las credenciales OAuth no están incluidas en este repositorio.
+Las credenciales OAuth no estan incluidas en este repositorio.
 
 Consulta `.env.example` para ver las variables necesarias y configurar tu propia app de AniList para desarrollo local.
 
@@ -308,17 +332,17 @@ Stack principal:
 
 ---
 
-## Instalación
+## Instalacion
 
 ### Windows
 1. Ve a [Releases](https://github.com/NipahDevTeam/Nipah--Anime/releases).
-2. Descarga el instalador más reciente para Windows.
+2. Descarga el instalador mas reciente para Windows.
 3. Ejecuta el instalador.
 4. Elige el idioma correctamente, esto afectara las preferencias de fuentes dentro de la app.
-5. Abre **Nipah! Anime** desde el menú Inicio o el escritorio.
+5. Abre **Nipah! Anime** desde el menu Inicio o el escritorio.
 
 ### Linux
-Descarga desde la última release el formato que mejor se adapte a tu distro:
+Descarga desde la ultima release el formato que mejor se adapte a tu distro:
 - `.AppImage`
 - `.deb`
 - `PKGBUILD`
@@ -331,7 +355,7 @@ Descarga desde la última release el formato que mejor se adapte a tu distro:
 |-----------|----------|
 | Sistema operativo | Windows 10/11 (64-bit) o Linux moderno |
 | MPV | Necesario para reproducir anime |
-| Internet | Necesario para fuentes online y sincronización con AniList |
+| Internet | Necesario para fuentes online y sincronizacion con AniList |
 
 ### MPV
 
@@ -344,11 +368,21 @@ Sitio oficial: [mpv.io](https://mpv.io)
 
 ---
 
+## Actualizaciones
+
+La app incluye un actualizador integrado para versiones de Windows. Cuando hay una nueva version disponible:
+
+1. Aparece una notificacion al iniciar.
+2. Puedes leer el changelog directamente en el popup.
+3. Haz clic en **Descargar e Instalar** para obtener y lanzar el nuevo instalador automaticamente.
+
+---
+
 ## Aviso legal
 
-Nipah! Anime es un **cliente de escritorio**. No aloja, almacena ni distribuye contenido multimedia. El anime y manga se acceden desde fuentes de terceros cuya disponibilidad puede cambiar con el tiempo.
+Nipah! Anime es un cliente de escritorio. No aloja, almacena ni distribuye contenido multimedia. El anime y manga se acceden desde fuentes de terceros cuya disponibilidad puede cambiar con el tiempo.
 
-Úsalo de forma responsable y de acuerdo con las leyes de tu país.
+Usalo de forma responsable y de acuerdo con las leyes de tu pais.
 
 ---
 
