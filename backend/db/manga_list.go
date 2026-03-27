@@ -11,6 +11,7 @@ type MangaListEntry struct {
 	TitleEnglish  string    `json:"title_english"`
 	CoverImage    string    `json:"cover_image"`
 	BannerImage   string    `json:"banner_image"`
+	MediaFormat   string    `json:"media_format"`
 	Status        string    `json:"status"` // WATCHING (reading), PLANNING, COMPLETED, ON_HOLD, DROPPED
 	ChaptersRead  int       `json:"chapters_read"`
 	ChaptersTotal int       `json:"chapters_total"`

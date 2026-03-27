@@ -20,6 +20,14 @@ export function proxyImage(url, options = {}) {
   return `http://localhost:43212/proxy/image?${params.toString()}`
 }
 
+export function proxyMedia(url, options = {}) {
+  if (!url) return ''
+  if (url.startsWith('http://localhost')) return url
+  const params = new URLSearchParams({ url })
+  if (options.referer) params.set('referer', options.referer)
+  return `http://localhost:43212/proxy/media?${params.toString()}`
+}
+
 export const wails = {
   // ── App ──────────────────────────────────────────────────────────────────
   async getAppVersion() {
@@ -43,9 +51,21 @@ export const wails = {
     }
     return window.go.main.App.CheckForAppUpdate()
   },
-  async installLatestAppUpdate(downloadURL, assetName = '') {
+  async installLatestAppUpdate(downloadURL, assetName = '', latestVersion = '') {
     if (isDev) return null
-    return window.go.main.App.InstallLatestAppUpdate(downloadURL, assetName)
+    return window.go.main.App.InstallLatestAppUpdate(downloadURL, assetName, latestVersion)
+  },
+  async getPlatform() {
+    if (isDev) return 'windows'
+    return window.go.main.App.GetPlatform()
+  },
+  async openURL(url) {
+    if (isDev) return null
+    return window.go.main.App.OpenURL(url)
+  },
+  async notifyDesktop(title, message) {
+    if (isDev) return null
+    return window.go.main.App.NotifyDesktop(title, message)
   },
 
   // ── Settings ─────────────────────────────────────────────────────────────
@@ -57,6 +77,10 @@ export const wails = {
     if (isDev) return null
     return window.go.main.App.OpenMagnet(magnet)
   },
+  async streamTorrentMagnet(magnet, displayTitle = '', playerMode = 'mpv') {
+    if (isDev) return { launched: playerMode !== 'integrated', stream_url: magnet, fallback_type: playerMode === 'integrated' ? 'integrated' : '' }
+    return window.go.main.App.StreamTorrentMagnet(magnet, displayTitle, playerMode)
+  },
   async getDefaultDownloadPath() {
     if (isDev) return 'C:/Users/User/Videos/Nipah!/Anime'
     return window.go.main.App.GetDefaultDownloadPath()
@@ -65,7 +89,7 @@ export const wails = {
     if (isDev) return {
       language: 'es', preferred_sub_lang: 'es', player: 'mpv',
       mpv_path: '', theme: 'dark', manga_reading_direction: 'ltr',
-      data_saver: 'false', preferred_quality: '1080p', preferred_audio: 'sub',
+      data_saver: 'false', preferred_quality: '1080p', preferred_audio: 'sub', anime4k_level: 'off',
     }
     return window.go.main.App.GetSettings()
   },
@@ -133,6 +157,14 @@ export const wails = {
     if (isDev) return null
     return window.go.main.App.GetAniListMangaByID(id)
   },
+  async getAniListMangaCatalogHome(lang = 'es') {
+    if (isDev) return { featured: [], trending: [], popular: [], recent: [] }
+    return window.go.main.App.GetAniListMangaCatalogHome(lang)
+  },
+  async discoverManga(genre = '', year = 0, sort = 'TRENDING_DESC', page = 1) {
+    if (isDev) return { data: { Page: { media: [], pageInfo: { hasNextPage: false } } } }
+    return window.go.main.App.DiscoverManga(genre, year, sort, page)
+  },
   async discoverAnime(genre = '', season = '', year = 0, sort = 'TRENDING_DESC', status = '', page = 1) {
     if (isDev) return { data: { Page: { media: [], pageInfo: { hasNextPage: false } } } }
     return window.go.main.App.DiscoverAnime(genre, season, year, sort, status, page)
@@ -175,6 +207,10 @@ export const wails = {
     }
     return window.go.main.App.StreamEpisode(sourceID, episodeID, animeID, animeTitle, coverURL, anilistID, malID, episodeNum, episodeTitle, quality)
   },
+  async openOnlineEpisode(sourceID, episodeID, animeID, animeTitle, coverURL, anilistID, malID, episodeNum, episodeTitle, quality = '', playerMode = 'mpv') {
+    if (isDev) return { launched: playerMode !== 'integrated', fallback_type: playerMode === 'integrated' ? 'integrated' : '', fallback_url: sourceID, stream_kind: 'hls' }
+    return window.go.main.App.OpenOnlineEpisode(sourceID, episodeID, animeID, animeTitle, coverURL, anilistID, malID, episodeNum, episodeTitle, quality, playerMode)
+  },
   async markOnlineWatched(sourceID, episodeID, animeID, animeTitle, coverURL, anilistID, malID, episodeNum) {
     if (isDev) return null
     return window.go.main.App.MarkOnlineWatched(sourceID, episodeID, animeID, animeTitle, coverURL, anilistID, malID, episodeNum)
@@ -202,11 +238,31 @@ export const wails = {
     }
     return window.go.main.App.GetDashboard()
   },
+  async getHomeMangaRecommendations(seedAniListIDs = [], excludeAniListIDs = [], lang = 'es') {
+    if (isDev) return []
+    return window.go.main.App.GetHomeMangaRecommendations(seedAniListIDs, excludeAniListIDs, lang)
+  },
 
   // ── MangaDex ─────────────────────────────────────────────────────────────
   async searchMangaOnline(query, lang = 'es') {
     if (isDev) return []
     return window.go.main.App.SearchMangaOnline(query, lang)
+  },
+  async searchMangaGlobal(query, lang = 'es') {
+    if (isDev) return []
+    return window.go.main.App.SearchMangaGlobal(query, lang)
+  },
+  async getMangaSourceMatches(anilistID, lang = 'es') {
+    if (isDev) return []
+    return window.go.main.App.GetMangaSourceMatches(anilistID, lang)
+  },
+  async resolveMangaSourceForAniList(sourceID, anilistID, lang = 'es') {
+    if (isDev) return null
+    return window.go.main.App.ResolveMangaSourceForAniList(sourceID, anilistID, lang)
+  },
+  async getMangaChaptersForAniListSource(sourceID, anilistID, lang = 'es') {
+    if (isDev) return { source: null, chapters: [] }
+    return window.go.main.App.GetMangaChaptersForAniListSource(sourceID, anilistID, lang)
   },
   async searchMangaSource(sourceID, query, lang = 'es') {
     if (isDev) return []
@@ -328,6 +384,10 @@ export const wails = {
   async getMangaListAll() {
     if (isDev) return []
     return window.go.main.App.GetMangaListAll()
+  },
+  async getMangaListByFormat() {
+    if (isDev) return { manga: [], manhwa: [], manhua: [] }
+    return window.go.main.App.GetMangaListByFormat()
   },
   async getMangaListCounts() {
     if (isDev) return {}

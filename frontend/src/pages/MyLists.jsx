@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { wails, proxyImage } from '../lib/wails'
 import { useI18n } from '../lib/i18n'
@@ -66,6 +66,10 @@ export default function MyLists() {
   const [searching, setSearching] = useState(false)
   const [addStatus, setAddStatus] = useState('PLANNING')
   const [confirmClear, setConfirmClear] = useState(false)
+  const [mangaSearch, setMangaSearch] = useState('')
+  const [mangaStatusFilter, setMangaStatusFilter] = useState('ALL')
+  const [mangaSort, setMangaSort] = useState('UPDATED_DESC')
+  const [mangaYearFilter, setMangaYearFilter] = useState('ALL')
 
   const loadAnimeCounts = useCallback(async () => {
     try {
@@ -130,6 +134,55 @@ export default function MyLists() {
 
   const mainSections = sections.filter((section) => section.status !== 'DROPPED')
   const droppedSection = sections.find((section) => section.status === 'DROPPED')
+
+  const mangaYearOptions = useMemo(() => {
+    const years = [...new Set(
+      mangaEntries
+        .map((entry) => Number(entry.year) || 0)
+        .filter((year) => year > 0),
+    )]
+    return years.sort((a, b) => b - a)
+  }, [mangaEntries])
+
+  const filteredMangaEntries = useMemo(() => {
+    const query = mangaSearch.trim().toLowerCase()
+    const filtered = mangaEntries.filter((entry) => {
+      if (mangaStatusFilter !== 'ALL' && entry.status !== mangaStatusFilter) return false
+      if (mangaYearFilter !== 'ALL' && Number(entry.year) !== Number(mangaYearFilter)) return false
+      if (!query) return true
+      const haystacks = [
+        entry.title,
+        entry.title_english,
+        entry.media_format,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return haystacks.includes(query)
+    })
+
+    const normalized = [...filtered]
+    normalized.sort((a, b) => {
+      switch (mangaSort) {
+        case 'TITLE_ASC':
+          return (a.title_english || a.title || '').localeCompare(b.title_english || b.title || '')
+        case 'TITLE_DESC':
+          return (b.title_english || b.title || '').localeCompare(a.title_english || a.title || '')
+        case 'SCORE_DESC':
+          return (Number(b.score) || 0) - (Number(a.score) || 0)
+        case 'YEAR_DESC':
+          return (Number(b.year) || 0) - (Number(a.year) || 0)
+        case 'PROGRESS_DESC':
+          return (Number(b.chapters_read) || 0) - (Number(a.chapters_read) || 0)
+        case 'ADDED_DESC':
+          return new Date(b.added_at || 0).getTime() - new Date(a.added_at || 0).getTime()
+        case 'UPDATED_DESC':
+        default:
+          return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime()
+      }
+    })
+    return normalized
+  }, [mangaEntries, mangaSearch, mangaSort, mangaStatusFilter, mangaYearFilter])
 
   const scrollToSection = (status) => {
     const el = document.getElementById(`my-list-section-${activeMediaType}-${status}`)
@@ -429,6 +482,80 @@ export default function MyLists() {
               : (isEnglish ? 'Sync AniList to see your saved manga here.' : 'Sincroniza AniList para ver aqui tu manga guardado.')}
           </p>
         </div>
+      ) : activeMediaType === 'manga' ? (
+        <div className="my-list-manga-showcase">
+          <div className="my-list-manga-toolbar">
+            <input
+              type="text"
+              className="input my-list-manga-search"
+              placeholder={isEnglish ? 'Search your manga...' : 'Busca en tu manga...'}
+              value={mangaSearch}
+              onChange={(e) => setMangaSearch(e.target.value)}
+            />
+            <select
+              className="input my-list-manga-select"
+              value={mangaSort}
+              onChange={(e) => setMangaSort(e.target.value)}
+            >
+              <option value="UPDATED_DESC">{isEnglish ? 'Recently updated' : 'Actualizados recientemente'}</option>
+              <option value="SCORE_DESC">{isEnglish ? 'Highest score' : 'Mayor nota'}</option>
+              <option value="TITLE_ASC">{isEnglish ? 'Name A-Z' : 'Nombre A-Z'}</option>
+              <option value="TITLE_DESC">{isEnglish ? 'Name Z-A' : 'Nombre Z-A'}</option>
+              <option value="YEAR_DESC">{isEnglish ? 'Newest year' : 'Año más reciente'}</option>
+              <option value="PROGRESS_DESC">{isEnglish ? 'Most progress' : 'Mayor progreso'}</option>
+              <option value="ADDED_DESC">{isEnglish ? 'Recently added' : 'Agregados recientemente'}</option>
+            </select>
+            <select
+              className="input my-list-manga-select"
+              value={mangaStatusFilter}
+              onChange={(e) => setMangaStatusFilter(e.target.value)}
+            >
+              <option value="ALL">{mangaLabels.ALL}</option>
+              {STATUSES.map((status) => (
+                <option key={status} value={status}>{mangaLabels[status]}</option>
+              ))}
+            </select>
+            <select
+              className="input my-list-manga-select"
+              value={mangaYearFilter}
+              onChange={(e) => setMangaYearFilter(e.target.value)}
+            >
+              <option value="ALL">{isEnglish ? 'All years' : 'Todos los años'}</option>
+              {mangaYearOptions.map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="my-list-manga-header">
+            <div className="my-list-manga-heading">
+              <span className="my-list-manga-heading-title">{isEnglish ? 'Library' : 'Biblioteca'}</span>
+              <span className="my-list-manga-heading-count">{filteredMangaEntries.length}</span>
+            </div>
+            <div className="my-list-manga-heading-copy">
+              {isEnglish
+                ? 'A full visual shelf for every manga, manhwa, and manhua in your list.'
+                : 'Una estantería visual completa para todo manga, manhwa y manhua en tu lista.'}
+            </div>
+          </div>
+
+          <div className="my-list-manga-showcase-grid">
+            {filteredMangaEntries.map((entry) => (
+              <MangaListCard
+                key={`manga-catalog-${entry.anilist_id}`}
+                entry={entry}
+                labels={mangaLabels}
+                onStatusChange={handleMangaStatusChange}
+                onScoreChange={handleMangaScoreChange}
+                onProgressChange={handleMangaProgressChange}
+                onRemove={handleMangaRemove}
+                navigate={navigate}
+                t={t}
+                variant="showcase"
+              />
+            ))}
+          </div>
+        </div>
       ) : (
         <div className="my-list-sections">
           {mainSections.map((section) => (
@@ -643,7 +770,7 @@ function AnimeListCard({ entry, labels, onStatusChange, onScoreChange, onProgres
   )
 }
 
-function MangaListCard({ entry, labels, onStatusChange, onScoreChange, onProgressChange, onRemove, navigate, t }) {
+function MangaListCard({ entry, labels, onStatusChange, onScoreChange, onProgressChange, onRemove, navigate, t, variant = 'default' }) {
   const [editingProgress, setEditingProgress] = useState(false)
   const [tempProgress, setTempProgress] = useState(entry.chapters_read)
   const [editingScore, setEditingScore] = useState(false)
@@ -657,7 +784,7 @@ function MangaListCard({ entry, labels, onStatusChange, onScoreChange, onProgres
     : ''
 
   return (
-    <article className="my-list-card">
+    <article className={`my-list-card${variant === 'showcase' ? ' my-list-card-showcase' : ''}`}>
       <button
         type="button"
         className="my-list-card-visual"

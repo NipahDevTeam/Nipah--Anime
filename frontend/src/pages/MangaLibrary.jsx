@@ -1,23 +1,29 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { wails } from '../lib/wails'
 import { toastError } from '../components/ui/Toast'
+import VirtualMediaGrid from '../components/ui/VirtualMediaGrid'
+import BlurhashImage from '../components/ui/BlurhashImage'
 
 export default function MangaLibrary() {
-  const [manga, setManga] = useState([])
-  const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState(null)
   const navigate = useNavigate()
 
-  const load = useCallback(() => {
-    wails.getMangaList()
-      .then(list => setManga(list ?? []))
-      .catch(() => setManga([]))
-      .finally(() => setLoading(false))
-  }, [])
-
-  useEffect(() => { load() }, [load])
+  const {
+    data: manga = [],
+    isLoading: loading,
+    refetch,
+  } = useQuery({
+    queryKey: ['manga-library'],
+    queryFn: async () => {
+      const list = await wails.getMangaList()
+      return list ?? []
+    },
+    staleTime: 2 * 60_000,
+    gcTime: 15 * 60_000,
+  })
 
   const handleScan = useCallback(async () => {
     setScanning(true)
@@ -26,14 +32,14 @@ export default function MangaLibrary() {
       const result = await wails.scanWithPicker()
       if (!result?.cancelled) {
         setScanResult(result)
-        load()
+        await refetch()
       }
     } catch (e) {
       toastError(`Error al escanear: ${e?.message ?? 'error desconocido'}`)
     } finally {
       setScanning(false)
     }
-  }, [load])
+  }, [refetch])
 
   if (loading) return (
     <div className="empty-state">
@@ -74,11 +80,12 @@ export default function MangaLibrary() {
           </button>
         </div>
       ) : (
-        <div className="media-grid">
-          {manga.map(item => (
+        <VirtualMediaGrid
+          items={manga}
+          itemContent={(item) => (
             <div key={item.id} className="media-card" onClick={() => navigate(`/manga/${item.id}`)}>
               {item.cover_image
-                ? <img src={item.cover_image} alt={item.display_title} className="media-card-cover" />
+                ? <BlurhashImage src={item.cover_image} blurhash={item.cover_blurhash} alt={item.display_title} imgClassName="media-card-cover" />
                 : <div className="media-card-cover-placeholder">sin portada</div>
               }
               <div className="media-card-overlay" />
@@ -90,8 +97,8 @@ export default function MangaLibrary() {
                 </div>
               </div>
             </div>
-          ))}
-        </div>
+          )}
+        />
       )}
     </div>
   )

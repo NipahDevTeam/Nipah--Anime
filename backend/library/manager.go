@@ -185,6 +185,7 @@ func (m *Manager) enrichUnmatchedAnime() (int, error) {
 				title_english = ?,
 				title_spanish = ?,
 				cover_image   = ?,
+				cover_blurhash = ?,
 				banner_image  = ?,
 				synopsis      = ?,
 				year          = ?,
@@ -198,6 +199,7 @@ func (m *Manager) enrichUnmatchedAnime() (int, error) {
 			nullStr(meta.TitleEnglish),
 			nullStr(meta.TitleSpanish),
 			nullStr(meta.CoverLarge),
+			nullStr(computeCoverBlurhash(meta.CoverLarge)),
 			nullStr(meta.BannerImage),
 			nullStr(meta.Description),
 			meta.Year,
@@ -249,6 +251,7 @@ func (m *Manager) enrichUnmatchedManga() (int, error) {
 				title_english = ?,
 				title_spanish = ?,
 				cover_image   = ?,
+				cover_blurhash = ?,
 				synopsis      = ?,
 				synopsis_es   = ?,
 				year          = ?,
@@ -261,6 +264,7 @@ func (m *Manager) enrichUnmatchedManga() (int, error) {
 			nullStr(meta.TitleEnglish),
 			nullStr(meta.TitleSpanish),
 			nullStr(meta.CoverURL),
+			nullStr(computeCoverBlurhash(meta.CoverURL)),
 			nullStr(meta.Description),
 			nullStr(meta.DescriptionES),
 			meta.Year,
@@ -295,7 +299,7 @@ func (m *Manager) GetAnimeList() ([]map[string]interface{}, error) {
 		SELECT id, local_path,
 		       COALESCE(title_spanish, title_english, title_romaji, '') as display_title,
 		       title_romaji, title_english, title_spanish,
-		       cover_image, banner_image, synopsis, synopsis_es, year, status, episodes_total, anilist_id
+		       cover_image, cover_blurhash, banner_image, synopsis, synopsis_es, year, status, episodes_total, anilist_id
 		FROM anime
 		ORDER BY display_title COLLATE NOCASE
 	`)
@@ -309,19 +313,20 @@ func (m *Manager) GetAnimeList() ([]map[string]interface{}, error) {
 		var id, anilistID int
 		var localPath, displayTitle string
 		var titleRomaji, titleEnglish, titleSpanish *string
-		var coverImage, bannerImage, synopsis, synopsisEs, status *string
+		var coverImage, coverBlurhash, bannerImage, synopsis, synopsisEs, status *string
 		var year, episodesTotal *int
 
 		if err := rows.Scan(&id, &localPath, &displayTitle,
 			&titleRomaji, &titleEnglish, &titleSpanish,
-			&coverImage, &bannerImage, &synopsis, &synopsisEs, &year, &status, &episodesTotal, &anilistID); err != nil {
+			&coverImage, &coverBlurhash, &bannerImage, &synopsis, &synopsisEs, &year, &status, &episodesTotal, &anilistID); err != nil {
 			continue
 		}
+		coverBlurhash = m.ensureAnimeBlurhash(id, coverImage, coverBlurhash)
 		results = append(results, map[string]interface{}{
 			"id": id, "local_path": localPath,
 			"display_title": displayTitle,
 			"title_romaji":  titleRomaji, "title_english": titleEnglish, "title_spanish": titleSpanish,
-			"cover_image": coverImage, "banner_image": bannerImage, "synopsis": synopsis, "synopsis_es": synopsisEs,
+			"cover_image": coverImage, "cover_blurhash": coverBlurhash, "banner_image": bannerImage, "synopsis": synopsis, "synopsis_es": synopsisEs,
 			"year": year, "status": status, "episodes_total": episodesTotal,
 			"anilist_id": anilistID,
 		})
@@ -332,21 +337,22 @@ func (m *Manager) GetAnimeList() ([]map[string]interface{}, error) {
 func (m *Manager) GetAnimeByID(id int) (map[string]interface{}, error) {
 	var localPath, displayTitle string
 	var titleRomaji, titleEnglish, titleSpanish *string
-	var coverImage, bannerImage, synopsis, synopsisEs, status *string
+	var coverImage, coverBlurhash, bannerImage, synopsis, synopsisEs, status *string
 	var year, episodesTotal, anilistID int
 
 	err := m.db.Conn().QueryRow(`
 		SELECT local_path,
 		       COALESCE(title_spanish, title_english, title_romaji, '') as display_title,
 		       title_romaji, title_english, title_spanish,
-		       cover_image, banner_image, synopsis, synopsis_es, year, status, episodes_total, anilist_id
+		       cover_image, cover_blurhash, banner_image, synopsis, synopsis_es, year, status, episodes_total, anilist_id
 		FROM anime WHERE id = ?
 	`, id).Scan(&localPath, &displayTitle,
 		&titleRomaji, &titleEnglish, &titleSpanish,
-		&coverImage, &bannerImage, &synopsis, &synopsisEs, &year, &status, &episodesTotal, &anilistID)
+		&coverImage, &coverBlurhash, &bannerImage, &synopsis, &synopsisEs, &year, &status, &episodesTotal, &anilistID)
 	if err != nil {
 		return nil, fmt.Errorf("anime not found: %w", err)
 	}
+	coverBlurhash = m.ensureAnimeBlurhash(id, coverImage, coverBlurhash)
 
 	// Get episodes
 	epRows, err := m.db.Conn().Query(`
@@ -381,7 +387,7 @@ func (m *Manager) GetAnimeByID(id int) (map[string]interface{}, error) {
 		"id": id, "local_path": localPath,
 		"display_title": displayTitle,
 		"title_romaji":  titleRomaji, "title_english": titleEnglish, "title_spanish": titleSpanish,
-		"cover_image": coverImage, "banner_image": bannerImage, "synopsis": synopsis, "synopsis_es": synopsisEs,
+		"cover_image": coverImage, "cover_blurhash": coverBlurhash, "banner_image": bannerImage, "synopsis": synopsis, "synopsis_es": synopsisEs,
 		"year": year, "status": status, "episodes_total": episodesTotal,
 		"anilist_id": anilistID, "episodes": episodes,
 	}, nil
@@ -389,7 +395,7 @@ func (m *Manager) GetAnimeByID(id int) (map[string]interface{}, error) {
 
 // UpdateAnimeSynopsisES caches a Spanish synopsis scraped from an external source.
 func (m *Manager) UpdateAnimeSynopsisES(id int, synopsis string) {
-	m.db.Conn().Exec(`UPDATE anime SET synopsis_es = ? WHERE id = ?`, synopsis, id)
+	_, _ = m.db.Conn().Exec(`UPDATE anime SET synopsis_es = ? WHERE id = ?`, synopsis, id)
 }
 
 func (m *Manager) GetMangaList() ([]map[string]interface{}, error) {
@@ -397,7 +403,7 @@ func (m *Manager) GetMangaList() ([]map[string]interface{}, error) {
 		SELECT id, local_path,
 		       COALESCE(title_spanish, title_english, title_romaji, '') as display_title,
 		       title_romaji, title_english, title_spanish,
-		       cover_image, synopsis_es, year, status, chapters_total, mangadex_id
+		       cover_image, cover_blurhash, synopsis_es, year, status, chapters_total, mangadex_id
 		FROM manga
 		ORDER BY display_title COLLATE NOCASE
 	`)
@@ -411,18 +417,19 @@ func (m *Manager) GetMangaList() ([]map[string]interface{}, error) {
 		var id int
 		var localPath, displayTitle string
 		var titleRomaji, titleEnglish, titleSpanish *string
-		var coverImage, synopsisEs, status, mangadexID *string
+		var coverImage, coverBlurhash, synopsisEs, status, mangadexID *string
 		var year, chaptersTotal *int
 
 		if err := rows.Scan(&id, &localPath, &displayTitle,
 			&titleRomaji, &titleEnglish, &titleSpanish,
-			&coverImage, &synopsisEs, &year, &status, &chaptersTotal, &mangadexID); err != nil {
+			&coverImage, &coverBlurhash, &synopsisEs, &year, &status, &chaptersTotal, &mangadexID); err != nil {
 			continue
 		}
+		coverBlurhash = m.ensureMangaBlurhash(id, coverImage, coverBlurhash)
 		results = append(results, map[string]interface{}{
 			"id": id, "local_path": localPath, "display_title": displayTitle,
 			"title_romaji": titleRomaji, "title_english": titleEnglish, "title_spanish": titleSpanish,
-			"cover_image": coverImage, "synopsis_es": synopsisEs,
+			"cover_image": coverImage, "cover_blurhash": coverBlurhash, "synopsis_es": synopsisEs,
 			"year": year, "status": status, "chapters_total": chaptersTotal,
 			"mangadex_id": mangadexID,
 		})
@@ -434,21 +441,22 @@ func (m *Manager) GetMangaList() ([]map[string]interface{}, error) {
 func (m *Manager) GetMangaByID(id int) (map[string]interface{}, error) {
 	var localPath, displayTitle string
 	var titleRomaji, titleEnglish, titleSpanish *string
-	var coverImage, synopsisEs, status, mangadexID *string
+	var coverImage, coverBlurhash, synopsisEs, status, mangadexID *string
 	var year, chaptersTotal int
 
 	err := m.db.Conn().QueryRow(`
 		SELECT local_path,
 		       COALESCE(title_spanish, title_english, title_romaji, '') as display_title,
 		       title_romaji, title_english, title_spanish,
-		       cover_image, synopsis_es, year, status, chapters_total, mangadex_id
+		       cover_image, cover_blurhash, synopsis_es, year, status, chapters_total, mangadex_id
 		FROM manga WHERE id = ?
 	`, id).Scan(&localPath, &displayTitle,
 		&titleRomaji, &titleEnglish, &titleSpanish,
-		&coverImage, &synopsisEs, &year, &status, &chaptersTotal, &mangadexID)
+		&coverImage, &coverBlurhash, &synopsisEs, &year, &status, &chaptersTotal, &mangadexID)
 	if err != nil {
 		return nil, fmt.Errorf("manga not found: %w", err)
 	}
+	coverBlurhash = m.ensureMangaBlurhash(id, coverImage, coverBlurhash)
 
 	// Get chapters
 	chRows, err := m.db.Conn().Query(`
@@ -482,7 +490,7 @@ func (m *Manager) GetMangaByID(id int) (map[string]interface{}, error) {
 	return map[string]interface{}{
 		"id": id, "local_path": localPath, "display_title": displayTitle,
 		"title_romaji": titleRomaji, "title_english": titleEnglish, "title_spanish": titleSpanish,
-		"cover_image": coverImage, "synopsis_es": synopsisEs,
+		"cover_image": coverImage, "cover_blurhash": coverBlurhash, "synopsis_es": synopsisEs,
 		"year": year, "status": status, "chapters_total": chaptersTotal,
 		"mangadex_id": mangadexID, "chapters": chapters,
 	}, nil
@@ -494,13 +502,17 @@ func (m *Manager) GetMangaByID(id int) (map[string]interface{}, error) {
 
 func parseEpisodeNumber(filename string) float64 {
 	var num float64
-	fmt.Sscanf(extractNumber(filename), "%f", &num)
+	if _, err := fmt.Sscanf(extractNumber(filename), "%f", &num); err != nil {
+		num = 0
+	}
 	return num
 }
 
 func parseChapterNumber(filename string) float64 {
 	var num float64
-	fmt.Sscanf(extractNumber(filename), "%f", &num)
+	if _, err := fmt.Sscanf(extractNumber(filename), "%f", &num); err != nil {
+		num = 0
+	}
 	return num
 }
 
@@ -523,4 +535,29 @@ func nullStr(s string) interface{} {
 		return nil
 	}
 	return s
+}
+
+func (m *Manager) ensureAnimeBlurhash(id int, coverImage, existing *string) *string {
+	return m.ensureBlurhash("anime", id, coverImage, existing)
+}
+
+func (m *Manager) ensureMangaBlurhash(id int, coverImage, existing *string) *string {
+	return m.ensureBlurhash("manga", id, coverImage, existing)
+}
+
+func (m *Manager) ensureBlurhash(table string, id int, coverImage, existing *string) *string {
+	if existing != nil && strings.TrimSpace(*existing) != "" {
+		return existing
+	}
+	if coverImage == nil || strings.TrimSpace(*coverImage) == "" {
+		return existing
+	}
+
+	hash := computeCoverBlurhash(*coverImage)
+	if hash == "" {
+		return existing
+	}
+
+	_, _ = m.db.Conn().Exec(fmt.Sprintf("UPDATE %s SET cover_blurhash = ? WHERE id = ?", table), hash, id)
+	return &hash
 }

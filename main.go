@@ -1,10 +1,11 @@
 package main
 
 import (
+	"context"
 	"embed"
-	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -14,15 +15,19 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
 	"miruro/backend/db"
+	"miruro/backend/logger"
 )
+
+var installerLog = logger.For("Installer")
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
+	processStarted := time.Now()
 	if handled, err := handleUtilityMode(); handled {
 		if err != nil {
-			fmt.Println("Error:", err.Error())
+			installerLog.Error().Msg(err.Error())
 			os.Exit(1)
 		}
 		return
@@ -31,17 +36,24 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:  "Nipah! Anime",
-		Width:  1400,
-		Height: 900,
+		Title:     "Nipah! Anime",
+		Width:     1400,
+		Height:    900,
 		MinWidth:  1100,
 		MinHeight: 700,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 10, G: 10, B: 14, A: 1},
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
+		OnStartup: func(ctx context.Context) {
+			installerLog.Info().Dur("since_process_start", time.Since(processStarted)).Msg("wails startup callback")
+			app.startup(ctx)
+		},
+		OnDomReady: func(ctx context.Context) {
+			installerLog.Info().Dur("since_process_start", time.Since(processStarted)).Msg("wails dom ready callback")
+			app.domReady(ctx)
+		},
+		OnShutdown: app.shutdown,
 		Bind: []interface{}{
 			app,
 		},
@@ -95,7 +107,7 @@ func handleUtilityMode() (bool, error) {
 			if err := database.SetSettings(settings); err != nil {
 				return true, err
 			}
-			fmt.Printf("[Installer] Seeded language: %s\n", lang)
+			installerLog.Info().Str("language", lang).Msg("seeded language")
 			return true, nil
 		}
 	}

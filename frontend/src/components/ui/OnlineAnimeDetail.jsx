@@ -1,51 +1,80 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { wails, proxyImage } from '../../lib/wails'
 import { toastError, toastSuccess } from '../ui/Toast'
 import { useI18n } from '../../lib/i18n'
+import IntegratedVideoPlayer from './IntegratedVideoPlayer'
 
 const SOURCE_LABELS = {
-  'jkanime-es':  { name: 'JKAnime',  color: '#c084fc', flag: 'ES' },
+  'jkanime-es': { name: 'JKAnime', color: '#c084fc', flag: 'ES' },
   'animeflv-es': { name: 'AnimeFLV', color: '#f97316', flag: 'ES' },
+  'animeav1-es': { name: 'AnimeAV1', color: '#9333ea', flag: 'ES' },
+  'animepahe-en': { name: 'AnimePahe', color: '#38bdf8', flag: 'EN' },
+  'animeheaven-en': { name: 'AnimeHeaven', color: '#0ea5e9', flag: 'EN' },
+  'animegg-en': { name: 'AnimeGG', color: '#6366f1', flag: 'EN' },
+}
+
+function EpisodeGridSkeleton({ count = 8 }) {
+  return (
+    <div className="episode-grid">
+      {Array.from({ length: count }).map((_, index) => (
+        <div key={index} className="episode-card episode-card-skeleton">
+          <div className="skeleton-block episode-card-art" />
+          <div className="episode-card-body">
+            <div className="skeleton-block skeleton-line skeleton-line-xs" />
+            <div className="skeleton-block skeleton-line skeleton-line-md" />
+            <div className="skeleton-block skeleton-line skeleton-line-sm" />
+            <div className="skeleton-inline-row">
+              <span className="skeleton-inline-chip" />
+              <span className="skeleton-inline-chip short" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export default function OnlineAnimeDetail({ anime, onBack }) {
   const [episodes, setEpisodes] = useState(() => anime.prefetchedEpisodes ?? [])
-  const [loading,  setLoading]  = useState(() => !anime.prefetchedEpisodes)
   const [streaming, setStreaming] = useState(null)
-  const [downloading, setDownloading] = useState(null) // episode id being downloaded
-  const [error,    setError]    = useState(null)
+  const [downloading, setDownloading] = useState(null)
   const [synopsis, setSynopsis] = useState('')
+  const [playerMode, setPlayerMode] = useState('mpv')
+  const [integratedPlayback, setIntegratedPlayback] = useState(null)
   const { t, lang } = useI18n()
   const isEnglish = lang === 'en'
 
   const source = SOURCE_LABELS[anime.source_id] ?? { name: anime.source_id, color: '#9090a8', flag: '' }
   const coverSrc = anime.cover_url ? proxyImage(anime.cover_url) : null
   const backdropSrc = anime.anilistBannerImage || anime.anilistCoverImage || coverSrc || ''
+
   const ui = {
-    loadError: isEnglish ? 'Error loading episodes' : 'Error al cargar episodios',
     openingEpisode: (num) => isEnglish ? `Opening episode ${num ?? ''}...` : `Abriendo episodio ${num ?? ''}...`,
-    resolveError: isEnglish ? 'Could not resolve the stream. The server may be down; try another episode.' : 'No se pudo resolver el stream. El servidor puede estar caido; intenta otro episodio.',
+    resolveError: isEnglish ? 'Could not resolve the stream. The server may be down; try another episode.' : 'No se pudo resolver el stream. El servidor puede estar caído; intenta otro episodio.',
     mpvMissing: isEnglish ? 'MPV not found. Check the path in Settings.' : 'MPV no encontrado. Verifica la ruta en Ajustes.',
     playError: (msg) => isEnglish ? `Could not play it: ${msg}` : `No se pudo reproducir: ${msg}`,
+    integratedOpen: isEnglish ? 'Opening in the integrated player...' : 'Abriendo en el reproductor integrado...',
     sourceLabel: isEnglish ? 'Source' : 'Fuente',
     availability: isEnglish ? 'Availability' : 'Disponibilidad',
     streamingDownload: isEnglish ? 'Streaming + download' : 'Streaming + descarga',
     streamingOnly: 'Streaming',
-    episodeCopy: anime.source_id === 'jkanime-es'
-      ? (isEnglish
-          ? 'Each episode is shown as a clear card, with instant streaming and direct download when JKAnime exposes it.'
-          : 'Cada episodio queda presentado como una card clara, con streaming inmediato y descarga directa cuando JKAnime la expone.')
-      : (isEnglish
-          ? 'Each episode is available as a direct card so you can open it quickly in MPV.'
-          : 'Cada episodio queda disponible en una card directa para abrirlo rapidamente en MPV.'),
+    playerMode: isEnglish ? 'Player' : 'Reproductor',
+    mpvMode: 'MPV',
+    integratedMode: isEnglish ? 'Integrated' : 'Integrado',
+    mpvModeDesc: isEnglish ? 'Best compatibility with external playback and heavier hosts.' : 'Mejor compatibilidad con reproducción externa y hosts más pesados.',
+    integratedModeDesc: isEnglish ? 'Opens the episode inside Nipah! using the built-in player.' : 'Abre el episodio dentro de Nipah! usando el reproductor integrado.',
     loadingEpisodes: isEnglish ? 'Loading episodes...' : 'Cargando episodios...',
     noEpisodesDesc: (name) => isEnglish ? `No episodes were found for this series on ${name}.` : `No se encontraron episodios para esta serie en ${name}.`,
     episodeDesc: anime.source_id === 'jkanime-es'
       ? (isEnglish ? 'Instant streaming and direct download from the same entry.' : 'Streaming inmediato y descarga directa desde la misma ficha.')
       : (isEnglish ? `Ready to stream from ${source.name}.` : `Listo para reproducirse desde ${source.name}.`),
     loading: isEnglish ? 'Loading...' : 'Cargando...',
+    integratedNote: isEnglish ? 'Integrated playback works best with HLS and direct MP4/WebM streams.' : 'El reproductor integrado funciona mejor con HLS y streams MP4/WebM directos.',
   }
+
   const cleanSynopsis = synopsis ? synopsis.replace(/<[^>]+>/g, '').trim() : ''
+
   const extractEpisodeNumber = useCallback((value) => {
     if (!value) return null
     const match = String(value).match(/(?:episode|episodio|ep)[^\d]{0,4}(\d{1,4})/i)
@@ -61,8 +90,8 @@ export default function OnlineAnimeDetail({ anime, onBack }) {
     if (!items.length) return ''
     const targetNumber = Number(ep.number)
 
-    const direct = items.find(item => extractEpisodeNumber(item.title) === targetNumber)
-      || items.find(item => extractEpisodeNumber(item.url) === targetNumber)
+    const direct = items.find((item) => extractEpisodeNumber(item.title) === targetNumber)
+      || items.find((item) => extractEpisodeNumber(item.url) === targetNumber)
     if (direct?.thumbnail) return direct.thumbnail
 
     if (targetNumber > 0 && targetNumber <= items.length && items[targetNumber - 1]?.thumbnail) {
@@ -80,75 +109,63 @@ export default function OnlineAnimeDetail({ anime, onBack }) {
   }, [backdropSrc, getAniListEpisodeThumbnail])
 
   useEffect(() => {
-    let cancelled = false
+    wails.getSettings()
+      .then((settings) => {
+        setPlayerMode(settings?.player === 'integrated' ? 'integrated' : 'mpv')
+      })
+      .catch(() => {})
+  }, [])
 
-    const applyWatchedFloor = async (nextEpisodes) => {
-      let watchedFloor = Number(anime.episodes_watched || 0)
-      if (watchedFloor <= 0 && Number(anime.anilist_id || anime.anilistID || 0) > 0) {
-        try {
-          const entries = await wails.getAnimeListAll()
-          const current = (entries ?? []).find((entry) => Number(entry.anilist_id) === Number(anime.anilist_id || anime.anilistID || 0))
-          watchedFloor = Number(current?.episodes_watched || 0)
-        } catch {}
-      }
+  const episodesQuery = useQuery({
+    queryKey: ['online-episodes', anime.source_id, anime.id, Number(anime.anilist_id || anime.anilistID || 0), Number(anime.episodes_watched || 0)],
+    queryFn: async () => {
+      const nextEpisodes = anime.prefetchedEpisodes?.length
+        ? anime.prefetchedEpisodes
+        : await wails.getOnlineEpisodes(anime.source_id, anime.id)
+
+      const watchedFloor = Number(anime.episodes_watched || 0)
+
       return (nextEpisodes ?? []).map((ep) => ({
         ...ep,
         watched: Boolean(ep.watched) || ((Number(ep.number) || 0) > 0 && (Number(ep.number) || 0) <= watchedFloor),
       }))
-    }
+    },
+    placeholderData: anime.prefetchedEpisodes ?? [],
+    staleTime: 15 * 60_000,
+    gcTime: 45 * 60_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  })
 
-    const loadEpisodes = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-        const nextEpisodes = anime.prefetchedEpisodes?.length
-          ? anime.prefetchedEpisodes
-          : await wails.getOnlineEpisodes(anime.source_id, anime.id)
-        const resolved = await applyWatchedFloor(nextEpisodes)
-        if (!cancelled) {
-          setEpisodes(resolved)
-          setError(null)
-        }
-      } catch (e) {
-        if (!cancelled) setError(e?.message ?? ui.loadError)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+  useEffect(() => {
+    if (episodesQuery.data) {
+      setEpisodes(episodesQuery.data)
     }
+  }, [episodesQuery.data])
 
-    loadEpisodes()
-    return () => {
-      cancelled = true
-    }
-  }, [anime.anilistID, anime.anilist_id, anime.episodes_watched, anime.id, anime.prefetchedEpisodes, anime.source_id, ui.loadError])
-
-  // Fetch Spanish synopsis from JKAnime; only fall back to AniList if JKAnime has nothing
   useEffect(() => {
     if (anime.source_id !== 'jkanime-es') {
       setSynopsis(anime.description || anime.anilistDescription || '')
       return
     }
     wails.getAnimeSynopsis(anime.source_id, anime.id)
-      .then(syn => {
-        if (syn) {
-          setSynopsis(syn)
-        } else {
-          // JKAnime had no synopsis — fall back to AniList English
-          const fallback = anime.anilistDescription || anime.description || ''
-          setSynopsis(fallback)
-        }
+      .then((syn) => {
+        setSynopsis(syn || anime.anilistDescription || anime.description || '')
       })
       .catch(() => {
         setSynopsis(anime.anilistDescription || anime.description || '')
       })
   }, [anime.id, anime.source_id, anime.anilistDescription, anime.description])
 
+  const loading = episodesQuery.isLoading
+  const error = episodesQuery.error?.message ?? null
+
   const handleStream = useCallback(async (ep) => {
     setStreaming(ep.id)
     try {
       const anilistID = Number(anime.anilist_id || anime.anilistID || 0)
       const malID = Number(anime.mal_id || anime.malID || 0)
-      await wails.streamEpisode(
+      const playback = await wails.openOnlineEpisode(
         anime.source_id,
         ep.id,
         anime.id,
@@ -158,8 +175,21 @@ export default function OnlineAnimeDetail({ anime, onBack }) {
         malID,
         ep.number ?? 0,
         ep.title ?? `Episodio ${ep.number}`,
-        ''
+        '',
+        playerMode,
       )
+
+      if ((playback?.fallback_type === 'integrated' || playback?.player_type === 'integrated') && playback?.fallback_url) {
+        setIntegratedPlayback({
+          title: anime.title,
+          subtitle: ep.title ?? `Ep. ${ep.number}`,
+          url: playback.fallback_url,
+          kind: playback.stream_kind ?? 'file',
+          sourceLabel: source.name,
+        })
+        toastSuccess(ui.integratedOpen)
+      }
+
       await wails.markOnlineWatched(
         anime.source_id,
         ep.id,
@@ -170,6 +200,7 @@ export default function OnlineAnimeDetail({ anime, onBack }) {
         malID,
         ep.number ?? 0,
       )
+
       setEpisodes((prev) => prev.map((item) => (
         item.id === ep.id ? { ...item, watched: true } : item
       )))
@@ -186,26 +217,24 @@ export default function OnlineAnimeDetail({ anime, onBack }) {
     } finally {
       setStreaming(null)
     }
-  }, [anime, ui.mpvMissing, ui.openingEpisode, ui.playError, ui.resolveError])
+  }, [anime, playerMode, source.name, ui.integratedOpen, ui.mpvMissing, ui.openingEpisode, ui.playError, ui.resolveError])
 
   const handleDownload = useCallback(async (ep) => {
     setDownloading(ep.id)
     try {
-      // Get download links from JKAnime
       const links = await wails.getDownloadLinks(anime.source_id, ep.id)
       if (!links || links.length === 0) {
         toastError(t('No hay links de descarga disponibles para este episodio'))
         return
       }
 
-      // Use the first available link (Mediafire preferred, already sorted)
       const link = links[0]
       await wails.startDownload(
         link.url,
         anime.title,
         ep.number ?? 0,
         ep.title ?? `Episodio ${ep.number}`,
-        anime.cover_url ?? ''
+        anime.cover_url ?? '',
       )
       toastSuccess(`${t('Descarga iniciada')}: Ep. ${ep.number} (${link.host})`)
     } catch (e) {
@@ -218,8 +247,16 @@ export default function OnlineAnimeDetail({ anime, onBack }) {
 
   return (
     <div className="fade-in anime-detail">
+      <IntegratedVideoPlayer
+        open={Boolean(integratedPlayback?.url)}
+        title={integratedPlayback?.title}
+        subtitle={integratedPlayback?.subtitle}
+        streamURL={integratedPlayback?.url}
+        streamKind={integratedPlayback?.kind}
+        sourceLabel={integratedPlayback?.sourceLabel}
+        onClose={() => setIntegratedPlayback(null)}
+      />
 
-      {/* ── Hero ── */}
       <div
         className="detail-hero"
         style={backdropSrc ? {
@@ -231,9 +268,7 @@ export default function OnlineAnimeDetail({ anime, onBack }) {
         </button>
 
         <div className="detail-hero-content">
-          {coverSrc && (
-            <img src={coverSrc} alt={anime.title} className="detail-cover" />
-          )}
+          {coverSrc ? <img src={coverSrc} alt={anime.title} className="detail-cover" /> : null}
 
           <div className="detail-info">
             <div className="detail-kicker">
@@ -251,17 +286,13 @@ export default function OnlineAnimeDetail({ anime, onBack }) {
               >
                 {source.name}
               </span>
-              {source.flag && (
-                <span className="badge badge-muted">{source.flag}</span>
-              )}
-              {anime.year && (
-                <span className="badge badge-muted">{anime.year}</span>
-              )}
-              {episodes.length > 0 && (
+              {source.flag ? <span className="badge badge-muted">{source.flag}</span> : null}
+              {anime.year ? <span className="badge badge-muted">{anime.year}</span> : null}
+              {episodes.length > 0 ? (
                 <span className="badge badge-muted">
                   {episodes.length} {t('Episodios').toLowerCase()}
                 </span>
-              )}
+              ) : null}
             </div>
 
             <h1 className="detail-title">{anime.title}</h1>
@@ -290,37 +321,49 @@ export default function OnlineAnimeDetail({ anime, onBack }) {
         </div>
       </div>
 
-      {/* ── Episodes ── */}
       <div className="episode-list-section">
         <div className="episode-section-head">
           <div>
-            <div className="episode-section-kicker">
-              {t('Anime online')}
-            </div>
+            <div className="episode-section-kicker">{t('Anime online')}</div>
             <span className="section-title">
               {t('Episodios')}
-              {episodes.length > 0 && (
-                <span className="badge badge-muted" style={{ marginLeft: 8 }}>
-                  {episodes.length}
-                </span>
-              )}
+              {episodes.length > 0 ? <span className="badge badge-muted" style={{ marginLeft: 8 }}>{episodes.length}</span> : null}
             </span>
           </div>
-          <p className="episode-section-copy">{ui.episodeCopy}</p>
+          <div className="episode-playback-control">
+            <div className="episode-playback-copy">
+              <div className="episode-playback-label">{ui.playerMode}</div>
+              <div className="episode-playback-desc">
+                {playerMode === 'integrated' ? ui.integratedModeDesc : ui.mpvModeDesc}
+              </div>
+            </div>
+            <div className="episode-playback-switch">
+              <button
+                className={`episode-playback-pill${playerMode === 'mpv' ? ' active' : ''}`}
+                onClick={() => setPlayerMode('mpv')}
+                type="button"
+              >
+                {ui.mpvMode}
+              </button>
+              <button
+                className={`episode-playback-pill${playerMode === 'integrated' ? ' active' : ''}`}
+                onClick={() => setPlayerMode('integrated')}
+                type="button"
+              >
+                {ui.integratedMode}
+              </button>
+            </div>
+          </div>
         </div>
 
-        {loading && (
-          <div style={{ display: 'flex', gap: 6, padding: '20px 0', alignItems: 'center' }}>
-            <span className="loading-dot" />
-            <span className="loading-dot" />
-            <span className="loading-dot" />
-            <span style={{ color: 'var(--text-muted)', fontSize: 12, marginLeft: 6 }}>
-              {ui.loadingEpisodes}
-            </span>
-          </div>
-        )}
+        {loading ? (
+          <>
+            <div className="manga-skeleton-caption">{ui.loadingEpisodes}</div>
+            <EpisodeGridSkeleton count={8} />
+          </>
+        ) : null}
 
-        {error && (
+        {error ? (
           <div style={{
             padding: '12px 14px',
             background: 'rgba(224,82,82,0.08)',
@@ -332,21 +375,18 @@ export default function OnlineAnimeDetail({ anime, onBack }) {
           }}>
             {error}
           </div>
-        )}
+        ) : null}
 
-        {!loading && !error && episodes.length === 0 && (
+        {!loading && !error && episodes.length === 0 ? (
           <div className="empty-state" style={{ padding: '40px 0' }}>
             <div className="empty-state-title">{t('Sin episodios')}</div>
-            <p className="empty-state-desc">
-              {ui.noEpisodesDesc(source.name)}
-            </p>
+            <p className="empty-state-desc">{ui.noEpisodesDesc(source.name)}</p>
           </div>
-        )}
+        ) : null}
 
-        {!loading && episodes.length > 0 && (
-          <>
-            <div className="episode-grid">
-            {episodes.map(ep => {
+        {!loading && episodes.length > 0 ? (
+          <div className="episode-grid">
+            {episodes.map((ep) => {
               const isStreaming = streaming === ep.id
               const isDownloading = downloading === ep.id
               const artSrc = getEpisodeArtwork(ep)
@@ -376,15 +416,13 @@ export default function OnlineAnimeDetail({ anime, onBack }) {
                       {ep.title ?? `${t('Episodio')} ${ep.number}`}
                     </div>
 
-                    <div className="episode-card-desc">
-                      {ui.episodeDesc}
-                    </div>
+                    <div className="episode-card-desc">{ui.episodeDesc}</div>
 
                     <div className="episode-card-actions">
-                      {anime.source_id === 'jkanime-es' && (
+                      {anime.source_id === 'jkanime-es' ? (
                         <button
                           className="btn btn-ghost episode-dl-btn"
-                          onClick={e => { e.stopPropagation(); handleDownload(ep) }}
+                          onClick={(event) => { event.stopPropagation(); handleDownload(ep) }}
                           disabled={isDownloading}
                           title={t('Descargar')}
                         >
@@ -393,24 +431,28 @@ export default function OnlineAnimeDetail({ anime, onBack }) {
                             : '⬇'}
                           {t('Descargar')}
                         </button>
-                      )}
+                      ) : null}
+
                       <button
                         className="btn btn-primary episode-play-btn"
-                        onClick={e => { e.stopPropagation(); handleStream(ep) }}
+                        onClick={(event) => { event.stopPropagation(); handleStream(ep) }}
                         disabled={isStreaming}
                       >
                         {isStreaming
                           ? <><span className="btn-spinner" style={{ borderTopColor: '#0a0a0e', borderColor: 'rgba(10,10,14,0.25)' }} /> {ui.loading}</>
-                          : ep.watched ? `↩ ${isEnglish ? 'Watch again' : 'Ver de nuevo'}` : `▶ ${isEnglish ? 'Watch' : 'Ver'}`}
+                          : ep.watched
+                            ? `↩ ${isEnglish ? 'Watch again' : 'Ver de nuevo'}`
+                            : `▶ ${playerMode === 'integrated' ? ui.integratedMode : (isEnglish ? 'Watch' : 'Ver')}`}
                       </button>
                     </div>
                   </div>
                 </div>
               )
             })}
-            </div>
-          </>
-        )}
+          </div>
+        ) : null}
+
+        <div className="episode-player-note">{ui.integratedNote}</div>
       </div>
     </div>
   )

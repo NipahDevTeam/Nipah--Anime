@@ -2,6 +2,7 @@
 import { wails } from '../lib/wails'
 import { toastSuccess, toastError } from '../components/ui/Toast'
 import { useI18n } from '../lib/i18n'
+import UpdateChecker from '../components/ui/UpdateChecker'
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Reusable setting row components
@@ -218,14 +219,14 @@ export default function Settings() {
           <div className="setting-notice">
             {isEnglish ? (
               <>
-                <b>MPV is not installed or could not be found.</b> Without MPV, online mode will not work.
+                <b>MPV is not installed or could not be found.</b> Online mode can still use the integrated player, but MPV remains the most compatible option.
                 Download it from <a href="https://mpv.io" target="_blank" rel="noreferrer"
                   style={{ color: 'var(--accent)' }}>mpv.io</a> and install it normally.
                 On Windows, you can also specify the full path to the `.exe` above.
               </>
             ) : (
               <>
-                <b>MPV no estÃ¡ instalado o no se encontrÃ³.</b> Sin MPV, el modo online no funcionarÃ¡.
+                <b>MPV no está instalado o no se encontró.</b> El modo online puede usar el reproductor integrado, pero MPV sigue siendo la opción más compatible.
                 DescÃ¡rgalo desde <a href="https://mpv.io" target="_blank" rel="noreferrer"
                   style={{ color: 'var(--accent)' }}>mpv.io</a> e instÃ¡lalo normalmente.
                 En Windows, tambiÃ©n puedes especificar la ruta completa al .exe arriba.
@@ -233,6 +234,20 @@ export default function Settings() {
             )}
           </div>
         )}
+
+        <SettingRow
+          label={isEnglish ? 'Preferred player' : 'Reproductor preferido'}
+          description={isEnglish ? 'MPV is recommended. Integrated mode is useful for quick in-app playback.' : 'MPV es la opción recomendada. El modo integrado sirve para reproducción rápida dentro de la app.'}
+        >
+          <SettingSelect
+            value={settings.player ?? 'mpv'}
+            onChange={v => set('player', v)}
+            options={[
+              { value: 'mpv', label: 'MPV' },
+              { value: 'integrated', label: isEnglish ? 'Integrated player (Beta)' : 'Reproductor integrado (Beta)' },
+            ]}
+          />
+        </SettingRow>
 
         <SettingRow
           label={isEnglish ? 'Preferred quality' : 'Calidad preferida'}
@@ -246,6 +261,21 @@ export default function Settings() {
               { value: '720p',  label: '720p (HD)' },
               { value: '480p',  label: '480p' },
               { value: '360p',  label: isEnglish ? '360p (Low bandwidth)' : '360p (Bajo consumo)' },
+            ]}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label="Anime4K"
+          description={isEnglish ? 'Optional MPV shader preset for sharper anime playback' : 'Preset opcional de shaders para ver anime con mÃ¡s nitidez en MPV'}
+        >
+          <SettingSelect
+            value={settings.anime4k_level ?? 'off'}
+            onChange={v => set('anime4k_level', v)}
+            options={[
+              { value: 'off', label: isEnglish ? 'Off' : 'Desactivado' },
+              { value: 'medium', label: isEnglish ? 'Medium' : 'Medio' },
+              { value: 'high', label: isEnglish ? 'High' : 'Alto' },
             ]}
           />
         </SettingRow>
@@ -491,6 +521,10 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* ── Actualizaciones ── */}
+      <SectionHeader title={t('update_section')} />
+      <UpdateChecker t={t} isEnglish={isEnglish} />
+
       {/* â”€â”€ Save button â”€â”€ */}
       <div className="setting-group">
         <SettingRow
@@ -594,7 +628,7 @@ export default function Settings() {
           {saving ? t('Guardando...') : t('Guardar ajustes')}
         </button>
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          v{/* version */}0.1.0 Â· Nipah! Anime
+          Nipah! Anime
         </span>
       </div>
     </div>

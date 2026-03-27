@@ -5,15 +5,16 @@ package mangadex
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	azuretls "github.com/Noooste/azuretls-client"
+
 	"miruro/backend/extensions"
+	"miruro/backend/httpclient"
 )
 
 const apiBase = "https://api.mangadex.org"
@@ -76,7 +77,9 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 		params2.Add("contentRating[]", "erotica")
 		endpoint2 := fmt.Sprintf("%s/manga?%s", apiBase, params2.Encode())
 		if body2, err2 := getJSONWithRetry(endpoint2); err2 == nil {
-			var resp2 struct{ Data []mangaEntry `json:"data"` }
+			var resp2 struct {
+				Data []mangaEntry `json:"data"`
+			}
 			if json.Unmarshal(body2, &resp2) == nil && len(resp2.Data) > len(resp.Data) {
 				resp.Data = resp2.Data
 			}
@@ -177,10 +180,14 @@ func (e *Extension) fetchChapters(mangaID string, lang Language) ([]extensions.C
 		for _, ch := range resp.Data {
 			a := ch.Attributes
 			var num float64
-			fmt.Sscanf(a.Chapter, "%f", &num)
+			if _, err := fmt.Sscanf(a.Chapter, "%f", &num); err != nil {
+				num = 0
+			}
 
 			var volNum float64
-			fmt.Sscanf(a.Volume, "%f", &volNum)
+			if _, err := fmt.Sscanf(a.Volume, "%f", &volNum); err != nil {
+				volNum = 0
+			}
 
 			title := a.Title
 			if title == "" {
@@ -397,20 +404,22 @@ func getJSONWithRetry(endpoint string) ([]byte, error) {
 	return nil, lastErr
 }
 
-func getJSON(endpoint string) ([]byte, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
-	req, err := http.NewRequest("GET", endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "Nipah-Anime/1.0 (github.com/nipah-anime)")
-	req.Header.Set("Accept", "application/json")
+var httpSession = httpclient.NewSession(15)
 
-	resp, err := client.Do(req)
+func getJSON(endpoint string) ([]byte, error) {
+	req := &azuretls.Request{
+		Url:    endpoint,
+		Method: "GET",
+		OrderedHeaders: azuretls.OrderedHeaders{
+			{"User-Agent", "Nipah-Anime/1.0 (github.com/nipah-anime)"},
+			{"Accept", "application/json"},
+		},
+	}
+
+	resp, err := httpSession.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("mangadex request failed: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode == 429 {
 		retryAfter := resp.Header.Get("Retry-After")
@@ -426,8 +435,5 @@ func getJSON(endpoint string) ([]byte, error) {
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	return io.ReadAll(resp.Body)
+	return resp.Body, nil
 }
-
-// keep for compatibility
-var _ = strconv.Atoi

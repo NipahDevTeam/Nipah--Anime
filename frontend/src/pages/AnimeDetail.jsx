@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { wails } from '../lib/wails'
 import { toastError, toastSuccess } from '../components/ui/Toast'
+import BlurhashImage from '../components/ui/BlurhashImage'
 
 function formatTime(seconds) {
   if (!seconds) return ''
@@ -131,7 +132,7 @@ export default function AnimeDetail() {
 
         <div className="detail-hero-content">
           {anime.cover_image && (
-            <img src={anime.cover_image} alt={anime.display_title} className="detail-cover" />
+            <BlurhashImage src={anime.cover_image} blurhash={anime.cover_blurhash} alt={anime.display_title} imgClassName="detail-cover" />
           )}
           <div className="detail-info">
             <h1 className="detail-title">{anime.display_title}</h1>

@@ -11,7 +11,10 @@ import (
 
 	"miruro/backend/extensions"
 	"miruro/backend/extensions/animeflv"
+	"miruro/backend/logger"
 )
+
+var log = logger.For("LectorManga")
 
 const baseURL = "https://lectormangaa.com"
 
@@ -36,21 +39,21 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 	if err != nil {
 		return nil, fmt.Errorf("lectormanga search: %w", err)
 	}
-	fmt.Printf("[LectorManga] Search response: %d bytes\n", len(body))
+	log.Debug().Int("bytes", len(body)).Msg("Search response")
 	// Debug: show first href with biblioteca
 	if idx := strings.Index(body, "biblioteca"); idx != -1 {
 		start := max(0, idx-50)
 		end := min(len(body), idx+100)
-		fmt.Printf("[LectorManga] Sample href: %s\n", body[start:end])
+		log.Debug().Str("sample", body[start:end]).Msg("Sample href")
 	} else {
-		fmt.Printf("[LectorManga] No 'biblioteca' found in response\n")
+		log.Debug().Msg("No 'biblioteca' found in response")
 		// Show a snippet to understand structure
 		if len(body) > 500 {
-			fmt.Printf("[LectorManga] Body snippet: %.500s\n", body[:500])
+			log.Debug().Str("snippet", body[:500]).Msg("Body snippet")
 		}
 	}
 	results := parseSearchResults(body)
-	fmt.Printf("[LectorManga] Parsed %d results\n", len(results))
+	log.Info().Int("count", len(results)).Msg("Parsed results")
 	return results, nil
 }
 
@@ -83,7 +86,7 @@ func parseSearchResults(html string) []extensions.SearchResult {
 		if idx == -1 {
 			continue
 		}
-		chunk := html[max(0, idx-200) : min(len(html), idx+600)]
+		chunk := html[max(0, idx-200):min(len(html), idx+600)]
 
 		title := slugToTitle(slug)
 		cover := ""
@@ -96,9 +99,9 @@ func parseSearchResults(html string) []extensions.SearchResult {
 		}
 
 		out = append(out, extensions.SearchResult{
-			ID:       "/biblioteca/" + slug + "/",
-			Title:    title,
-			CoverURL: cover,
+			ID:        "/biblioteca/" + slug + "/",
+			Title:     title,
+			CoverURL:  cover,
 			Languages: []extensions.Language{extensions.LangSpanish},
 		})
 	}
@@ -141,7 +144,9 @@ func parseChapters(html, mangaID string) []extensions.Chapter {
 		seen[numStr] = true
 
 		var num float64
-		fmt.Sscanf(numStr, "%f", &num)
+		if _, err := fmt.Sscanf(numStr, "%f", &num); err != nil {
+			num = 0
+		}
 
 		out = append(out, extensions.Chapter{
 			ID:     "/biblioteca/" + slug + "/capitulo-" + numStr + "/",
@@ -167,10 +172,10 @@ func parseChapters(html, mangaID string) []extensions.Chapter {
 
 var (
 	// Pages often embedded as JS array or JSON
-	pagesJSRe   = regexp.MustCompile(`pages\s*=\s*(\[[\s\S]+?\])`)
-	pageImgRe   = regexp.MustCompile(`<img[^>]+class="[^"]*chapter[^"]*"[^>]+src="(https?://[^"]+)"`)
-	pageImgRe2  = regexp.MustCompile(`data-src="(https?://[^"]+\.(?:jpg|png|webp|jpeg))"`)
-	pageJSONRe  = regexp.MustCompile(`"url"\s*:\s*"(https?://[^"]+)"`)
+	pagesJSRe  = regexp.MustCompile(`pages\s*=\s*(\[[\s\S]+?\])`)
+	pageImgRe  = regexp.MustCompile(`<img[^>]+class="[^"]*chapter[^"]*"[^>]+src="(https?://[^"]+)"`)
+	pageImgRe2 = regexp.MustCompile(`data-src="(https?://[^"]+\.(?:jpg|png|webp|jpeg))"`)
+	pageJSONRe = regexp.MustCompile(`"url"\s*:\s*"(https?://[^"]+)"`)
 )
 
 func (e *Extension) GetPages(chapterID string) ([]extensions.PageSource, error) {

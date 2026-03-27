@@ -1,0 +1,1939 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   NIPAH! ANIME — REVAMP 2026
+   Complete GUI overhaul: pure black/orange, Hayase + Crunchyroll-style layout.
+   This file loads after index.css and wins on every conflicting rule.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Design tokens ───────────────────────────────────────────────────────────── */
+:root {
+  --bg-base:       #0a0a0a;
+  --bg-surface:    #111111;
+  --bg-card:       #161616;
+  --accent:        #f07820;
+  --accent-hover:  #ff8c2e;
+  --text-primary:  #f4f4f4;
+  --text-muted:    #888888;
+  --border:        rgba(255, 255, 255, 0.07);
+  --sidebar-w:     210px;
+  --topbar-h:      50px;
+  --t-fast:        130ms ease;
+  --t-mid:         210ms ease;
+}
+
+/* ── Global reset ────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── App shell ───────────────────────────────────────────────────────────────── */
+.app-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+/* Remove decorative blobs */
+.app-ambient { display: none !important; }
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Topbar ──────────────────────────────────────────────────────────────────── */
+.topbar {
+  height: var(--topbar-h) !important;
+  background: rgba(10, 10, 10, 0.97) !important;
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border) !important;
+  display: flex !important;
+  align-items: center;
+  padding: 0 22px !important;
+  gap: 12px;
+  flex-shrink: 0;
+  z-index: 60;
+  box-shadow: none !important;
+}
+
+.topbar-copy {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.topbar-kicker {
+  font-size: 10px !important;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted) !important;
+}
+
+.topbar-title {
+  font-family: var(--font-display);
+  font-size: 15px !important;
+  font-weight: 700;
+  color: var(--text-primary) !important;
+  letter-spacing: -0.01em;
+}
+
+.topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+.topbar-chip {
+  font-size: 11px !important;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent) !important;
+  background: rgba(240, 120, 32, 0.09) !important;
+  border: 1px solid rgba(240, 120, 32, 0.22) !important;
+  padding: 4px 14px !important;
+  border-radius: 999px !important;
+}
+
+/* ── App content — zero padding, hero bleeds wall-to-wall ────────────────────── */
+.app-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 !important;
+  background: var(--bg-base) !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(240, 120, 32, 0.20) transparent;
+}
+.app-content::-webkit-scrollbar         { width: 4px; }
+.app-content::-webkit-scrollbar-thumb   { background: rgba(240, 120, 32, 0.22); border-radius: 2px; }
+.app-content::-webkit-scrollbar-track   { background: transparent; }
+
+.app-content-inner {
+  width: 100%;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* ── Detail pages — cancel old negative bleed margin (was designed for padded wrapper) ── */
+.anime-detail,
+.manga-detail {
+  margin: 0 !important;
+}
+
+.detail-hero {
+  padding-left: 36px !important;
+  padding-right: 36px !important;
+}
+
+.episode-list-section,
+.detail-body,
+.detail-episodes {
+  padding-left: 36px !important;
+  padding-right: 36px !important;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w) !important;
+  flex-shrink: 0;
+  background: #0d0d0d !important;
+  border-right: 1px solid var(--border) !important;
+  display: flex !important;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: none !important;
+}
+
+.sidebar-logo {
+  padding: 16px 14px 13px !important;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.sidebar-logo-mark {
+  width: 30px !important;
+  height: 30px !important;
+  background: var(--accent) !important;
+  border-radius: 7px !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 12px;
+  color: #000 !important;
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  box-shadow: none !important;
+}
+
+.sidebar-brand-title {
+  font-family: var(--font-display) !important;
+  font-size: 13.5px !important;
+  font-weight: 800 !important;
+  color: var(--text-primary) !important;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.sidebar-brand-subtitle {
+  font-size: 10px !important;
+  color: var(--text-muted) !important;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 8px !important;
+  display: flex !important;
+  flex-direction: column;
+  gap: 1px;
+  scrollbar-width: none;
+}
+.sidebar-nav::-webkit-scrollbar { display: none; }
+
+.sidebar-section-label {
+  font-size: 9px !important;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.20) !important;
+  padding: 10px 8px 4px !important;
+  pointer-events: none;
+  user-select: none;
+}
+
+.sidebar-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sidebar-divider {
+  height: 1px !important;
+  background: var(--border) !important;
+  margin: 6px 0 !important;
+}
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px 9px 11px !important;
+  border-radius: 7px !important;
+  color: rgba(255, 255, 255, 0.42) !important;
+  font-size: 12.5px !important;
+  font-weight: 500;
+  text-decoration: none !important;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+  cursor: pointer;
+  border-left: 3px solid transparent !important;
+  line-height: 1;
+  background: transparent !important;
+}
+
+.sidebar-nav-item:hover {
+  background: rgba(255, 255, 255, 0.055) !important;
+  color: rgba(255, 255, 255, 0.80) !important;
+}
+
+.sidebar-nav-item.active {
+  background: rgba(240, 120, 32, 0.11) !important;
+  color: var(--text-primary) !important;
+  border-left-color: var(--accent) !important;
+  font-weight: 600;
+}
+
+.nav-icon {
+  font-size: 13px;
+  width: 17px;
+  text-align: center;
+  flex-shrink: 0;
+  font-family: 'Segoe UI Symbol', 'Apple Symbols', sans-serif;
+  letter-spacing: 0;
+}
+
+.sidebar-nav-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-bottom {
+  border-top: 1px solid var(--border) !important;
+  padding: 8px 8px !important;
+  display: flex !important;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sidebar-lang {
+  display: flex;
+  gap: 4px;
+  padding: 7px 6px 2px !important;
+}
+
+.sidebar-lang-btn {
+  flex: 1;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.32) !important;
+  font-size: 10.5px !important;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 5px 0 !important;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+  font-family: var(--font-mono);
+}
+.sidebar-lang-btn:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+.sidebar-lang-btn.active {
+  background: rgba(240, 120, 32, 0.13) !important;
+  border-color: rgba(240, 120, 32, 0.35) !important;
+  color: var(--accent) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════
+   HOME CATALOG PAGE
+   ════════════════════════════════════════════════════════════════════════════════ */
+.home-catalog-page {
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.home-catalog-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0 !important;
+  gap: 0 !important;
+}
+
+/* Small top gap so the hero doesn't press against the topbar (yellow fix) */
+.home-catalog-body > .discover-page-embedded > .hero-carousel,
+.home-catalog-body .hero-carousel:first-child {
+  margin-top: 10px !important;
+}
+
+/* Also give the standalone /descubrir page's hero a small top gap */
+.discover-page:not(.discover-page-embedded) .hero-carousel {
+  margin-top: 10px !important;
+}
+
+/* Spacing: first shelf after the discover feed */
+.discover-page-embedded + .home-shelf {
+  margin-top: 44px;
+}
+
+/* ── User watching band — sits between hero and AniList genre rows ────────────── */
+.home-user-band {
+  background: transparent;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 4px 0 24px;
+  margin-top: 0;
+}
+
+.home-user-band-anime {
+  margin: 16px 28px 0;
+  padding: 10px 0 26px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%),
+    radial-gradient(circle at top right, rgba(245, 166, 35, 0.16) 0%, rgba(245, 166, 35, 0) 42%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+}
+
+.home-user-band-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  opacity: 0.70;
+  padding: 18px 50px 2px;
+}
+
+.home-user-band-anime .home-shelf {
+  margin-top: 18px;
+}
+
+.home-user-band-anime .home-shelf:first-of-type {
+  margin-top: 10px;
+}
+
+.home-rail-card.home-anime-status-card {
+  background: linear-gradient(180deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.02) 100%);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+/* band → first genre row: restore the content gap */
+.home-user-band + .discover-content {
+  margin-top: 8px;
+}
+
+/* ── Home main tabs (Anime / Manga) ─────────────────────────────────────────── */
+.home-main-tabs {
+  display: flex;
+  gap: 0;
+  padding: 6px 50px 0;
+  background: var(--bg-base);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.home-main-tab {
+  background: none !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  color: rgba(255, 255, 255, 0.38) !important;
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.01em;
+  padding: 8px 18px 10px !important;
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.home-main-tab:hover { color: rgba(255, 255, 255, 0.75) !important; }
+.home-main-tab.active {
+  color: var(--text-primary) !important;
+  border-bottom-color: var(--accent) !important;
+}
+
+/* ── Manga tab content ───────────────────────────────────────────────────────── */
+.home-manga-tab-content {
+  display: flex;
+  flex-direction: column;
+  padding-top: 8px;
+}
+
+.home-manga-subtabs {
+  display: flex;
+  gap: 8px;
+  padding: 20px 50px 8px;
+}
+
+.home-manga-subtab {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  border-radius: 6px !important;
+  color: rgba(255, 255, 255, 0.46) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 5px 18px !important;
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+.home-manga-subtab:hover {
+  background: rgba(255, 255, 255, 0.09) !important;
+  color: rgba(255, 255, 255, 0.78) !important;
+}
+.home-manga-subtab.active {
+  background: rgba(240, 120, 32, 0.14) !important;
+  border-color: rgba(240, 120, 32, 0.38) !important;
+  color: var(--accent) !important;
+}
+
+.home-manga-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 50px;
+  color: var(--text-muted);
+  font-size: 13px;
+  gap: 10px;
+  text-align: center;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════
+   MANGA GRID  (large portrait cards — reference: Suwayomi layout)
+   ════════════════════════════════════════════════════════════════════════════════ */
+
+.manga-grid-section {
+  padding: 22px 50px 32px;
+}
+
+.manga-grid-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.manga-grid-section-title {
+  font-family: var(--font-display) !important;
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  color: var(--text-primary) !important;
+  letter-spacing: 0.01em;
+}
+
+.manga-grid-section-count {
+  font-family: var(--font-mono) !important;
+  font-size: 11.5px !important;
+  color: rgba(255, 255, 255, 0.32) !important;
+}
+
+/* The grid itself */
+.manga-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)) !important;
+  gap: 20px 14px !important;
+}
+
+/* Individual card */
+.mgcard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.mgcard-cover {
+  aspect-ratio: 2 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  background: #161616;
+  transition: outline 120ms;
+}
+
+.mgcard-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 220ms ease;
+}
+
+.mgcard:hover .mgcard-cover img {
+  transform: scale(1.05);
+}
+
+/* subtle bottom gradient so badge is readable */
+.mgcard-cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent 52%, rgba(0, 0, 0, 0.65) 100%);
+  pointer-events: none;
+  border-radius: 8px;
+}
+
+/* orange outline on hover */
+.mgcard:hover .mgcard-cover {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+/* progress / chapter badge */
+.mgcard-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  z-index: 2;
+  white-space: nowrap;
+}
+
+/* fallback placeholder when no cover image */
+.mgcard-cover-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.18);
+  background: #141414;
+  font-family: var(--font-display);
+}
+
+.mgcard-title {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+  line-height: 1.35 !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  padding: 0 1px;
+}
+
+.mgcard-sub {
+  font-size: 10.5px !important;
+  color: rgba(255, 255, 255, 0.34) !important;
+  font-family: var(--font-mono) !important;
+  line-height: 1;
+  text-transform: capitalize;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════
+   HERO CAROUSEL — full bleed, Hayase-style
+   ════════════════════════════════════════════════════════════════════════════════ */
+.hero-carousel {
+  position: relative !important;
+  width: 100% !important;
+  height: 56vh !important;
+  min-height: 380px !important;
+  max-height: 620px !important;
+  overflow: hidden !important;
+  cursor: pointer;
+  background: #050505 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+}
+
+.hero-banner {
+  position: absolute !important;
+  inset: 0 !important;
+  background-size: cover !important;
+  background-position: center 22% !important;
+  transition: opacity 0.55s ease !important;
+}
+
+/* Gradient: soft atmospheric fade — no wall, no box, artwork breathes.
+   Text-shadow on the title handles readability instead. */
+.hero-gradient {
+  position: absolute !important;
+  inset: 0 !important;
+  background:
+    linear-gradient(to right,
+      rgba(0, 0, 0, 0.58) 0%,
+      rgba(0, 0, 0, 0.28) 28%,
+      rgba(0, 0, 0, 0.04) 54%,
+      rgba(0, 0, 0, 0.00) 70%
+    ),
+    linear-gradient(to top,
+      rgba(0, 0, 0, 0.50) 0%,
+      rgba(0, 0, 0, 0.00) 32%
+    ) !important;
+  pointer-events: none;
+}
+
+/* Cover poster — hidden, artwork lives in the banner background */
+.hero-cover { display: none !important; }
+
+/* ── THE BUBBLE FIX ──────────────────────────────────────────────────────────
+   index.css .hero-info has background, backdrop-filter, border, border-radius 24px
+   — that's the rounded dark window. Nuke it entirely.               ───────── */
+.hero-info {
+  background: none !important;
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.hero-content {
+  position: absolute !important;
+  left: 52px !important;
+  bottom: 54px !important;
+  max-width: 540px !important;
+  z-index: 2;
+  top: auto !important;
+  right: auto !important;
+  /* Zero out anything that could create a "window" look */
+  padding: 0 !important;
+  margin: 0 !important;
+  background: none !important;
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  animation: fadeInUp 0.45s ease both;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.hero-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.hero-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10.5px !important;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--accent) !important;
+  margin-bottom: 9px !important;
+}
+
+.hero-score-inline {
+  color: rgba(255, 255, 255, 0.50) !important;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+
+/* Title — sober DM Sans 500, generous horizontal width, no truncation.
+   Must beat index.css specificity including .discover-page-embedded .hero-title
+   which had max-width:10ch + font-size:64-96px (the truncation culprit).      */
+.hero-title,
+.hero-carousel .hero-title,
+.discover-page .hero-title,
+.discover-page-embedded .hero-title {
+  font-family: 'DM Sans', var(--font-body), sans-serif !important;
+  font-size: clamp(22px, 2.6vw, 42px) !important;
+  font-weight: 500 !important;
+  letter-spacing: -0.01em !important;
+  color: #ffffff !important;
+  line-height: 1.22 !important;
+  margin: 0 0 12px !important;
+  /* Generous horizontal span — no artificial 10ch cap */
+  max-width: min(620px, 58%) !important;
+  /* Always wrap, never truncate */
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+  display: block !important;
+  -webkit-line-clamp: unset !important;
+  /* Readability via shadow, not gradient */
+  text-shadow:
+    0 1px 0   rgba(0, 0, 0, 0.85),
+    0 2px 14px rgba(0, 0, 0, 0.75),
+    0 4px 36px rgba(0, 0, 0, 0.55) !important;
+}
+
+.hero-genres {
+  display: flex !important;
+  gap: 5px !important;
+  flex-wrap: wrap;
+  margin-bottom: 11px !important;
+}
+
+.hero-genre-tag {
+  font-size: 10.5px !important;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.68) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.11) !important;
+  border-radius: 4px !important;
+  padding: 3px 9px !important;
+}
+
+/* Synopsis hidden — title-first layout like Hayase */
+.hero-synopsis { display: none !important; }
+
+.hero-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.hero-cta {
+  background: var(--accent) !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 6px !important;
+  padding: 11px 26px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  cursor: pointer;
+  transition: background var(--t-fast), transform var(--t-fast);
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+}
+.hero-cta:hover:not(:disabled) {
+  background: var(--accent-hover) !important;
+  transform: scale(1.02);
+}
+.hero-cta:disabled { opacity: 0.55; cursor: wait; }
+
+.hero-ep-count {
+  font-size: 11px !important;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.42) !important;
+  font-family: var(--font-mono);
+}
+
+/* Navigation arrows — large, visible, sit at vertical center of hero */
+.hero-nav {
+  position: absolute !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  z-index: 4;
+  background: rgba(0, 0, 0, 0.52) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  color: rgba(255, 255, 255, 0.90) !important;
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 50% !important;
+  cursor: pointer;
+  font-size: 22px !important;
+  font-weight: 300;
+  line-height: 1 !important;
+  transition: background var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: blur(4px);
+}
+.hero-nav:hover {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  transform: translateY(-50%) scale(1.08) !important;
+}
+.hero-nav-prev { left: 18px !important; }
+.hero-nav-next { right: 18px !important; }
+
+/* Carousel dots — removed, arrows are the only navigation */
+.hero-dots { display: none !important; }
+
+/* Hero loading badge */
+.hero-loading-badge {
+  position: absolute;
+  bottom: 22px;
+  left: 50px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(5, 5, 5, 0.72);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 7px 16px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.70);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════
+   DISCOVER PAGE CONTENT LAYOUT
+   ════════════════════════════════════════════════════════════════════════════════ */
+.discover-page,
+.discover-page-embedded {
+  display: flex !important;
+  flex-direction: column;
+  gap: 0;
+}
+
+.discover-content,
+.discover-page-embedded .discover-content {
+  display: flex !important;
+  flex-direction: column;
+  gap: 34px !important;
+  padding: 38px 50px 60px !important;
+}
+
+/* Section heading (generic) — replaced by hrow-header */
+.discover-section-heading,
+.discover-section-title,
+.discover-section-title-stacked {
+  display: none !important;
+}
+
+/* Tabs (on /descubrir standalone) */
+.discover-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 14px 50px 0 !important;
+}
+.discover-tab {
+  background: none !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  color: rgba(255, 255, 255, 0.42) !important;
+  font-size: 13px !important;
+  font-weight: 600;
+  padding: 7px 14px 9px !important;
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.discover-tab:hover { color: rgba(255, 255, 255, 0.78) !important; }
+.discover-tab.active { color: var(--text-primary) !important; border-bottom-color: var(--accent) !important; }
+
+/* Flash message */
+.discover-flash {
+  position: fixed !important;
+  top: calc(var(--topbar-h) + 10px) !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  background: rgba(18, 18, 18, 0.96) !important;
+  border: 1px solid rgba(240, 120, 32, 0.38) !important;
+  color: var(--text-primary) !important;
+  font-size: 13px !important;
+  padding: 10px 20px !important;
+  border-radius: 8px !important;
+  z-index: 999;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5) !important;
+  max-width: 420px;
+  text-align: center;
+}
+
+.discover-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 80px 0;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════
+   HORIZONTAL SCROLL ROW  —  .hrow + .hrow-track
+   (used by DiscoverRow in Descubrir.jsx)
+   ════════════════════════════════════════════════════════════════════════════════ */
+.hrow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hrow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hrow-title {
+  font-family: var(--font-display);
+  font-size: 16.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+/* hrow-more hidden — navigation is via the end-of-row arrow card instead */
+.hrow-more { display: none !important; }
+.hrow-more-arrow { display: none !important; }
+
+/* End-of-row arrow — OUTSIDE the scroll track, always pinned to right edge */
+.hrow-end-arrow {
+  flex: 0 0 52px;
+  width: 52px;
+  align-self: stretch;     /* fills the full row height automatically */
+  margin-left: 8px;
+  margin-bottom: 10px;     /* match hrow-track bottom padding */
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.50);
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+  padding: 0;
+}
+.hrow-end-arrow:hover {
+  background: rgba(240, 120, 32, 0.14);
+  color: var(--accent);
+  border-color: rgba(240, 120, 32, 0.32);
+}
+
+/* Start-of-row (left) arrow — mirrors hrow-end-arrow */
+.hrow-start-arrow {
+  flex: 0 0 52px;
+  width: 52px;
+  align-self: stretch;
+  margin-right: 8px;
+  margin-bottom: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.50);
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+  padding: 0;
+}
+.hrow-start-arrow:hover {
+  background: rgba(240, 120, 32, 0.14);
+  color: var(--accent);
+  border-color: rgba(240, 120, 32, 0.32);
+}
+
+/* hrow-body: flex row that holds the scrollable track + the pinned arrow */
+.hrow-body {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+}
+
+.hrow-track {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 4px 0 10px;
+  scroll-snap-type: x proximity;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hrow-track::-webkit-scrollbar { display: none; }
+
+/* Discover subsection — map to hrow */
+.discover-subsection {
+  display: flex !important;
+  flex-direction: column;
+  gap: 12px !important;
+}
+
+.discover-subsection-header {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.discover-subsection-title {
+  font-family: var(--font-display) !important;
+  font-size: 16.5px !important;
+  font-weight: 700 !important;
+  color: var(--text-primary) !important;
+  letter-spacing: -0.01em !important;
+  margin: 0;
+}
+
+.discover-subsection-copy,
+.discover-subsection-copy p {
+  display: none !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════
+   PORTRAIT CARD  —  .pcard
+   (online AniList cards in discover rows)
+   ════════════════════════════════════════════════════════════════════════════════ */
+.pcard {
+  position: relative;
+  flex: 0 0 190px;
+  width: 190px;
+  height: 285px;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  scroll-snap-align: start;
+  background: #161616;
+  transition: transform var(--t-mid), box-shadow var(--t-mid);
+}
+
+.pcard:hover {
+  transform: scale(1.05);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.72), 0 0 0 2px var(--accent);
+  z-index: 2;
+}
+
+.pcard.pcard-busy {
+  pointer-events: none;
+  filter: saturate(0.4) brightness(0.72);
+}
+
+.pcard-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.pcard-img-empty {
+  width: 100%;
+  height: 100%;
+  background: #1c1c1c;
+}
+
+.pcard-vignette {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top,
+    rgba(0, 0, 0, 0.90) 0%,
+    rgba(0, 0, 0, 0.00) 52%
+  );
+  pointer-events: none;
+}
+
+.pcard-score {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  background: rgba(240, 120, 32, 0.90);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.03em;
+  font-family: var(--font-mono);
+}
+
+.pcard-status {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  background: rgba(0, 0, 0, 0.62);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+
+.pcard-body {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 10px 10px 9px;
+}
+
+.pcard-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #fff;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.9);
+}
+
+.pcard-meta {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.42);
+  margin-top: 3px;
+  font-family: var(--font-mono);
+}
+
+.pcard-loading {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.52);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════
+   HOME SHELVES (continue watching, local library)
+   ════════════════════════════════════════════════════════════════════════════════ */
+.home-shelf {
+  display: flex !important;
+  flex-direction: column;
+  gap: 12px !important;
+  padding: 0 50px !important;
+  margin-bottom: 34px !important;
+}
+.home-shelf:last-child { margin-bottom: 50px !important; }
+
+.home-shelf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.home-shelf-copy { display: flex; flex-direction: column; gap: 2px; }
+
+.home-shelf-title {
+  font-family: var(--font-display) !important;
+  font-size: 16.5px !important;
+  font-weight: 700 !important;
+  color: var(--text-primary) !important;
+  letter-spacing: -0.01em;
+}
+
+.home-shelf-subtitle {
+  font-size: 11.5px !important;
+  color: var(--text-muted) !important;
+}
+
+.home-shelf-action { display: flex; align-items: center; }
+
+.home-shelf-track {
+  display: flex !important;
+  gap: 8px !important;
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+  padding: 4px 0 10px !important;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none;
+}
+.home-shelf-track::-webkit-scrollbar { display: none; }
+
+/* ── Home rail card (local library, tracked list) ────────────────────────────── */
+.home-rail-card {
+  flex: 0 0 190px !important;
+  width: 190px !important;
+  height: 285px !important;
+  min-height: unset !important;
+  position: relative;
+  border: none !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+  background: #161616 !important;
+  cursor: pointer;
+  text-align: left;
+  scroll-snap-align: start;
+  padding: 0 !important;
+  transition: transform var(--t-mid), box-shadow var(--t-mid);
+  box-shadow: none !important;
+}
+.home-rail-card:hover {
+  transform: scale(1.05) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.72), 0 0 0 2px var(--accent) !important;
+}
+.home-rail-card.busy { filter: saturate(0.4); }
+
+.home-rail-card-image {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: unset !important;
+  object-fit: cover;
+  display: block;
+}
+
+.home-rail-card-image-placeholder {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: unset !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1c1c1c !important;
+  color: rgba(255, 255, 255, 0.18);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.home-rail-card-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0) 52%) !important;
+  pointer-events: none;
+}
+
+.home-rail-card-badge {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  background: rgba(240, 120, 32, 0.88) !important;
+  color: #fff !important;
+  font-size: 9px !important;
+  font-weight: 700;
+  padding: 2px 7px !important;
+  border-radius: 4px !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+
+.home-rail-card-copy {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 10px !important;
+}
+
+.home-rail-card-title {
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  color: #fff !important;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.9);
+}
+
+.home-rail-card-meta {
+  font-size: 9.5px !important;
+  color: rgba(255, 255, 255, 0.40) !important;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+}
+
+/* ── Continue watching card (online history) ─────────────────────────────────── */
+.home-progress-card {
+  flex: 0 0 190px !important;
+  width: 190px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  cursor: pointer;
+  scroll-snap-align: start;
+  border-radius: 8px !important;
+  overflow: hidden;
+  background: var(--bg-card) !important;
+  transition: transform var(--t-mid), box-shadow var(--t-mid);
+  border: none !important;
+  box-shadow: none !important;
+}
+.home-progress-card:hover {
+  transform: scale(1.04);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.65), 0 0 0 2px var(--accent) !important;
+}
+
+.home-progress-poster {
+  position: relative;
+  width: 100%;
+  height: 112px !important;
+  flex-shrink: 0;
+}
+
+.home-progress-poster-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.home-progress-ring {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+}
+
+.home-progress-copy {
+  padding: 8px 9px 9px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-progress-title {
+  font-size: 11.5px !important;
+  font-weight: 600;
+  color: var(--text-primary) !important;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.home-progress-meta {
+  font-size: 10px !important;
+  color: var(--text-muted) !important;
+  font-family: var(--font-mono);
+}
+
+.home-progress-source {
+  font-size: 9.5px !important;
+  font-weight: 600;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════
+   SHARED UTILITIES
+   ════════════════════════════════════════════════════════════════════════════════ */
+
+/* Buttons */
+.btn {
+  border-radius: 7px !important;
+  font-weight: 700;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: background var(--t-fast), transform var(--t-fast), opacity var(--t-fast);
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1;
+  font-size: 13px;
+}
+
+.btn-primary {
+  background: var(--accent) !important;
+  color: #fff !important;
+}
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover) !important; }
+.btn-primary:disabled { opacity: 0.50 !important; cursor: not-allowed; }
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+}
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Spinners */
+.btn-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+}
+
+.card-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Loading dots */
+.loading-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: ldot 1.2s ease-in-out infinite;
+}
+.loading-dot:nth-child(2) { animation-delay: 0.2s; }
+.loading-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes ldot {
+  0%, 80%, 100% { opacity: 0.14; transform: scale(0.82); }
+  40%           { opacity: 1;    transform: scale(1); }
+}
+
+.skeleton-block {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.05) 100%);
+  background-size: 200% 100%;
+  border-radius: 16px;
+  animation: skeleton-shimmer 1.25s ease-in-out infinite;
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 999px;
+}
+
+.skeleton-line-xs { width: 28%; }
+.skeleton-line-sm { width: 44%; }
+.skeleton-line-md { width: 62%; }
+.skeleton-line-lg { width: 82%; }
+
+.skeleton-poster-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 18px;
+}
+
+.skeleton-poster-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.skeleton-poster-image {
+  aspect-ratio: 0.72;
+  border-radius: 22px;
+}
+
+.skeleton-inline-row {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.skeleton-inline-chip {
+  display: inline-block;
+  width: 96px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+}
+
+.skeleton-inline-chip.short {
+  width: 64px;
+}
+
+.home-skeleton-page {
+  display: grid;
+  gap: 24px;
+}
+
+.home-skeleton-pill {
+  width: 108px;
+  height: 42px;
+  border-radius: 999px;
+}
+
+.home-skeleton-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 24px;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+}
+
+.home-skeleton-hero-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+}
+
+.home-skeleton-hero-visual {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 16px;
+}
+
+.home-skeleton-poster {
+  width: 118px;
+  height: 168px;
+  border-radius: 24px;
+}
+
+.home-skeleton-poster.tall {
+  width: 148px;
+  height: 210px;
+}
+
+.home-skeleton-shelf {
+  display: grid;
+  gap: 14px;
+}
+
+.home-skeleton-shelf-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.home-skeleton-card-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 18px;
+}
+
+.home-skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.home-skeleton-card-image {
+  aspect-ratio: 0.76;
+  border-radius: 22px;
+}
+
+.manga-skeleton-caption {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+
+.manga-chapter-card-skeleton {
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.manga-chapter-skeleton-number {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+}
+
+.episode-card-skeleton {
+  pointer-events: none;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (max-width: 860px) {
+  .home-skeleton-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .home-skeleton-hero-visual {
+    justify-content: flex-start;
+  }
+}
+
+/* Fade in */
+.fade-in { animation: fadeIn 0.28s ease both; }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Empty state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 80px 24px;
+  color: var(--text-muted);
+}
+
+/* Progress ring border */
+.border { color: rgba(255, 255, 255, 0.10); }
+
+/* ── Online/Search page grid (media-card) ────────────────────────────────────── */
+/* These are the grid cards on /search and /descubrir standalone page */
+.virtuoso-media-grid,
+.virtuoso-online-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) !important;
+  gap: 12px !important;
+  align-items: stretch;
+}
+
+.virtuoso-media-grid-item,
+.virtuoso-online-grid-item {
+  display: flex;
+  min-width: 0;
+}
+
+.virtuoso-media-grid-item > *,
+.virtuoso-online-grid-item > * {
+  width: 100%;
+}
+
+/* Media card — bigger, more imposing, 2:3 portrait */
+.media-card {
+  position: relative !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  cursor: pointer;
+  background: #161616 !important;
+  transition: transform var(--t-mid), box-shadow var(--t-mid) !important;
+}
+.media-card:hover {
+  transform: translateY(-5px) scale(1.02) !important;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.65), 0 0 0 2px var(--accent) !important;
+}
+
+.media-card-cover {
+  width: 100% !important;
+  aspect-ratio: 2 / 3 !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+
+.media-card-cover-placeholder {
+  width: 100% !important;
+  aspect-ratio: 2 / 3 !important;
+  background: #1c1c1c !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.18);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.media-score-badge {
+  position: absolute !important;
+  top: 8px !important;
+  right: 8px !important;
+  background: rgba(240, 120, 32, 0.88) !important;
+  color: #fff !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  padding: 3px 8px !important;
+  border-radius: 4px !important;
+  font-family: var(--font-mono);
+  letter-spacing: 0.03em;
+}
+
+.media-status-badge {
+  position: absolute !important;
+  top: 8px !important;
+  left: 8px !important;
+  background: rgba(0, 0, 0, 0.60) !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+  font-size: 9px !important;
+  font-weight: 600 !important;
+  padding: 2px 7px !important;
+  border-radius: 4px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: var(--font-mono);
+}
+
+.media-card-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, transparent 50%) !important;
+  pointer-events: none;
+}
+
+.media-card-body {
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  padding: 12px 10px 10px !important;
+}
+
+.media-card-title {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #fff !important;
+  line-height: 1.3;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+}
+
+.media-card-meta {
+  font-size: 10px !important;
+  color: rgba(255, 255, 255, 0.42) !important;
+  margin-top: 3px !important;
+  font-family: var(--font-mono);
+}
+
+.media-card-loading-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.55) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────────── */
+/* My Lists - Manga showcase */
+.my-list-manga-showcase {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 22px !important;
+}
+
+.my-list-manga-toolbar {
+  display: grid !important;
+  grid-template-columns: minmax(280px, 1.8fr) repeat(3, minmax(190px, 1fr)) !important;
+  gap: 14px !important;
+  padding: 16px !important;
+  border-radius: 20px !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)), #101010 !important;
+  box-shadow: 0 18px 40px rgba(0,0,0,0.28) !important;
+}
+
+.my-list-manga-search,
+.my-list-manga-select {
+  min-height: 48px !important;
+  border-radius: 14px !important;
+  background: rgba(255,255,255,0.03) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+}
+
+.my-list-manga-header {
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: space-between !important;
+  gap: 18px !important;
+  padding: 0 4px !important;
+}
+
+.my-list-manga-heading {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 12px !important;
+}
+
+.my-list-manga-heading-title {
+  font-family: var(--font-display) !important;
+  font-size: 34px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.04em !important;
+  line-height: 1 !important;
+  color: var(--text-primary) !important;
+}
+
+.my-list-manga-heading-count {
+  font-family: var(--font-mono) !important;
+  font-size: 14px !important;
+  color: var(--accent) !important;
+}
+
+.my-list-manga-heading-copy {
+  max-width: 560px !important;
+  color: var(--text-muted) !important;
+  font-size: 13px !important;
+  text-align: right !important;
+}
+
+.my-list-manga-showcase-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)) !important;
+  gap: 28px !important;
+}
+
+.my-list-card-showcase {
+  border-radius: 24px !important;
+  border: 1px solid rgba(255,255,255,0.09) !important;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01)), #151515 !important;
+  box-shadow: 0 26px 64px rgba(0,0,0,0.34) !important;
+}
+
+.my-list-card-showcase:hover {
+  transform: translateY(-7px) !important;
+  border-color: rgba(240,120,32,0.28) !important;
+  box-shadow: 0 34px 74px rgba(0,0,0,0.42) !important;
+}
+
+.my-list-card-showcase .my-list-card-art-wrap {
+  aspect-ratio: 0.685 !important;
+}
+
+.my-list-card-showcase .my-list-card-overlay {
+  background: linear-gradient(180deg, rgba(0,0,0,0.02) 0%, rgba(0,0,0,0.12) 26%, rgba(0,0,0,0.97) 100%) !important;
+}
+
+.my-list-card-showcase .my-list-card-topline {
+  padding: 18px 18px 0 !important;
+}
+
+.my-list-card-showcase .my-list-card-copy {
+  padding: 18px 18px 18px !important;
+  gap: 8px !important;
+}
+
+.my-list-card-showcase .my-list-card-title {
+  font-size: 22px !important;
+  line-height: 1.05 !important;
+  font-weight: 800 !important;
+  text-shadow: 0 10px 30px rgba(0,0,0,0.45) !important;
+}
+
+.my-list-card-showcase .my-list-card-subtitle {
+  font-size: 12px !important;
+}
+
+.my-list-card-showcase .my-list-card-meta {
+  font-size: 12px !important;
+  gap: 10px !important;
+}
+
+.my-list-card-showcase .my-list-card-controls {
+  gap: 16px !important;
+  padding: 18px !important;
+  background: linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0)) !important;
+}
+
+.my-list-card-showcase .my-list-inline-btn,
+.my-list-card-showcase .my-list-status-select,
+.my-list-card-showcase .my-list-number-input {
+  min-height: 42px !important;
+}
+
+@media (max-width: 1100px) {
+  :root { --sidebar-w: 190px; }
+  .discover-content,
+  .discover-page-embedded .discover-content,
+  .home-shelf { padding-left: 32px !important; padding-right: 32px !important; }
+  .discover-tabs { padding-left: 32px !important; }
+  .hero-content { left: 32px !important; }
+  .hero-loading-badge { left: 32px; }
+  .my-list-manga-toolbar { grid-template-columns: 1fr 1fr !important; }
+  .my-list-manga-header { flex-direction: column !important; align-items: flex-start !important; }
+  .my-list-manga-heading-copy { text-align: left !important; }
+}
+
+@media (max-width: 780px) {
+  :root { --sidebar-w: 60px; }
+  .sidebar-brand-copy,
+  .sidebar-nav-text,
+  .sidebar-section-label,
+  .sidebar-brand-subtitle,
+  .sidebar-lang { display: none !important; }
+  .sidebar-nav-item { padding: 10px 0 !important; justify-content: center; border-left: none !important; }
+  .sidebar-nav-item.active { border-bottom: 2px solid var(--accent) !important; }
+  .nav-icon { width: auto; font-size: 16px; }
+  .discover-content,
+  .discover-page-embedded .discover-content,
+  .home-shelf { padding-left: 18px !important; padding-right: 18px !important; }
+  .hero-carousel { height: 44vh !important; min-height: 300px !important; }
+  .hero-title { font-size: clamp(26px, 7vw, 44px) !important; }
+  .hero-content { left: 20px !important; bottom: 36px !important; }
+  .my-list-manga-toolbar { grid-template-columns: 1fr !important; }
+  .my-list-manga-showcase-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) !important; }
+}

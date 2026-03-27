@@ -1,0 +1,30 @@
+name: "nipah-anime"
+arch: "amd64"
+platform: "linux"
+version: "2.3.0"
+section: "video"
+priority: "optional"
+maintainer: "Nipah! Anime"
+description: "Anime streaming and manga reader desktop client with AniList sync."
+homepage: "https://github.com/NipahDevTeam/Nipah--Anime"
+license: "Proprietary"
+depends:
+  - mpv
+  - libgtk-3-0
+  - libwebkit2gtk-4.1-0
+contents:
+  - src: "./build/linux-bin/nipah-anime"
+    dst: "/usr/lib/nipah-anime/nipah-anime"
+    file_info:
+      mode: 0755
+  - src: "./build/appicon.png"
+    dst: "/usr/share/icons/hicolor/512x512/apps/nipah-anime.png"
+    file_info:
+      mode: 0644
+  - src: "./packaging/linux/nipah-anime.desktop"
+    dst: "/usr/share/applications/nipah-anime.desktop"
+    file_info:
+      mode: 0644
+scripts:
+  postinstall: "./packaging/linux/postinstall.sh"
+  postremove: "./packaging/linux/postremove.sh"

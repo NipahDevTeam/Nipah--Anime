@@ -1,35 +1,34 @@
 package metadata
 
 import (
-	"bytes"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
+
+	azuretls "github.com/Noooste/azuretls-client"
+	cachepkg "miruro/backend/cache"
+	"miruro/backend/httpclient"
 )
+
+var httpSession = httpclient.NewSession(15)
 
 const (
 	anilistEndpoint  = "https://graphql.anilist.co"
 	mangadexEndpoint = "https://api.mangadex.org"
 	defaultUserAgent = "NipahAnime/1.1.0 (+https://github.com/NipahDevTeam/Nipah--Anime)"
+	aniListTurnDelay = 650 * time.Millisecond
 )
 
 // Manager handles all external metadata API calls.
 type Manager struct {
-	client             *http.Client
 	mu                 sync.Mutex
-	cache              map[string]cacheEntry
 	active             map[string]*inFlightCall
 	lastAniListRequest time.Time
-}
-
-type cacheEntry struct {
-	body      []byte
-	expiresAt time.Time
 }
 
 type inFlightCall struct {
@@ -40,8 +39,6 @@ type inFlightCall struct {
 
 func NewManager() *Manager {
 	return &Manager{
-		client: &http.Client{Timeout: 15 * time.Second},
-		cache:  make(map[string]cacheEntry),
 		active: make(map[string]*inFlightCall),
 	}
 }
@@ -646,9 +643,10 @@ func (m *Manager) postJSON(endpoint string, payload interface{}) ([]byte, error)
 }
 
 func (m *Manager) requestBytes(method, endpoint string, body []byte, contentType string) ([]byte, error) {
-	key := method + "|" + endpoint + "|" + string(body)
+	key := requestCacheKey(method, endpoint, body)
+	staleKey := staleRequestCacheKey(key)
 
-	if cached, ok := m.getCached(key); ok {
+	if cached, ok := cachepkg.Global().GetBytes(key); ok {
 		return cached, nil
 	}
 
@@ -662,75 +660,72 @@ func (m *Manager) requestBytes(method, endpoint string, body []byte, contentType
 	}
 
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
+	maxAttempts := 3
+	if endpoint == anilistEndpoint {
+		maxAttempts = 4
+	}
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		m.waitAniListTurn(endpoint)
 
-		reader := bytes.NewReader(body)
-		req, err := http.NewRequest(method, endpoint, reader)
-		if err != nil {
-			lastErr = err
-			continue
+		req := &azuretls.Request{
+			Url:    endpoint,
+			Method: method,
+			OrderedHeaders: azuretls.OrderedHeaders{
+				{"Accept", "application/json"},
+				{"User-Agent", defaultUserAgent},
+			},
 		}
-
+		if len(body) > 0 {
+			req.Body = body
+		}
 		if contentType != "" {
-			req.Header.Set("Content-Type", contentType)
+			req.OrderedHeaders = append(req.OrderedHeaders, []string{"Content-Type", contentType})
 		}
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("User-Agent", defaultUserAgent)
 
-		resp, err := m.client.Do(req)
+		resp, err := httpSession.Do(req)
 		if err != nil {
 			lastErr = err
 			time.Sleep(time.Duration(attempt+1) * 600 * time.Millisecond)
 			continue
 		}
 
-		body, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if readErr != nil {
-			lastErr = readErr
-			time.Sleep(time.Duration(attempt+1) * 600 * time.Millisecond)
+		if resp.StatusCode == 409 && endpoint == anilistEndpoint {
+			lastErr = fmt.Errorf("metadata request failed: %d", resp.StatusCode)
+			time.Sleep(time.Duration(attempt+1) * 1500 * time.Millisecond)
 			continue
 		}
-
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-			lastErr = fmt.Errorf("metadata request failed: %s", resp.Status)
+		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("metadata request failed: %d", resp.StatusCode)
 			time.Sleep(time.Duration(attempt+1) * 900 * time.Millisecond)
 			continue
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			lastErr = fmt.Errorf("metadata request failed: %s", resp.Status)
+			lastErr = fmt.Errorf("metadata request failed: %d", resp.StatusCode)
 			break
 		}
 
-		m.finishRequest(key, call, body, nil)
-		return body, nil
+		freshTTL := metadataRequestTTL(endpoint, body)
+		cachepkg.Global().SetBytes(key, resp.Body, freshTTL)
+		cachepkg.Global().SetBytes(staleKey, resp.Body, staleMetadataRequestTTL(endpoint, body, freshTTL))
+		m.finishRequest(call, resp.Body, nil)
+		return resp.Body, nil
 	}
 
+	if endpoint == anilistEndpoint {
+		if stale, ok := cachepkg.Global().GetBytes(staleKey); ok {
+			m.finishRequest(call, stale, nil)
+			return stale, nil
+		}
+	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("metadata request failed")
 	}
-	m.finishRequest(key, call, nil, lastErr)
+	m.finishRequest(call, nil, lastErr)
 	return nil, lastErr
 }
 
 func (m *Manager) getJSON(endpoint string) ([]byte, error) {
 	return m.requestBytes("GET", endpoint, nil, "")
-}
-
-func (m *Manager) getCached(key string) ([]byte, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	entry, ok := m.cache[key]
-	if !ok {
-		return nil, false
-	}
-	if time.Now().After(entry.expiresAt) {
-		delete(m.cache, key)
-		return nil, false
-	}
-	return cloneBytes(entry.body), true
 }
 
 func (m *Manager) beginRequest(key string) (*inFlightCall, bool) {
@@ -746,21 +741,22 @@ func (m *Manager) beginRequest(key string) (*inFlightCall, bool) {
 	return call, true
 }
 
-func (m *Manager) finishRequest(key string, call *inFlightCall, body []byte, err error) {
+func (m *Manager) finishRequest(call *inFlightCall, body []byte, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if err == nil {
 		call.body = cloneBytes(body)
-		m.cache[key] = cacheEntry{
-			body:      cloneBytes(body),
-			expiresAt: time.Now().Add(30 * time.Second),
-		}
 	} else {
 		call.err = err
 	}
 
-	delete(m.active, key)
+	for key, active := range m.active {
+		if active == call {
+			delete(m.active, key)
+			break
+		}
+	}
 	close(call.done)
 }
 
@@ -770,7 +766,7 @@ func (m *Manager) waitAniListTurn(endpoint string) {
 	}
 
 	m.mu.Lock()
-	wait := time.Until(m.lastAniListRequest.Add(350 * time.Millisecond))
+	wait := time.Until(m.lastAniListRequest.Add(aniListTurnDelay))
 	m.mu.Unlock()
 
 	if wait > 0 {
@@ -787,4 +783,65 @@ func cloneBytes(data []byte) []byte {
 		return nil
 	}
 	return append([]byte(nil), data...)
+}
+
+func requestCacheKey(method, endpoint string, body []byte) string {
+	sum := sha1.Sum(body)
+	return method + "|" + endpoint + "|" + hex.EncodeToString(sum[:])
+}
+
+func staleRequestCacheKey(key string) string {
+	return key + "|stale"
+}
+
+func metadataRequestTTL(endpoint string, body []byte) time.Duration {
+	payload := string(body)
+
+	if endpoint == anilistEndpoint {
+		switch {
+		case strings.Contains(payload, "Media(id: $id, type: ANIME)") || strings.Contains(payload, "Media(id: $id, type: MANGA)"):
+			return time.Hour
+		case strings.Contains(payload, "sort: SEARCH_MATCH"):
+			return 10 * time.Minute
+		case strings.Contains(payload, "sort: TRENDING_DESC") || strings.Contains(payload, "streamingEpisodes"):
+			return 10 * time.Minute
+		default:
+			return 10 * time.Minute
+		}
+	}
+
+	if strings.HasPrefix(endpoint, mangadexEndpoint) {
+		return 30 * time.Minute
+	}
+
+	return 30 * time.Second
+}
+
+func staleMetadataRequestTTL(endpoint string, body []byte, freshTTL time.Duration) time.Duration {
+	if endpoint == anilistEndpoint {
+		switch {
+		case strings.Contains(string(body), "Media(id: $id, type: MANGA)"), strings.Contains(string(body), "sort: SEARCH_MATCH"):
+			return 6 * time.Hour
+		default:
+			return 2 * time.Hour
+		}
+	}
+	if freshTTL > 0 {
+		return freshTTL * 4
+	}
+	return 2 * time.Minute
+}
+
+func IsRetryableAniListError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	if strings.Contains(message, "metadata request failed: 409") {
+		return true
+	}
+	if strings.Contains(message, "metadata request failed: 429") {
+		return true
+	}
+	return strings.Contains(message, "timeout") || strings.Contains(message, "fetch")
 }

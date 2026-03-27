@@ -354,6 +354,7 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
   const cacheKey = buildMediaCacheKey(media, candidates) + `:${searchSourceID}`
   const cached = readCache(resolvedMediaCache, cacheKey)
   if (cached !== VALUE_MISS) return cached
+  let lastErrorMessage = ''
 
   for (const title of candidates) {
     try {
@@ -382,12 +383,22 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
           // Try the next validated candidate.
         }
       }
-    } catch {
-      // Try the next title candidate.
+    } catch (error) {
+      const message = String(error?.message ?? error ?? '').trim()
+      if (message) lastErrorMessage = message
     }
   }
 
-  return writeCache(resolvedMediaCache, cacheKey, { hit: null, searchedTitle: candidates[0] ?? '' }, SEARCH_CACHE_TTL_MS)
+  return writeCache(
+    resolvedMediaCache,
+    cacheKey,
+    {
+      hit: null,
+      searchedTitle: candidates[0] ?? '',
+      error: lastErrorMessage,
+    },
+    SEARCH_CACHE_TTL_MS,
+  )
 }
 
 export async function enrichJKAnimeHit(hit, api = wails, lang = 'es') {

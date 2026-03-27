@@ -6,19 +6,22 @@ package animepahe
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
+
+	azuretls "github.com/Noooste/azuretls-client"
 
 	"miruro/backend/extensions"
+	"miruro/backend/httpclient"
+	"miruro/backend/logger"
 )
+
+var log = logger.For("AnimePahe")
 
 const baseURL = "https://animepahe.si"
 
-var httpClient = &http.Client{Timeout: 15 * time.Second}
+var httpSession = httpclient.NewSession(15)
 
 type Extension struct{}
 
@@ -373,33 +376,37 @@ func fetchWithCookies(rawURL, referer string, extraHeaders map[string]string, re
 		return "", fmt.Errorf("animepahe: DDoS-Guard bypass failed: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", rawURL, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", referer)
-	for k, v := range extraHeaders {
-		req.Header.Set(k, v)
-	}
+	// Build cookie header string from http.Cookie slice
+	cookieParts := make([]string, 0, len(cookies))
 	for _, c := range cookies {
-		req.AddCookie(c)
+		cookieParts = append(cookieParts, c.Name+"="+c.Value)
+	}
+	cookieHeader := strings.Join(cookieParts, "; ")
+
+	oh := azuretls.OrderedHeaders{
+		{"Referer", referer},
+	}
+	for k, v := range extraHeaders {
+		oh = append(oh, []string{k, v})
+	}
+	if cookieHeader != "" {
+		oh = append(oh, []string{"Cookie", cookieHeader})
 	}
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
+	req := &azuretls.Request{
+		Url:            rawURL,
+		Method:         "GET",
+		OrderedHeaders: oh,
 	}
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	resp, err := httpSession.Do(req)
 	if err != nil {
 		return "", err
 	}
 
 	// DDoS-Guard blocked us again — invalidate cookies and retry once
 	if resp.StatusCode == 403 && retryOnBlock {
-		fmt.Println("[AnimePahe] Got 403, refreshing DDoS-Guard cookies...")
+		log.Warn().Msg("got 403, refreshing DDoS-Guard cookies")
 		invalidateCookies()
 		return fetchWithCookies(rawURL, referer, extraHeaders, false)
 	}
@@ -407,7 +414,7 @@ func fetchWithCookies(rawURL, referer string, extraHeaders map[string]string, re
 	if resp.StatusCode >= 400 {
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	return string(body), nil
+	return string(resp.Body), nil
 }
 
 func urlEncode(s string) string {
