@@ -42,9 +42,6 @@ ERROR.txt
 # === Auth & OAuth ===
 backend/auth/
 
-# === Local Tool Config ===
-.claude/
-
 # === Personal / Internal Files ===
 backup/
 PROJECT_HANDOFF*.md
