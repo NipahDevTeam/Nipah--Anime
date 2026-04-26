@@ -39,8 +39,6 @@ ERROR.txt
 *.dylib
 *.a
 
-# === Auth & OAuth ===
-backend/auth/
 
 # === Personal / Internal Files ===
 backup/

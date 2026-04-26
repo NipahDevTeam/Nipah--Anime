@@ -49,7 +49,23 @@ type cachedSearchIndex struct {
 var (
 	searchIndexMu sync.Mutex
 	searchIndex   cachedSearchIndex
+
+	chapterCacheMu sync.Mutex
+	chapterCache   = map[string]cachedChapters{}
+
+	pageCacheMu sync.Mutex
+	pageCache   = map[string]cachedPages{}
 )
+
+type cachedChapters struct {
+	chapters []extensions.Chapter
+	expires  time.Time
+}
+
+type cachedPages struct {
+	pages   []extensions.PageSource
+	expires time.Time
+}
 
 func init() {
 	sourceaccess.RegisterProfile(sourceaccess.SourceAccessProfile{
@@ -135,6 +151,9 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 	if slug == "" {
 		return nil, fmt.Errorf("templetoons: invalid manga id")
 	}
+	if cached, ok := readChapterCache(slug); ok {
+		return cached, nil
+	}
 
 	body, err := sourceaccess.FetchHTML(e.ID(), baseURL+"/comic/"+slug, sourceaccess.RequestOptions{})
 	if err != nil {
@@ -175,6 +194,7 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 	}
 
 	sort.Slice(chapters, func(i, j int) bool { return chapters[i].Number < chapters[j].Number })
+	storeChapterCache(slug, chapters)
 	return chapters, nil
 }
 
@@ -182,6 +202,10 @@ func (e *Extension) GetPages(chapterID string) ([]extensions.PageSource, error) 
 	slug, chapterSlug, err := splitChapterID(chapterID)
 	if err != nil {
 		return nil, err
+	}
+	cacheKey := slug + "/" + chapterSlug
+	if cached, ok := readPageCache(cacheKey); ok {
+		return cached, nil
 	}
 
 	chapterURL := fmt.Sprintf("%s/comic/%s/%s", baseURL, slug, chapterSlug)
@@ -218,6 +242,7 @@ func (e *Extension) GetPages(chapterID string) ([]extensions.PageSource, error) 
 	if len(pages) == 0 {
 		return nil, fmt.Errorf("templetoons: no valid page images found")
 	}
+	storePageCache(cacheKey, pages)
 	return pages, nil
 }
 
@@ -393,6 +418,72 @@ func minInt(values ...int) int {
 		}
 	}
 	return minimum
+}
+
+func readChapterCache(slug string) ([]extensions.Chapter, bool) {
+	chapterCacheMu.Lock()
+	defer chapterCacheMu.Unlock()
+
+	entry, ok := chapterCache[slug]
+	if !ok || time.Now().After(entry.expires) {
+		delete(chapterCache, slug)
+		return nil, false
+	}
+	return cloneChapters(entry.chapters), true
+}
+
+func storeChapterCache(slug string, chapters []extensions.Chapter) {
+	if len(chapters) == 0 {
+		return
+	}
+	chapterCacheMu.Lock()
+	chapterCache[slug] = cachedChapters{
+		chapters: cloneChapters(chapters),
+		expires:  time.Now().Add(20 * time.Minute),
+	}
+	chapterCacheMu.Unlock()
+}
+
+func readPageCache(key string) ([]extensions.PageSource, bool) {
+	pageCacheMu.Lock()
+	defer pageCacheMu.Unlock()
+
+	entry, ok := pageCache[key]
+	if !ok || time.Now().After(entry.expires) {
+		delete(pageCache, key)
+		return nil, false
+	}
+	return clonePages(entry.pages), true
+}
+
+func storePageCache(key string, pages []extensions.PageSource) {
+	if len(pages) == 0 {
+		return
+	}
+	pageCacheMu.Lock()
+	pageCache[key] = cachedPages{
+		pages:   clonePages(pages),
+		expires: time.Now().Add(30 * time.Minute),
+	}
+	pageCacheMu.Unlock()
+}
+
+func cloneChapters(values []extensions.Chapter) []extensions.Chapter {
+	if len(values) == 0 {
+		return []extensions.Chapter{}
+	}
+	out := make([]extensions.Chapter, len(values))
+	copy(out, values)
+	return out
+}
+
+func clonePages(values []extensions.PageSource) []extensions.PageSource {
+	if len(values) == 0 {
+		return []extensions.PageSource{}
+	}
+	out := make([]extensions.PageSource, len(values))
+	copy(out, values)
+	return out
 }
 
 func _unusedTempleRegexes() {

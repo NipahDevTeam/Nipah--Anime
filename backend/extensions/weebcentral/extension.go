@@ -12,8 +12,11 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"miruro/backend/extensions"
 	"miruro/backend/extensions/sourceaccess"
+	"miruro/backend/logger"
 )
 
 const (
@@ -25,9 +28,14 @@ const (
 	detailCacheTTL   = 6 * time.Hour
 	maxSearchResults = 12
 	maxHydratedItems = 2
+	chapterCacheTTL  = 20 * time.Minute
+	partialCacheTTL  = 12 * time.Second
+	fastFullWait     = 3 * time.Second
 )
 
 var (
+	log = logger.For("WeebCentral")
+
 	quickResultRe = regexp.MustCompile(`(?is)<a[^>]+href="https://weebcentral\.com/series/([^"]+)"[^>]*>(.*?)</a>`)
 	seriesLocRe   = regexp.MustCompile(`https://weebcentral\.com/series/([^/]+)/([^<]+)`)
 	chapterRowRe  = regexp.MustCompile(`(?is)<a[^>]+href="((?:https://weebcentral\.com)?/chapters/[^"]+)"[^>]*>(.*?)</a>`)
@@ -72,11 +80,22 @@ var (
 
 	detailMu    sync.Mutex
 	detailCache = map[string]cachedDetail{}
+
+	chapterMu    sync.Mutex
+	chapterCache = map[string]cachedChapterList{}
+	chapterWarm  singleflight.Group
 )
 
 type cachedDetail struct {
 	meta    seriesMeta
 	expires time.Time
+}
+
+type cachedChapterList struct {
+	chapters  []extensions.Chapter
+	expires   time.Time
+	partial   bool
+	hydrating bool
 }
 
 func init() {
@@ -99,13 +118,24 @@ func (e *Extension) Languages() []extensions.Language {
 }
 
 func (e *Extension) Search(query string, lang extensions.Language) ([]extensions.SearchResult, error) {
+	started := time.Now()
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return []extensions.SearchResult{}, nil
 	}
 
 	if quickResults, err := quickSearch(query); err == nil && len(quickResults) > 0 {
+		log.Debug().
+			Str("source_id", sourceID).
+			Str("operation", "search").
+			Str("query", query).
+			Str("mode", "quick_search").
+			Int("result_count", len(quickResults)).
+			Dur("took", time.Since(started)).
+			Msg("weebcentral search")
 		return quickResults, nil
+	} else if err != nil {
+		log.Warn().Err(err).Str("source_id", sourceID).Str("operation", "search").Str("query", query).Str("mode", "quick_search").Msg("weebcentral quick search failed")
 	}
 
 	seriesIDs, err := loadInventory()
@@ -142,6 +172,16 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 			Languages: []extensions.Language{extensions.LangEnglish},
 		})
 	}
+	log.Debug().
+		Str("source_id", sourceID).
+		Str("operation", "search").
+		Str("query", query).
+		Str("mode", "inventory").
+		Int("inventory_count", len(seriesIDs)).
+		Int("candidate_count", len(candidates)).
+		Int("result_count", len(results)).
+		Dur("took", time.Since(started)).
+		Msg("weebcentral search")
 	return results, nil
 }
 
@@ -200,9 +240,39 @@ func parseQuickSearch(body string) []extensions.SearchResult {
 }
 
 func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]extensions.Chapter, error) {
+	started := time.Now()
 	seriesID := normalizeSeriesID(mangaID)
 	if seriesID == "" {
 		return nil, fmt.Errorf("weebcentral: invalid manga id")
+	}
+	if chapters, partial, hydrating := cachedSeriesChapters(seriesID); len(chapters) > 0 {
+		if !partial {
+			log.Debug().
+				Str("source_id", sourceID).
+				Str("operation", "chapters").
+				Str("series_id", seriesID).
+				Str("mode", "cache_hit_full").
+				Bool("partial", false).
+				Bool("hydrating", hydrating).
+				Int("result_count", len(chapters)).
+				Dur("took", time.Since(started)).
+				Msg("weebcentral chapters")
+			return chapters, nil
+		}
+		mode := "cache_hit_full"
+		if partial {
+			mode = "cache_hit_partial"
+		}
+		log.Debug().
+			Str("source_id", sourceID).
+			Str("operation", "chapters").
+			Str("series_id", seriesID).
+			Str("mode", mode).
+			Bool("partial", partial).
+			Bool("hydrating", hydrating).
+			Int("result_count", len(chapters)).
+			Dur("took", time.Since(started)).
+			Msg("weebcentral chapters")
 	}
 
 	seriesURL := fmt.Sprintf("%s/series/%s", baseURL, seriesID)
@@ -222,18 +292,38 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 		showAllURL = listURL
 	}
 	if showAllURL != "" {
-		if listBody, listErr := sourceaccess.FetchHTML(sourceID, showAllURL, sourceaccess.RequestOptions{Referer: seriesURL}); listErr == nil {
-			fullChapters := parseWeebCentralChapters(listBody)
-			if len(fullChapters) > 0 {
-				return fullChapters, nil
+		if ready := startFullChapterHydration(seriesID, seriesURL, showAllURL, teaserChapters); ready != nil {
+			if hydrated, ok, waited := awaitHydratedSeriesChapters(ready, fastFullWait); ok {
+				mode := "fast_full_list"
+				if waited {
+					mode = "full_list_waited"
+				}
+				log.Debug().
+					Str("source_id", sourceID).
+					Str("operation", "chapters").
+					Str("series_id", seriesID).
+					Str("mode", mode).
+					Bool("partial", false).
+					Bool("hydrating", false).
+					Int("teaser_count", len(teaserChapters)).
+					Int("result_count", len(hydrated)).
+					Dur("took", time.Since(started)).
+					Msg("weebcentral chapters")
+				return hydrated, nil
 			}
 		}
 	}
-	chapters := teaserChapters
-	if len(chapters) == 0 {
-		return nil, fmt.Errorf("weebcentral: no valid chapters found")
+	if len(teaserChapters) > 0 {
+		log.Debug().
+			Str("source_id", sourceID).
+			Str("operation", "chapters").
+			Str("series_id", seriesID).
+			Str("mode", "teaser_rejected").
+			Int("teaser_count", len(teaserChapters)).
+			Dur("took", time.Since(started)).
+			Msg("weebcentral chapters")
 	}
-	return chapters, nil
+	return nil, fmt.Errorf("weebcentral: full chapter list unavailable for %s", seriesID)
 }
 
 func parseWeebCentralChapters(body string) []extensions.Chapter {
@@ -433,6 +523,123 @@ func loadSeriesMeta(seriesID string) (seriesMeta, error) {
 	return meta, nil
 }
 
+func cachedSeriesChapters(seriesID string) ([]extensions.Chapter, bool, bool) {
+	chapterMu.Lock()
+	defer chapterMu.Unlock()
+
+	cached, ok := chapterCache[seriesID]
+	if !ok || time.Now().After(cached.expires) {
+		delete(chapterCache, seriesID)
+		return nil, false, false
+	}
+	return cloneChapters(cached.chapters), cached.partial, cached.hydrating
+}
+
+func storeSeriesChapters(seriesID string, chapters []extensions.Chapter) {
+	storeSeriesChaptersWithState(seriesID, chapters, chapterCacheTTL, false, false)
+}
+
+func storeSeriesChaptersWithState(seriesID string, chapters []extensions.Chapter, ttl time.Duration, partial bool, hydrating bool) {
+	if len(chapters) == 0 {
+		return
+	}
+	chapterMu.Lock()
+	chapterCache[seriesID] = cachedChapterList{
+		chapters:  cloneChapters(chapters),
+		expires:   time.Now().Add(ttl),
+		partial:   partial,
+		hydrating: hydrating,
+	}
+	chapterMu.Unlock()
+}
+
+func updateSeriesHydrating(seriesID string, hydrating bool) {
+	chapterMu.Lock()
+	defer chapterMu.Unlock()
+
+	entry, ok := chapterCache[seriesID]
+	if !ok || time.Now().After(entry.expires) {
+		return
+	}
+	entry.hydrating = hydrating
+	chapterCache[seriesID] = entry
+}
+
+func GetChapterCacheState(mangaID string) (bool, bool) {
+	seriesID := normalizeSeriesID(mangaID)
+	if seriesID == "" {
+		return false, false
+	}
+	_, partial, hydrating := cachedSeriesChapters(seriesID)
+	return partial, hydrating
+}
+
+func startFullChapterHydration(seriesID, seriesURL, showAllURL string, teaserChapters []extensions.Chapter) <-chan []extensions.Chapter {
+	ready := make(chan []extensions.Chapter, 1)
+	go func() {
+		defer close(ready)
+		value, _, _ := chapterWarm.Do(seriesID, func() (interface{}, error) {
+			started := time.Now()
+			listBody, listErr := sourceaccess.FetchHTML(sourceID, showAllURL, sourceaccess.RequestOptions{Referer: seriesURL})
+			if listErr != nil {
+				updateSeriesHydrating(seriesID, false)
+				log.Warn().Err(listErr).
+					Str("source_id", sourceID).
+					Str("operation", "chapters").
+					Str("series_id", seriesID).
+					Str("mode", "background_full_list_failed").
+					Msg("weebcentral full chapter list fetch failed")
+				return []extensions.Chapter{}, nil
+			}
+
+			fullChapters := parseWeebCentralChapters(listBody)
+			if len(fullChapters) == 0 {
+				updateSeriesHydrating(seriesID, false)
+				log.Debug().
+					Str("source_id", sourceID).
+					Str("operation", "chapters").
+					Str("series_id", seriesID).
+					Str("mode", "background_full_list_empty").
+					Int("teaser_count", len(teaserChapters)).
+					Dur("full_fetch_took", time.Since(started)).
+					Msg("weebcentral chapters")
+				return []extensions.Chapter{}, nil
+			}
+
+			mergedChapters := mergeWeebCentralChapters(fullChapters, teaserChapters)
+			storeSeriesChapters(seriesID, mergedChapters)
+			log.Debug().
+				Str("source_id", sourceID).
+				Str("operation", "chapters").
+				Str("series_id", seriesID).
+				Str("mode", "background_full_list_ready").
+				Int("teaser_count", len(teaserChapters)).
+				Int("full_count", len(fullChapters)).
+				Int("result_count", len(mergedChapters)).
+				Dur("full_fetch_took", time.Since(started)).
+				Msg("weebcentral chapters")
+			return mergedChapters, nil
+		})
+		if hydrated, ok := value.([]extensions.Chapter); ok && len(hydrated) > 0 {
+			ready <- hydrated
+		}
+	}()
+	return ready
+}
+
+func awaitHydratedSeriesChapters(ready <-chan []extensions.Chapter, fastWait time.Duration) ([]extensions.Chapter, bool, bool) {
+	if ready == nil {
+		return nil, false, false
+	}
+	select {
+	case hydrated, ok := <-ready:
+		return hydrated, ok && len(hydrated) > 0, false
+	case <-time.After(fastWait):
+	}
+	hydrated, ok := <-ready
+	return hydrated, ok && len(hydrated) > 0, true
+}
+
 func normalizeChapterURL(raw string) string {
 	raw = strings.TrimSpace(raw)
 	raw = strings.TrimPrefix(raw, baseURL)
@@ -558,18 +765,30 @@ func normalizeSearch(raw string) string {
 	return strings.Join(strings.Fields(raw), " ")
 }
 
+func compactSearch(raw string) string {
+	return strings.ReplaceAll(normalizeSearch(raw), " ", "")
+}
+
 func scoreValue(queryNorm, value string) int {
 	valueNorm := normalizeSearch(value)
 	if queryNorm == "" || valueNorm == "" {
 		return 0
 	}
+	queryCompact := strings.ReplaceAll(queryNorm, " ", "")
+	valueCompact := compactSearch(value)
 	switch {
 	case valueNorm == queryNorm:
 		return 500
+	case queryCompact != "" && valueCompact == queryCompact:
+		return 480
 	case strings.HasPrefix(valueNorm, queryNorm):
 		return 410
+	case queryCompact != "" && valueCompact != "" && (strings.HasPrefix(valueCompact, queryCompact) || strings.HasPrefix(queryCompact, valueCompact)):
+		return 390
 	case strings.Contains(valueNorm, queryNorm):
 		return 320
+	case queryCompact != "" && valueCompact != "" && (strings.Contains(valueCompact, queryCompact) || strings.Contains(queryCompact, valueCompact)):
+		return 300
 	case strings.Contains(queryNorm, valueNorm):
 		return 240
 	default:
@@ -582,4 +801,41 @@ func formatNumber(value float64) string {
 		return strconv.FormatInt(int64(value), 10)
 	}
 	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
+func cloneChapters(values []extensions.Chapter) []extensions.Chapter {
+	if len(values) == 0 {
+		return []extensions.Chapter{}
+	}
+	out := make([]extensions.Chapter, len(values))
+	copy(out, values)
+	return out
+}
+
+func bestContiguousTeaserSlice(chapters []extensions.Chapter) []extensions.Chapter {
+	if len(chapters) <= 1 {
+		return cloneChapters(chapters)
+	}
+
+	bestStart, bestEnd := 0, 1
+	runStart := 0
+	for i := 1; i < len(chapters); i++ {
+		prev := chapters[i-1].Number
+		curr := chapters[i].Number
+		if curr-prev > 1.01 {
+			if i-runStart > bestEnd-bestStart {
+				bestStart, bestEnd = runStart, i
+			}
+			runStart = i
+		}
+	}
+	if len(chapters)-runStart > bestEnd-bestStart {
+		bestStart, bestEnd = runStart, len(chapters)
+	}
+
+	// Keep the original teaser if there is no meaningful contiguous run to prefer.
+	if bestEnd-bestStart <= 1 {
+		return cloneChapters(chapters)
+	}
+	return cloneChapters(chapters[bestStart:bestEnd])
 }

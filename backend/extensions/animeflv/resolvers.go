@@ -533,8 +533,8 @@ func resolveYourUpload(embedURL string) (*ResolvedStream, error) {
 
 // MP4Upload uses Video.js: player.src({src: "https://a4.mp4upload.com:183/d/.../video.mp4", type: "video/mp4"})
 // The src key may use single or double quotes, with optional whitespace.
-var mp4UploadSrcRe = regexp.MustCompile(`src:\s*["'](https?://[^"']+\.mp4[^"']*)["']`)
-var mp4UploadFileRe = regexp.MustCompile(`file:\s*["'](https?://[^"']+\.mp4[^"']*)["']`)
+var mp4UploadSrcRe = regexp.MustCompile(`src:\s*["'](https?://[^"']+/[^"']+\.mp4(?:\?[^"']*)?)["']`)
+var mp4UploadFileRe = regexp.MustCompile(`file:\s*["'](https?://[^"']+/[^"']+\.mp4(?:\?[^"']*)?)["']`)
 
 func resolveMp4Upload(embedURL string) (*ResolvedStream, error) {
 	// Normalize URL: /embed-CODE.html and /CODE both need the embed format
@@ -555,7 +555,7 @@ func resolveMp4Upload(embedURL string) (*ResolvedStream, error) {
 	}
 	if len(match) < 2 {
 		// Last resort: any mp4upload CDN URL in the page
-		cdnRe := regexp.MustCompile(`(https?://[a-z0-9]+\.mp4upload\.com[^\s"'<>]+\.mp4[^\s"'<>]*)`)
+		cdnRe := regexp.MustCompile(`(https?://[a-z0-9]+\.mp4upload\.com/[^\s"'<>]+\.mp4(?:[^\s"'<>]*)?)`)
 		match = cdnRe.FindStringSubmatch(body)
 	}
 	if len(match) < 2 {
@@ -732,7 +732,7 @@ func resolveStreamhide(embedURL string) (*ResolvedStream, error) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 var genericM3U8Re = regexp.MustCompile(`https?://[^\s"'<>]+\.m3u8[^\s"'<>]*`)
-var genericMP4Re = regexp.MustCompile(`https?://[^\s"'<>]+\.mp4[^\s"'<>]*`)
+var genericMP4Re = regexp.MustCompile(`https?://[^\s"'<>]+/[^/\s"'<>]+\.mp4(?:[^\s"'<>]*)?`)
 
 func resolveGenericM3U8(embedURL string) (*ResolvedStream, error) {
 	body, err := fetchPage(embedURL, embedURL)
@@ -871,6 +871,7 @@ func browserResolveMedia(embedURL string) (*ResolvedStream, error) {
 func IsEmbedPageURL(u string) bool {
 	return strings.Contains(u, "streamtape.com/e/") ||
 		strings.Contains(u, "mp4upload.com/embed") ||
+		strings.Contains(u, "anikai.to/iframe/") ||
 		strings.Contains(u, "filemoon.") && strings.Contains(u, "/e/") ||
 		strings.Contains(u, "streamwish.") && strings.Contains(u, "/e/") ||
 		strings.Contains(u, "ok.ru/videoembed") ||

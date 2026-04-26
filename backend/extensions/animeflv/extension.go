@@ -238,12 +238,12 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 
 	// Sort: fast providers first so we don't wait for a slow browser resolver
 	// before trying Streamtape/OkRu/YourUpload which resolve in milliseconds.
-	sorted := make([]string, len(embeds))
+	sorted := make([]embedCandidate, len(embeds))
 	copy(sorted, embeds)
 	animeKey := animeKeyFromEpisodeID(episodeID)
 	for i := 0; i < len(sorted); i++ {
 		for j := i + 1; j < len(sorted); j++ {
-			if preferredProviderPriority(animeKey, sorted[j]) < preferredProviderPriority(animeKey, sorted[i]) {
+			if preferredProviderPriority(animeKey, sorted[j].url) < preferredProviderPriority(animeKey, sorted[i].url) {
 				sorted[i], sorted[j] = sorted[j], sorted[i]
 			}
 		}
@@ -261,13 +261,13 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 	}
 
 	p := pool.NewWithResults[result]().WithMaxGoroutines(limit)
-	for i, embed := range sorted[:limit] {
-		embed, prio := embed, i
+	for i, candidate := range sorted[:limit] {
+		candidate, prio := candidate, i
 		p.Go(func() result {
-			log.Info().Str("provider", embed).Msg("trying provider")
-			resolved, err := ResolvePlayable(embed)
+			log.Info().Str("provider", candidate.url).Str("audio", candidate.audio).Msg("trying provider")
+			resolved, err := ResolvePlayable(candidate.url)
 			if err != nil {
-				log.Warn().Err(err).Str("provider", embed).Msg("provider failed")
+				log.Warn().Err(err).Str("provider", candidate.url).Str("audio", candidate.audio).Msg("provider failed")
 				return result{prio: -1} // sentinel for failed resolution
 			}
 			log.Info().Str("url", resolved.URL).Msg("resolved")
@@ -276,7 +276,8 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 					URL:      resolved.URL,
 					Quality:  resolved.Quality,
 					Language: extensions.LangSpanish,
-					Referer:  embed,
+					Audio:    candidate.audio,
+					Referer:  candidate.url,
 				},
 				prio: prio,
 			}
@@ -307,8 +308,8 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 
 	// If parallel batch failed, try remaining providers sequentially
 	if len(sources) == 0 {
-		for _, embed := range sorted[limit:] {
-			resolved, err := ResolvePlayable(embed)
+		for _, candidate := range sorted[limit:] {
+			resolved, err := ResolvePlayable(candidate.url)
 			if err != nil {
 				continue
 			}
@@ -316,7 +317,8 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 				URL:      resolved.URL,
 				Quality:  resolved.Quality,
 				Language: extensions.LangSpanish,
-				Referer:  embed,
+				Audio:    candidate.audio,
+				Referer:  candidate.url,
 			}
 			sources = append(sources, source)
 			if animeKey != "" {
@@ -334,8 +336,13 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 
 var iframeSrcRe = regexp.MustCompile(`<iframe[^>]+src="(https?://[^"]+)"`)
 
-func extractEmbeds(html string) []string {
-	var out []string
+type embedCandidate struct {
+	url   string
+	audio string
+}
+
+func extractEmbeds(html string) []embedCandidate {
+	var out []embedCandidate
 	seen := map[string]bool{}
 
 	if m := videosJSRe.FindStringSubmatch(html); len(m) >= 2 {
@@ -354,7 +361,7 @@ func extractEmbeds(html string) []string {
 					}
 					if u != "" && !seen[u] {
 						seen[u] = true
-						out = append(out, u)
+						out = append(out, embedCandidate{url: u, audio: audioFromTrackKey(key)})
 					}
 				}
 			}
@@ -363,10 +370,21 @@ func extractEmbeds(html string) []string {
 	for _, m := range iframeSrcRe.FindAllStringSubmatch(html, 10) {
 		if len(m) >= 2 && !seen[m[1]] {
 			seen[m[1]] = true
-			out = append(out, m[1])
+			out = append(out, embedCandidate{url: m[1]})
 		}
 	}
 	return out
+}
+
+func audioFromTrackKey(key string) string {
+	switch strings.ToUpper(strings.TrimSpace(key)) {
+	case "DUB", "LAT", "ESP":
+		return "dub"
+	case "SUB", "VOSE", "RAW":
+		return "sub"
+	default:
+		return ""
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -3,15 +3,13 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/layout/Layout'
 import Home from './pages/Home'
 
-const AnimeLibrary = lazy(() => import('./pages/AnimeLibrary'))
+const Local = lazy(() => import('./pages/Local'))
 const AnimeDetail = lazy(() => import('./pages/AnimeDetail'))
-const MangaLibrary = lazy(() => import('./pages/MangaLibrary'))
 const MangaDetail = lazy(() => import('./pages/MangaDetail'))
 const MangaSearch = lazy(() => import('./pages/MangaSearch'))
 const Search = lazy(() => import('./pages/Search'))
 const Settings = lazy(() => import('./pages/Settings'))
 const MyLists = lazy(() => import('./pages/MyLists'))
-const Downloads = lazy(() => import('./pages/Downloads'))
 
 function RouteFallback() {
   return (
@@ -47,15 +45,16 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/home" element={<Home />} />
-          <Route path="/anime" element={<AnimeLibrary />} />
+          <Route path="/local" element={<Local />} />
+          <Route path="/anime" element={<Navigate to="/local" replace />} />
           <Route path="/anime/:id" element={<AnimeDetail />} />
-          <Route path="/manga" element={<MangaLibrary />} />
+          <Route path="/manga" element={<Navigate to="/local?tab=manga" replace />} />
           <Route path="/manga/:id" element={<MangaDetail />} />
           <Route path="/mis-listas" element={<MyLists />} />
           <Route path="/descubrir" element={<Navigate to="/home" replace />} />
           <Route path="/search" element={<Search />} />
           <Route path="/manga-online" element={<MangaSearch />} />
-          <Route path="/descargas" element={<Downloads />} />
+          <Route path="/descargas" element={<Navigate to="/local?tab=downloads" replace />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </Suspense>

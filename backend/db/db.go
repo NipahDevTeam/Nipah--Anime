@@ -25,6 +25,8 @@ func New() (*Database, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not resolve DB path: %w", err)
 	}
+	_, statErr := os.Stat(dbPath)
+	freshDB := os.IsNotExist(statErr)
 
 	// Ensure the directory exists
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
@@ -48,6 +50,12 @@ func New() (*Database, error) {
 	if err := db.migrate(); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("migration failed: %w", err)
+	}
+	if freshDB {
+		if err := db.applyFreshInstallDefaults(); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("fresh install defaults failed: %w", err)
+		}
 	}
 
 	return db, nil
@@ -175,15 +183,24 @@ func (d *Database) migrate() error {
 		anime_id    TEXT NOT NULL,
 		anime_title TEXT NOT NULL,
 		cover_url   TEXT,
+		anilist_id  INTEGER DEFAULT 0,
 		episode_id  TEXT NOT NULL,
 		episode_num REAL,
 		episode_title TEXT,
+		episode_thumbnail TEXT,
+		progress_s  INTEGER DEFAULT 0,
 		watched_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
 		duration_s  INTEGER DEFAULT 0,
 		completed   BOOLEAN DEFAULT FALSE,
 		hidden      BOOLEAN DEFAULT FALSE,
 		UNIQUE(source_id, episode_id)
 	);
+	CREATE INDEX IF NOT EXISTS idx_watch_history_source_anime_recent
+		ON watch_history(source_id, anime_id, watched_at DESC, id DESC);
+	CREATE INDEX IF NOT EXISTS idx_watch_history_visible_recent
+		ON watch_history(hidden, source_id, anime_id, watched_at DESC, id DESC);
+	CREATE INDEX IF NOT EXISTS idx_watch_history_continue_recent
+		ON watch_history(completed, source_id, anime_id, watched_at DESC, id DESC);
 
 	-- User anime list (MAL-like tracking: Watching, Planning, etc.)
 	CREATE TABLE IF NOT EXISTS anime_list (
@@ -264,9 +281,14 @@ func (d *Database) migrate() error {
 		anilist_id      INTEGER DEFAULT 0,
 		matched_title   TEXT DEFAULT '',
 		confidence      REAL DEFAULT 0,
+		resolver_generation TEXT NOT NULL DEFAULT '',
 		last_seen_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE(source_id, source_manga_id)
 	);
+	CREATE INDEX IF NOT EXISTS idx_online_manga_source_map_anilist_generation
+		ON online_manga_source_map(anilist_id, resolver_generation, confidence DESC, last_seen_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_online_manga_source_map_source_anilist_generation
+		ON online_manga_source_map(source_id, anilist_id, resolver_generation, confidence DESC, last_seen_at DESC);
 
 	-- Online manga reading history with canonical AniList identity when available
 	CREATE TABLE IF NOT EXISTS online_manga_history (
@@ -285,6 +307,10 @@ func (d *Database) migrate() error {
 		completed          BOOLEAN DEFAULT FALSE,
 		UNIQUE(source_id, chapter_id)
 	);
+	CREATE INDEX IF NOT EXISTS idx_online_manga_history_source_recent
+		ON online_manga_history(source_id, source_manga_id, read_at DESC, id DESC);
+	CREATE INDEX IF NOT EXISTS idx_online_manga_history_continue_recent
+		ON online_manga_history(completed, source_id, source_manga_id, read_at DESC, id DESC);
 
 	CREATE TABLE IF NOT EXISTS remote_list_sync_queue (
 		id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -314,6 +340,8 @@ func (d *Database) migrate() error {
 		('manga_reading_direction', 'ltr'),
 		('data_saver', 'false'),
 		('auto_scan_on_startup', 'true'),
+		('download_path', ''),
+		('anime_import_path', ''),
 		('preferred_quality', '1080p'),
 		('preferred_audio', 'sub'),
 		('anime4k_level', 'off'),
@@ -331,8 +359,23 @@ func (d *Database) migrate() error {
 	_, _ = d.conn.Exec(`ALTER TABLE anime_list ADD COLUMN banner_image TEXT`)
 	// Add hidden column to existing DBs — ignore error if already exists
 	_, _ = d.conn.Exec(`ALTER TABLE watch_history ADD COLUMN hidden BOOLEAN DEFAULT FALSE`)
+	_, _ = d.conn.Exec(`ALTER TABLE watch_history ADD COLUMN anilist_id INTEGER DEFAULT 0`)
+	_, _ = d.conn.Exec(`ALTER TABLE watch_history ADD COLUMN episode_thumbnail TEXT`)
+	_, _ = d.conn.Exec(`ALTER TABLE watch_history ADD COLUMN progress_s INTEGER DEFAULT 0`)
 	_, _ = d.conn.Exec(`ALTER TABLE remote_list_sync_queue ADD COLUMN last_attempt_at DATETIME`)
+	_, _ = d.conn.Exec(`ALTER TABLE online_manga_source_map ADD COLUMN resolver_generation TEXT NOT NULL DEFAULT ''`)
+	if err := d.ensureLegacySchemaCompatibility(); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (d *Database) applyFreshInstallDefaults() error {
+	defaultLang := preferredUILanguage()
+	return d.SetSettings(map[string]string{
+		"language":           defaultLang,
+		"preferred_sub_lang": defaultLang,
+	})
 }
 
 func (d *Database) configureConnection() error {
@@ -352,6 +395,77 @@ func (d *Database) configureConnection() error {
 		}
 	}
 	return nil
+}
+
+func (d *Database) ensureLegacySchemaCompatibility() error {
+	requiredColumns := []struct {
+		table      string
+		column     string
+		definition string
+	}{
+		{"anime_list", "mal_id", "INTEGER DEFAULT 0"},
+		{"anime_list", "title_english", "TEXT DEFAULT ''"},
+		{"anime_list", "banner_image", "TEXT DEFAULT ''"},
+		{"anime_list", "episodes_watched", "INTEGER DEFAULT 0"},
+		{"anime_list", "episodes_total", "INTEGER DEFAULT 0"},
+		{"anime_list", "score", "REAL DEFAULT 0"},
+		{"anime_list", "airing_status", "TEXT DEFAULT ''"},
+		{"anime_list", "year", "INTEGER DEFAULT 0"},
+		{"anime_list", "added_at", "TEXT DEFAULT ''"},
+		{"anime_list", "updated_at", "TEXT DEFAULT ''"},
+		{"manga_list", "mal_id", "INTEGER DEFAULT 0"},
+		{"manga_list", "title_english", "TEXT DEFAULT ''"},
+		{"manga_list", "banner_image", "TEXT DEFAULT ''"},
+		{"manga_list", "chapters_read", "INTEGER DEFAULT 0"},
+		{"manga_list", "chapters_total", "INTEGER DEFAULT 0"},
+		{"manga_list", "volumes_read", "INTEGER DEFAULT 0"},
+		{"manga_list", "volumes_total", "INTEGER DEFAULT 0"},
+		{"manga_list", "score", "REAL DEFAULT 0"},
+		{"manga_list", "year", "INTEGER DEFAULT 0"},
+		{"manga_list", "added_at", "TEXT DEFAULT ''"},
+		{"manga_list", "updated_at", "TEXT DEFAULT ''"},
+	}
+
+	for _, column := range requiredColumns {
+		if err := d.ensureColumnExists(column.table, column.column, column.definition); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Database) ensureColumnExists(table, column, definition string) error {
+	if d.columnExists(table, column) {
+		return nil
+	}
+	if _, err := d.conn.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)); err != nil {
+		return fmt.Errorf("ensure column %s.%s: %w", table, column, err)
+	}
+	return nil
+}
+
+func (d *Database) columnExists(table, column string) bool {
+	rows, err := d.conn.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var colType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultValue, &pk); err != nil {
+			continue
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

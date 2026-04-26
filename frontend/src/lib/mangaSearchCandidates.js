@@ -1,50 +1,12 @@
-function cleanTitleCandidate(value) {
-  return String(value || '')
-    .replace(/[_\-:/]+/g, ' ')
-    .replace(/[()]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+import { buildExpandedTitleVariants } from './titleMatching.js'
 
 function pushCandidate(target, seen, value) {
-  const cleaned = cleanTitleCandidate(value)
-  if (!cleaned) return
-  const key = cleaned.toLowerCase()
-  if (seen.has(key)) return
-  seen.add(key)
-  target.push(cleaned)
-}
-
-function buildShortTitleVariants(value) {
-  const raw = String(value || '').trim()
-  if (!raw) return []
-  const variants = []
-  const push = (candidate) => {
-    const cleaned = cleanTitleCandidate(candidate)
-    if (!cleaned) return
-    if (!variants.includes(cleaned)) variants.push(cleaned)
+  for (const cleaned of buildExpandedTitleVariants(value)) {
+    const key = cleaned.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    target.push(cleaned)
   }
-
-  push(raw)
-  push(raw.split('(')[0])
-
-  for (const separator of [':', ' - ']) {
-    const parts = raw.split(separator).map((item) => item.trim()).filter(Boolean)
-    if (parts.length < 2) continue
-    push(parts[0])
-    push(parts[parts.length - 1])
-  }
-
-  for (const separator of [',', ' / ']) {
-    const parts = raw.split(separator).map((item) => item.trim()).filter(Boolean)
-    if (parts.length < 2) continue
-    const first = parts[0]
-    const last = parts[parts.length - 1]
-    if (first.split(/\s+/).length <= 8) push(first)
-    if (last.split(/\s+/).length <= 5) push(last)
-  }
-
-  return variants
 }
 
 export function isManhwaLike(item) {
@@ -77,9 +39,7 @@ export function buildOrderedMangaSearchCandidates(item) {
 
   for (const group of orderedGroups) {
     for (const value of group) {
-      for (const variant of buildShortTitleVariants(value)) {
-        pushCandidate(candidates, seen, variant)
-      }
+      pushCandidate(candidates, seen, value)
     }
   }
 
@@ -90,9 +50,7 @@ export function normalizeCandidateList(values) {
   const seen = new Set()
   const candidates = []
   for (const value of Array.isArray(values) ? values : [values]) {
-    for (const variant of buildShortTitleVariants(value)) {
-      pushCandidate(candidates, seen, variant)
-    }
+    pushCandidate(candidates, seen, value)
   }
   return candidates
 }

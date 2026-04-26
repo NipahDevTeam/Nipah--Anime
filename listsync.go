@@ -368,11 +368,13 @@ func (a *App) ensurePassiveMangaTracked(anilistID, malID int, title, titleEnglis
 	}
 }
 
-func (a *App) handleLocalEpisodeEnded(episodeID int) {
+func (a *App) syncLocalEpisodeTracking(episodeID int, markWatched bool) {
 	if a.db == nil || episodeID <= 0 {
 		return
 	}
-	_ = a.db.MarkWatched(episodeID)
+	if markWatched {
+		_ = a.db.MarkWatched(episodeID)
+	}
 	info, err := a.db.GetLibraryAnimeIdentityByEpisodeID(episodeID)
 	if err != nil || info == nil || info.AniListID <= 0 {
 		return
@@ -381,7 +383,21 @@ func (a *App) handleLocalEpisodeEnded(episodeID int) {
 	if progress <= 0 {
 		progress = 1
 	}
+	entry, _ := a.db.GetAnimeListEntryByAniListID(info.AniListID)
+	if entry != nil && entry.EpisodesWatched >= progress {
+		expectedStatus := "WATCHING"
+		if entry.EpisodesTotal > 0 && progress >= entry.EpisodesTotal {
+			expectedStatus = "COMPLETED"
+		}
+		if strings.EqualFold(strings.TrimSpace(entry.Status), expectedStatus) {
+			return
+		}
+	}
 	a.ensurePassiveAnimeTracked(info.AniListID, 0, info.Title, info.TitleEnglish, info.CoverImage, progress, info.Year, info.AiringStatus)
+}
+
+func (a *App) handleLocalEpisodeEnded(episodeID int) {
+	a.syncLocalEpisodeTracking(episodeID, true)
 }
 
 func (a *App) getAniListSyncToken() (string, int, error) {

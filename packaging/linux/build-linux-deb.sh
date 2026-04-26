@@ -30,5 +30,6 @@ cp -f "build/bin/Nipah! Anime" "build/linux-bin/nipah-anime"
 
 echo "[Linux] Packaging .deb"
 "${NFPM_BIN}" package --packager deb --config packaging/linux/nfpm.yaml --target build/bin/
+sed 's/\r$//' packaging/arch/PKGBUILD > build/bin/PKGBUILD
 
 echo "[Linux] Done"

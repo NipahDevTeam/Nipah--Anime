@@ -86,6 +86,29 @@ func (d *Database) GetDownloads() ([]DownloadEntry, error) {
 	return scanDownloadRows(rows)
 }
 
+// GetDownloadByID returns a single download record by id.
+func (d *Database) GetDownloadByID(id int) (*DownloadEntry, error) {
+	rows, err := d.conn.Query(`
+		SELECT id, anime_title, episode_num, COALESCE(episode_title, ''),
+		       COALESCE(cover_url, ''), source_url, COALESCE(file_path, ''),
+		       COALESCE(file_name, ''), file_size, downloaded, status, progress,
+		       COALESCE(error_msg, ''), created_at, COALESCE(completed_at, '')
+		FROM downloads
+		WHERE id = ?
+		LIMIT 1
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items, err := scanDownloadRows(rows)
+	if err != nil || len(items) == 0 {
+		return nil, err
+	}
+	return &items[0], nil
+}
+
 // GetActiveDownloads returns downloads that are pending or in progress.
 func (d *Database) GetActiveDownloads() ([]DownloadEntry, error) {
 	rows, err := d.conn.Query(`
@@ -134,7 +157,10 @@ func (d *Database) ClearCompletedDownloads() error {
 	return err
 }
 
-func scanDownloadRows(rows interface{ Next() bool; Scan(...interface{}) error }) ([]DownloadEntry, error) {
+func scanDownloadRows(rows interface {
+	Next() bool
+	Scan(...interface{}) error
+}) ([]DownloadEntry, error) {
 	var out []DownloadEntry
 	for rows.Next() {
 		var e DownloadEntry

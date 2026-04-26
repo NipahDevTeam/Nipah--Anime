@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { wails, proxyImage } from '../lib/wails'
 import { useI18n } from '../lib/i18n'
 import { toastSuccess, toastError } from '../components/ui/Toast'
+import { filterAndSortMangaEntries } from '../lib/myListsView'
 
 const STATUSES = ['WATCHING', 'PLANNING', 'COMPLETED', 'ON_HOLD', 'DROPPED']
 
@@ -144,45 +145,12 @@ export default function MyLists() {
     return years.sort((a, b) => b - a)
   }, [mangaEntries])
 
-  const filteredMangaEntries = useMemo(() => {
-    const query = mangaSearch.trim().toLowerCase()
-    const filtered = mangaEntries.filter((entry) => {
-      if (mangaStatusFilter !== 'ALL' && entry.status !== mangaStatusFilter) return false
-      if (mangaYearFilter !== 'ALL' && Number(entry.year) !== Number(mangaYearFilter)) return false
-      if (!query) return true
-      const haystacks = [
-        entry.title,
-        entry.title_english,
-        entry.media_format,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-      return haystacks.includes(query)
-    })
-
-    const normalized = [...filtered]
-    normalized.sort((a, b) => {
-      switch (mangaSort) {
-        case 'TITLE_ASC':
-          return (a.title_english || a.title || '').localeCompare(b.title_english || b.title || '')
-        case 'TITLE_DESC':
-          return (b.title_english || b.title || '').localeCompare(a.title_english || a.title || '')
-        case 'SCORE_DESC':
-          return (Number(b.score) || 0) - (Number(a.score) || 0)
-        case 'YEAR_DESC':
-          return (Number(b.year) || 0) - (Number(a.year) || 0)
-        case 'PROGRESS_DESC':
-          return (Number(b.chapters_read) || 0) - (Number(a.chapters_read) || 0)
-        case 'ADDED_DESC':
-          return new Date(b.added_at || 0).getTime() - new Date(a.added_at || 0).getTime()
-        case 'UPDATED_DESC':
-        default:
-          return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime()
-      }
-    })
-    return normalized
-  }, [mangaEntries, mangaSearch, mangaSort, mangaStatusFilter, mangaYearFilter])
+  const filteredMangaEntries = useMemo(() => filterAndSortMangaEntries(mangaEntries, {
+    query: mangaSearch,
+    status: mangaStatusFilter,
+    sort: mangaSort,
+    year: mangaYearFilter,
+  }), [mangaEntries, mangaSearch, mangaSort, mangaStatusFilter, mangaYearFilter])
 
   const scrollToSection = (status) => {
     const el = document.getElementById(`my-list-section-${activeMediaType}-${status}`)
@@ -539,22 +507,33 @@ export default function MyLists() {
             </div>
           </div>
 
-          <div className="my-list-manga-showcase-grid">
-            {filteredMangaEntries.map((entry) => (
-              <MangaListCard
-                key={`manga-catalog-${entry.anilist_id}`}
-                entry={entry}
-                labels={mangaLabels}
-                onStatusChange={handleMangaStatusChange}
-                onScoreChange={handleMangaScoreChange}
-                onProgressChange={handleMangaProgressChange}
-                onRemove={handleMangaRemove}
-                navigate={navigate}
-                t={t}
-                variant="showcase"
-              />
-            ))}
-          </div>
+          {filteredMangaEntries.length > 0 ? (
+            <div className="my-list-manga-showcase-grid">
+              {filteredMangaEntries.map((entry) => (
+                <MangaListCard
+                  key={`manga-catalog-${entry.anilist_id}`}
+                  entry={entry}
+                  labels={mangaLabels}
+                  onStatusChange={handleMangaStatusChange}
+                  onScoreChange={handleMangaScoreChange}
+                  onProgressChange={handleMangaProgressChange}
+                  onRemove={handleMangaRemove}
+                  navigate={navigate}
+                  t={t}
+                  variant="showcase"
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="nipah-empty-panel">
+              <div className="nipah-empty-title">{isEnglish ? 'No manga matches those filters' : 'No hay manga con esos filtros'}</div>
+              <div className="nipah-empty-copy">
+                {isEnglish
+                  ? 'Try a different status, year, or search term to bring titles back into view.'
+                  : 'Prueba otro estado, ano o termino de busqueda para volver a mostrar titulos.'}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="my-list-sections">

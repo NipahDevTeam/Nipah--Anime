@@ -32,6 +32,33 @@ type Server struct {
 	debug         bool
 }
 
+type MediaProxyProbeResult struct {
+	RawURL               string `json:"raw_url"`
+	Referer              string `json:"referer"`
+	ProxyURL             string `json:"proxy_url"`
+	UpstreamStatus       int    `json:"upstream_status"`
+	UpstreamContentType  string `json:"upstream_content_type"`
+	IsHLS                bool   `json:"is_hls"`
+	ManifestRewritten    bool   `json:"manifest_rewritten"`
+	ManifestLineCount    int    `json:"manifest_line_count"`
+	FirstSegmentURL      string `json:"first_segment_url,omitempty"`
+	FirstSegmentStatus   int    `json:"first_segment_status,omitempty"`
+	FirstSegmentType     string `json:"first_segment_type,omitempty"`
+	RangeProbeStatus     int    `json:"range_probe_status,omitempty"`
+	RangeProbeType       string `json:"range_probe_type,omitempty"`
+	AcceptRanges         string `json:"accept_ranges,omitempty"`
+	ContentRange         string `json:"content_range,omitempty"`
+	Classification       string `json:"classification"`
+	ClassificationReason string `json:"classification_reason"`
+}
+
+type responseData struct {
+	status      int
+	contentType string
+	body        []byte
+	headers     http.Header
+}
+
 // New creates a new Server instance.
 func New(database *db.Database, lib *library.Manager, meta *metadata.Manager, torrentStream *torrentbackend.StreamManager, debug bool) *Server {
 	s := &Server{
@@ -380,9 +407,11 @@ func (s *Server) handleMediaProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	contentType = browserMediaContentType(raw, contentType)
 	if contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
+	w.Header().Set("Content-Disposition", "inline")
 	if contentLength := strings.TrimSpace(resp.Header.Get("Content-Length")); contentLength != "" {
 		w.Header().Set("Content-Length", contentLength)
 	}
@@ -430,6 +459,23 @@ func isM3U8Content(rawURL, contentType string) bool {
 		strings.Contains(lowerCT, "application/x-mpegurl")
 }
 
+func browserMediaContentType(rawURL, contentType string) string {
+	lowerURL := strings.ToLower(strings.TrimSpace(rawURL))
+	lowerCT := strings.ToLower(strings.TrimSpace(contentType))
+	switch {
+	case strings.Contains(lowerURL, ".m3u8"), strings.Contains(lowerCT, "application/vnd.apple.mpegurl"), strings.Contains(lowerCT, "application/x-mpegurl"):
+		return "application/vnd.apple.mpegurl"
+	case strings.Contains(lowerURL, ".mp4"), strings.Contains(lowerCT, "application/octet-stream"), lowerCT == "":
+		return "video/mp4"
+	case strings.Contains(lowerURL, ".webm"):
+		return "video/webm"
+	case strings.Contains(lowerURL, ".m4v"):
+		return "video/x-m4v"
+	default:
+		return contentType
+	}
+}
+
 func rewriteM3U8Manifest(manifest string, base *url.URL) string {
 	lines := strings.Split(manifest, "\n")
 	for i, line := range lines {
@@ -468,6 +514,156 @@ func mediaProxyURL(rawURL, referer string) string {
 		params.Set("referer", referer)
 	}
 	return "http://localhost:43212/proxy/media?" + params.Encode()
+}
+
+func ProbeMediaProxy(rawURL, referer string) (*MediaProxyProbeResult, error) {
+	parsed, refererValue, err := parseMediaProxyInputs(rawURL, referer)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := fetchMediaProxyResponse(rawURL, refererValue, "", "")
+	if err != nil {
+		return nil, err
+	}
+
+	result := &MediaProxyProbeResult{
+		RawURL:              rawURL,
+		Referer:             refererValue,
+		ProxyURL:            mediaProxyURL(rawURL, refererValue),
+		UpstreamStatus:      resp.status,
+		UpstreamContentType: resp.contentType,
+		IsHLS:               isM3U8Content(rawURL, resp.contentType),
+		AcceptRanges:        strings.TrimSpace(resp.headers.Get("Accept-Ranges")),
+		ContentRange:        strings.TrimSpace(resp.headers.Get("Content-Range")),
+	}
+
+	if resp.status >= http.StatusBadRequest {
+		result.Classification = "proxy-broken"
+		result.ClassificationReason = fmt.Sprintf("upstream returned HTTP %d", resp.status)
+		return result, nil
+	}
+
+	if result.IsHLS {
+		manifest := rewriteM3U8Manifest(string(resp.body), parsed)
+		result.ManifestLineCount = len(strings.Split(manifest, "\n"))
+		result.ManifestRewritten = strings.Contains(manifest, "/proxy/media?")
+
+		firstSegmentRaw, firstSegmentProxy := firstPlayableManifestLine(manifest)
+		result.FirstSegmentURL = firstSegmentProxy
+		if firstSegmentRaw != "" {
+			segmentResp, segErr := fetchMediaProxyResponse(firstSegmentRaw, parsed.String(), "bytes=0-0", "video/*,*/*;q=0.8")
+			if segErr == nil {
+				result.FirstSegmentStatus = segmentResp.status
+				result.FirstSegmentType = segmentResp.contentType
+			}
+		}
+
+		switch {
+		case !result.ManifestRewritten:
+			result.Classification = "proxy-broken"
+			result.ClassificationReason = "manifest was not rewritten through /proxy/media"
+		case result.FirstSegmentStatus >= http.StatusBadRequest:
+			result.Classification = "proxy-broken"
+			result.ClassificationReason = fmt.Sprintf("first HLS segment returned HTTP %d", result.FirstSegmentStatus)
+		default:
+			result.Classification = "provider-compatible"
+			result.ClassificationReason = "manifest and first segment look browser-playable"
+		}
+		return result, nil
+	}
+
+	rangeResp, rangeErr := fetchMediaProxyResponse(rawURL, refererValue, "bytes=0-0", "video/*,*/*;q=0.8")
+	if rangeErr == nil {
+		result.RangeProbeStatus = rangeResp.status
+		result.RangeProbeType = rangeResp.contentType
+		if result.AcceptRanges == "" {
+			result.AcceptRanges = strings.TrimSpace(rangeResp.headers.Get("Accept-Ranges"))
+		}
+		if result.ContentRange == "" {
+			result.ContentRange = strings.TrimSpace(rangeResp.headers.Get("Content-Range"))
+		}
+	}
+
+	switch {
+	case result.RangeProbeStatus >= http.StatusBadRequest:
+		result.Classification = "proxy-broken"
+		result.ClassificationReason = fmt.Sprintf("range probe returned HTTP %d", result.RangeProbeStatus)
+	case result.RangeProbeStatus == http.StatusPartialContent || result.AcceptRanges != "" || result.ContentRange != "":
+		result.Classification = "provider-compatible"
+		result.ClassificationReason = "direct media responds with browser-compatible range semantics"
+	default:
+		result.Classification = "provider-compatible"
+		result.ClassificationReason = "direct media responded successfully but range support was inconclusive"
+	}
+
+	return result, nil
+}
+
+func parseMediaProxyInputs(rawURL, referer string) (*url.URL, string, error) {
+	parsed, err := url.ParseRequestURI(rawURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, "", fmt.Errorf("invalid media url")
+	}
+	if strings.TrimSpace(referer) == "" {
+		referer = parsed.Scheme + "://" + parsed.Host + "/"
+	}
+	return parsed, strings.TrimSpace(referer), nil
+}
+
+func fetchMediaProxyResponse(rawURL, referer, byteRange, accept string) (*responseData, error) {
+	_, refererValue, err := parseMediaProxyInputs(rawURL, referer)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("Referer", refererValue)
+	if strings.TrimSpace(accept) != "" {
+		req.Header.Set("Accept", strings.TrimSpace(accept))
+	}
+	if strings.TrimSpace(byteRange) != "" {
+		req.Header.Set("Range", strings.TrimSpace(byteRange))
+	}
+
+	resp, err := mediaProxyClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return &responseData{
+		status:      resp.StatusCode,
+		contentType: resp.Header.Get("Content-Type"),
+		body:        body,
+		headers:     resp.Header.Clone(),
+	}, nil
+}
+
+func firstPlayableManifestLine(manifest string) (string, string) {
+	for _, line := range strings.Split(manifest, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.Contains(trimmed, "/proxy/media?") {
+			if parsed, err := url.Parse(trimmed); err == nil {
+				rawURL := parsed.Query().Get("url")
+				return rawURL, trimmed
+			}
+		}
+		return trimmed, trimmed
+	}
+	return "", ""
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

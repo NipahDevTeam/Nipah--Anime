@@ -7,13 +7,14 @@ import (
 )
 
 type OnlineMangaSourceMap struct {
-	SourceID      string    `json:"source_id"`
-	SourceMangaID string    `json:"source_manga_id"`
-	SourceTitle   string    `json:"source_title"`
-	AniListID     int       `json:"anilist_id"`
-	MatchedTitle  string    `json:"matched_title"`
-	Confidence    float64   `json:"confidence"`
-	LastSeenAt    time.Time `json:"last_seen_at"`
+	SourceID           string    `json:"source_id"`
+	SourceMangaID      string    `json:"source_manga_id"`
+	SourceTitle        string    `json:"source_title"`
+	AniListID          int       `json:"anilist_id"`
+	MatchedTitle       string    `json:"matched_title"`
+	Confidence         float64   `json:"confidence"`
+	ResolverGeneration string    `json:"resolver_generation"`
+	LastSeenAt         time.Time `json:"last_seen_at"`
 }
 
 type OnlineMangaHistoryEntry struct {
@@ -37,12 +38,34 @@ func (d *Database) GetOnlineMangaSourceMap(sourceID, sourceMangaID string) (*Onl
 	var lastSeenAt string
 	err := d.conn.QueryRow(`
 		SELECT source_id, source_manga_id, COALESCE(source_title, ''), COALESCE(anilist_id, 0),
-		       COALESCE(matched_title, ''), COALESCE(confidence, 0), last_seen_at
+		       COALESCE(matched_title, ''), COALESCE(confidence, 0), COALESCE(resolver_generation, ''), last_seen_at
 		FROM online_manga_source_map
 		WHERE source_id = ? AND source_manga_id = ?
 	`, sourceID, sourceMangaID).Scan(
 		&entry.SourceID, &entry.SourceMangaID, &entry.SourceTitle, &entry.AniListID,
-		&entry.MatchedTitle, &entry.Confidence, &lastSeenAt,
+		&entry.MatchedTitle, &entry.Confidence, &entry.ResolverGeneration, &lastSeenAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	entry.LastSeenAt, _ = time.Parse("2006-01-02 15:04:05", lastSeenAt)
+	return &entry, nil
+}
+
+func (d *Database) GetOnlineMangaSourceMapForGeneration(sourceID, sourceMangaID, generation string) (*OnlineMangaSourceMap, error) {
+	var entry OnlineMangaSourceMap
+	var lastSeenAt string
+	err := d.conn.QueryRow(`
+		SELECT source_id, source_manga_id, COALESCE(source_title, ''), COALESCE(anilist_id, 0),
+		       COALESCE(matched_title, ''), COALESCE(confidence, 0), COALESCE(resolver_generation, ''), last_seen_at
+		FROM online_manga_source_map
+		WHERE source_id = ? AND source_manga_id = ? AND COALESCE(resolver_generation, '') = ?
+	`, sourceID, sourceMangaID, strings.TrimSpace(generation)).Scan(
+		&entry.SourceID, &entry.SourceMangaID, &entry.SourceTitle, &entry.AniListID,
+		&entry.MatchedTitle, &entry.Confidence, &entry.ResolverGeneration, &lastSeenAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -57,22 +80,23 @@ func (d *Database) GetOnlineMangaSourceMap(sourceID, sourceMangaID string) (*Onl
 func (d *Database) UpsertOnlineMangaSourceMap(entry OnlineMangaSourceMap) error {
 	_, err := d.conn.Exec(`
 		INSERT INTO online_manga_source_map
-			(source_id, source_manga_id, source_title, anilist_id, matched_title, confidence, last_seen_at)
-		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			(source_id, source_manga_id, source_title, anilist_id, matched_title, confidence, resolver_generation, last_seen_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(source_id, source_manga_id) DO UPDATE SET
 			source_title  = excluded.source_title,
 			anilist_id    = excluded.anilist_id,
 			matched_title = excluded.matched_title,
 			confidence    = excluded.confidence,
+			resolver_generation = excluded.resolver_generation,
 			last_seen_at  = CURRENT_TIMESTAMP
-	`, entry.SourceID, entry.SourceMangaID, entry.SourceTitle, entry.AniListID, entry.MatchedTitle, entry.Confidence)
+	`, entry.SourceID, entry.SourceMangaID, entry.SourceTitle, entry.AniListID, entry.MatchedTitle, entry.Confidence, strings.TrimSpace(entry.ResolverGeneration))
 	return err
 }
 
 func (d *Database) GetOnlineMangaSourceMapsByAniListID(anilistID int) ([]OnlineMangaSourceMap, error) {
 	rows, err := d.conn.Query(`
 		SELECT source_id, source_manga_id, COALESCE(source_title, ''), COALESCE(anilist_id, 0),
-		       COALESCE(matched_title, ''), COALESCE(confidence, 0), last_seen_at
+		       COALESCE(matched_title, ''), COALESCE(confidence, 0), COALESCE(resolver_generation, ''), last_seen_at
 		FROM online_manga_source_map
 		WHERE anilist_id = ?
 		ORDER BY confidence DESC, last_seen_at DESC, id DESC
@@ -88,7 +112,36 @@ func (d *Database) GetOnlineMangaSourceMapsByAniListID(anilistID int) ([]OnlineM
 		var lastSeenAt string
 		if err := rows.Scan(
 			&item.SourceID, &item.SourceMangaID, &item.SourceTitle, &item.AniListID,
-			&item.MatchedTitle, &item.Confidence, &lastSeenAt,
+			&item.MatchedTitle, &item.Confidence, &item.ResolverGeneration, &lastSeenAt,
+		); err != nil {
+			continue
+		}
+		item.LastSeenAt, _ = time.Parse("2006-01-02 15:04:05", lastSeenAt)
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (d *Database) GetOnlineMangaSourceMapsByAniListIDForGeneration(anilistID int, generation string) ([]OnlineMangaSourceMap, error) {
+	rows, err := d.conn.Query(`
+		SELECT source_id, source_manga_id, COALESCE(source_title, ''), COALESCE(anilist_id, 0),
+		       COALESCE(matched_title, ''), COALESCE(confidence, 0), COALESCE(resolver_generation, ''), last_seen_at
+		FROM online_manga_source_map
+		WHERE anilist_id = ? AND COALESCE(resolver_generation, '') = ?
+		ORDER BY confidence DESC, last_seen_at DESC, id DESC
+	`, anilistID, strings.TrimSpace(generation))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []OnlineMangaSourceMap
+	for rows.Next() {
+		var item OnlineMangaSourceMap
+		var lastSeenAt string
+		if err := rows.Scan(
+			&item.SourceID, &item.SourceMangaID, &item.SourceTitle, &item.AniListID,
+			&item.MatchedTitle, &item.Confidence, &item.ResolverGeneration, &lastSeenAt,
 		); err != nil {
 			continue
 		}
@@ -103,14 +156,38 @@ func (d *Database) GetPreferredOnlineMangaSourceMap(sourceID string, anilistID i
 	var lastSeenAt string
 	err := d.conn.QueryRow(`
 		SELECT source_id, source_manga_id, COALESCE(source_title, ''), COALESCE(anilist_id, 0),
-		       COALESCE(matched_title, ''), COALESCE(confidence, 0), last_seen_at
+		       COALESCE(matched_title, ''), COALESCE(confidence, 0), COALESCE(resolver_generation, ''), last_seen_at
 		FROM online_manga_source_map
 		WHERE source_id = ? AND anilist_id = ?
 		ORDER BY confidence DESC, last_seen_at DESC, id DESC
 		LIMIT 1
 	`, sourceID, anilistID).Scan(
 		&entry.SourceID, &entry.SourceMangaID, &entry.SourceTitle, &entry.AniListID,
-		&entry.MatchedTitle, &entry.Confidence, &lastSeenAt,
+		&entry.MatchedTitle, &entry.Confidence, &entry.ResolverGeneration, &lastSeenAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	entry.LastSeenAt, _ = time.Parse("2006-01-02 15:04:05", lastSeenAt)
+	return &entry, nil
+}
+
+func (d *Database) GetPreferredOnlineMangaSourceMapForGeneration(sourceID string, anilistID int, generation string) (*OnlineMangaSourceMap, error) {
+	var entry OnlineMangaSourceMap
+	var lastSeenAt string
+	err := d.conn.QueryRow(`
+		SELECT source_id, source_manga_id, COALESCE(source_title, ''), COALESCE(anilist_id, 0),
+		       COALESCE(matched_title, ''), COALESCE(confidence, 0), COALESCE(resolver_generation, ''), last_seen_at
+		FROM online_manga_source_map
+		WHERE source_id = ? AND anilist_id = ? AND COALESCE(resolver_generation, '') = ?
+		ORDER BY confidence DESC, last_seen_at DESC, id DESC
+		LIMIT 1
+	`, sourceID, anilistID, strings.TrimSpace(generation)).Scan(
+		&entry.SourceID, &entry.SourceMangaID, &entry.SourceTitle, &entry.AniListID,
+		&entry.MatchedTitle, &entry.Confidence, &entry.ResolverGeneration, &lastSeenAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {

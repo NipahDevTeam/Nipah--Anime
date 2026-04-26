@@ -75,9 +75,17 @@ echo "[Linux] Building Wails app"
 "${WAILS_BIN}" build -clean -platform linux/amd64 -tags webkit2_41
 
 APP_BINARY="${ROOT_DIR}/build/bin/Nipah! Anime"
+APP_ICON="${ROOT_DIR}/build/appicon.png"
+if [[ ! -f "${APP_ICON}" ]]; then
+  APP_ICON="${ROOT_DIR}/appimg.png"
+fi
 MPV_BINARY="$(command -v mpv || true)"
 if [[ ! -x "${APP_BINARY}" ]]; then
   echo "[Linux] Built app binary not found: ${APP_BINARY}" >&2
+  exit 1
+fi
+if [[ ! -f "${APP_ICON}" ]]; then
+  echo "[Linux] Tracked app icon not found: ${APP_ICON}" >&2
   exit 1
 fi
 if [[ -z "${MPV_BINARY}" ]]; then
@@ -113,7 +121,7 @@ EOF
 chmod +x "${APPDIR}/AppRun"
 ln -sf "nipah-anime-bin" "${APPDIR}/usr/bin/nipah-anime"
 
-cp "${ROOT_DIR}/build/appicon.png" "${APPDIR}/usr/share/icons/hicolor/512x512/apps/nipah-anime.png"
+cp "${APP_ICON}" "${APPDIR}/usr/share/icons/hicolor/512x512/apps/nipah-anime.png"
 cp "${ROOT_DIR}/packaging/linux/nipah-anime-appimage.desktop" "${APPDIR}/usr/share/applications/nipah-anime.desktop"
 
 echo "[Linux] Packaging AppImage"
@@ -127,4 +135,5 @@ LDAI_OUTPUT="${OUTPUT_NAME}" \
   --output appimage
 
 mv -f "${ROOT_DIR}/${OUTPUT_NAME}" "${ROOT_DIR}/build/bin/${OUTPUT_NAME}"
+sed 's/\r$//' packaging/arch/PKGBUILD > build/bin/PKGBUILD
 echo "[Linux] AppImage ready at build/bin/${OUTPUT_NAME}"
