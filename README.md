@@ -11,7 +11,7 @@
 
 <br/>
 
-<a href="#english-readme">English</a> &nbsp;|&nbsp; <a href="#readme-espanol">Espanol</a>
+<a href="#english-readme">English</a> &nbsp;|&nbsp; <a href="#readme-espanol">Español</a>
 
 </div>
 
@@ -19,7 +19,7 @@
 
 <a id="english-readme"></a>
 
-<div align="right"><a href="#readme-espanol">Ver en Espanol</a></div>
+<div align="right"><a href="#readme-espanol">Ver en Español</a></div>
 
 ## What is Nipah! Anime?
 
@@ -72,7 +72,7 @@ Built with **Go, React, and Wails**, it aims to feel fast, native, and focused, 
 - Local-first sync queue with retry behavior for AniList jobs
 
 ### UI and Experience
-- Bilingual interface: **English / Espanol**
+- Bilingual interface: **English / Español**
 - Catalog-first Home with anime and manga sections
 - Cleaner featured hero, tighter layout, and auto-rotating spotlight
 - BlurHash support for local covers
