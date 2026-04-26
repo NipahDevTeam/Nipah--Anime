@@ -2414,7 +2414,7 @@ h1, h2, h3, h4 {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.7);
-  z-index: 100;
+  z-index: 400;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -8172,6 +8172,7 @@ body {
 }
 
 .integrated-player-stage {
+  position: relative;
   padding: 18px;
 }
 
@@ -8183,6 +8184,35 @@ body {
   background: #000;
 }
 
+.integrated-player-retry {
+  position: absolute;
+  inset: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.integrated-player-retry-actions {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(10, 12, 18, 0.82);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.38);
+}
+
+.integrated-player-retry-btn {
+  min-width: 170px;
+}
+
+.integrated-player-external-btn {
+  min-width: 150px;
+}
+
 .integrated-player-footer {
   padding: 0 20px 18px;
 }
@@ -8190,6 +8220,13 @@ body {
 .integrated-player-note {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.integrated-player-footer-actions {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .episode-playback-control {
@@ -8246,10 +8283,90 @@ body {
   color: var(--accent);
 }
 
+.episode-playback-pill-wip {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .episode-player-note {
   margin-top: 16px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.anime-folder-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.anime-folder-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.anime-folder-back-btn {
+  flex-shrink: 0;
+  border-color: var(--accent-dim);
+  color: var(--text-primary);
+}
+
+.anime-folder-back-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.anime-folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.anime-folder-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--t-fast), transform var(--t-fast), background var(--t-fast);
+}
+
+.anime-folder-card:hover {
+  border-color: rgba(245,166,35,0.24);
+  background: rgba(245,166,35,0.08);
+  transform: translateY(-1px);
+}
+
+.anime-folder-card-copy {
+  min-width: 0;
+}
+
+.anime-folder-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.anime-folder-card-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.anime-folder-card-arrow {
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 700;
 }
 
 .torrent-modal-rich {
@@ -8284,7 +8401,7 @@ body {
 
 .torrent-rich-meta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 16px;
 }
@@ -8311,6 +8428,9 @@ body {
   color: var(--text-primary);
   font-size: 13px;
   font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .torrent-rich-search {
@@ -9617,4 +9737,159 @@ body {
 
 .home-manga-subtabs {
   display: none !important;
+}
+.nipah-command-deck {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.95fr);
+  gap: 24px;
+  margin: 0 48px 28px;
+  padding: 28px;
+  border-radius: 28px;
+}
+
+.nipah-command-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.nipah-command-kicker {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.nipah-command-title {
+  margin: 0;
+  font-size: clamp(32px, 4vw, 54px);
+  line-height: 0.95;
+}
+
+.nipah-command-body {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.nipah-command-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.nipah-command-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.nipah-summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.nipah-summary-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.nipah-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.nipah-metric-card {
+  min-width: 0;
+  padding: 16px 18px;
+  border-radius: 20px;
+}
+
+.nipah-metric-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+}
+
+.nipah-metric-value {
+  margin-top: 10px;
+  font-size: clamp(24px, 3vw, 38px);
+  line-height: 1;
+  font-weight: 800;
+}
+
+.nipah-metric-detail {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.nipah-empty-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 28px;
+  border-radius: 24px;
+}
+
+.nipah-empty-title {
+  font-size: 24px;
+  line-height: 1.1;
+  font-weight: 800;
+}
+
+.nipah-empty-copy {
+  max-width: 58ch;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.online-summary-strip {
+  margin: 0 0 22px;
+}
+
+.my-lists-metric-grid {
+  margin: 0 0 12px;
+}
+
+@media (max-width: 1100px) {
+  .nipah-command-deck {
+    grid-template-columns: 1fr;
+    margin-left: 32px;
+    margin-right: 32px;
+  }
+}
+
+@media (max-width: 780px) {
+  .nipah-command-deck {
+    margin-left: 18px;
+    margin-right: 18px;
+    padding: 22px;
+  }
+
+  .nipah-command-title {
+    font-size: clamp(28px, 9vw, 42px);
+  }
+
+  .nipah-metric-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .nipah-metric-grid {
+    grid-template-columns: 1fr;
+  }
 }

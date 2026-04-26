@@ -14,6 +14,7 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 
 	"miruro/backend/httpclient"
+	"miruro/backend/logger"
 )
 
 const browserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -52,6 +53,8 @@ type responseData struct {
 }
 
 var (
+	log = logger.For("SourceAccess")
+
 	profilesMu sync.RWMutex
 	profiles   = map[string]SourceAccessProfile{}
 
@@ -60,6 +63,16 @@ var (
 
 	session = httpclient.NewSession(20)
 )
+
+var browserBlockedURLPatterns = []string{
+	"*.png*", "*.jpg*", "*.jpeg*", "*.gif*", "*.webp*", "*.svg*", "*.avif*", "*.ico*",
+	"*.woff*", "*.woff2*", "*.ttf*", "*.otf*", "*.eot*",
+	"*.mp4*", "*.webm*", "*.mp3*", "*.m4a*", "*.ogg*", "*.wav*", "*.avi*", "*.mov*",
+	"*googlesyndication.com*", "*doubleclick.net*", "*googletagmanager.com*", "*google-analytics.com*",
+	"*googletagservices.com*", "*ads-twitter.com*", "*facebook.net*", "*facebook.com/tr*",
+	"*analytics.tiktok.com*", "*clarity.ms*", "*cloudflareinsights.com*", "*hotjar.com*",
+	"*newrelic.com*", "*segment.io*", "*intercom.io*", "*disqus.com*", "*amazon-adsystem.com*",
+}
 
 func RegisterProfile(profile SourceAccessProfile) {
 	if profile.SourceID == "" || profile.BaseURL == "" {
@@ -96,6 +109,29 @@ func RegisterProfile(profile SourceAccessProfile) {
 	profilesMu.Unlock()
 }
 
+func ApplyBrowserBlocking(page *rod.Page) error {
+	if page == nil {
+		return nil
+	}
+	return page.SetBlockedURLs(browserBlockedURLPatterns)
+}
+
+func OpenOptimizedPage(browser *rod.Browser, targetURL string) (*rod.Page, error) {
+	page, err := browser.Page(proto.TargetCreateTarget{URL: "about:blank"})
+	if err != nil {
+		return nil, err
+	}
+	if err := ApplyBrowserBlocking(page); err != nil {
+		_ = page.Close()
+		return nil, err
+	}
+	if err := page.Navigate(targetURL); err != nil {
+		_ = page.Close()
+		return nil, err
+	}
+	return page, nil
+}
+
 func GetProfile(sourceID string) (SourceAccessProfile, bool) {
 	profilesMu.RLock()
 	profile, ok := profiles[sourceID]
@@ -121,7 +157,7 @@ func BuildImageProxyURL(sourceID, rawURL, referer string) string {
 	if referer != "" {
 		params.Set("referer", referer)
 	}
-	return "http://localhost:43212/proxy/image?" + params.Encode()
+	return "http://127.0.0.1:43212/proxy/image?" + params.Encode()
 }
 
 func FetchHTML(sourceID, rawURL string, opts RequestOptions) (string, error) {
@@ -172,6 +208,11 @@ func doRequest(profile SourceAccessProfile, rawURL string, opts RequestOptions, 
 		if wait <= 0 {
 			wait = 1200 * time.Millisecond
 		}
+		log.Debug().
+			Str("source_id", profile.SourceID).
+			Int("status", data.status).
+			Dur("wait", wait).
+			Msg("sourceaccess throttled request retry")
 		time.Sleep(wait)
 
 		retryData, retryErr := performRequest(profile, rawURL, opts)
@@ -181,6 +222,11 @@ func doRequest(profile SourceAccessProfile, rawURL string, opts RequestOptions, 
 	}
 
 	if allowSolve && looksBlocked(profile, data.status, data.headers, data.body) {
+		log.Debug().
+			Str("source_id", profile.SourceID).
+			Int("status", data.status).
+			Str("url", rawURL).
+			Msg("sourceaccess blocked request, solving browser session")
 		if _, err := ensureSession(profile); err != nil {
 			return nil, fmt.Errorf("%s session solve failed: %w", profile.SourceID, err)
 		}
@@ -314,11 +360,13 @@ func ensureSession(profile SourceAccessProfile) ([]*http.Cookie, error) {
 	if cached != nil && len(cached.cookies) > 0 && time.Now().Before(cached.expires) {
 		cookies := cloneCookies(cached.cookies)
 		sessionMu.Unlock()
+		log.Debug().Str("source_id", profile.SourceID).Int("cookie_count", len(cookies)).Msg("sourceaccess session cache hit")
 		return cookies, nil
 	}
 	if cached != nil && cached.running {
 		waitCh := cached.waitCh
 		sessionMu.Unlock()
+		log.Debug().Str("source_id", profile.SourceID).Msg("sourceaccess waiting on in-flight session solve")
 		<-waitCh
 		return validSession(profile.SourceID), nil
 	}
@@ -347,6 +395,7 @@ func ensureSession(profile SourceAccessProfile) ([]*http.Cookie, error) {
 }
 
 func solveBrowserSession(profile SourceAccessProfile) ([]*http.Cookie, error) {
+	started := time.Now()
 	browserPath, found := launcher.LookPath()
 	if !found {
 		return nil, fmt.Errorf("no Chrome/Edge browser found")
@@ -371,12 +420,13 @@ func solveBrowserSession(profile SourceAccessProfile) ([]*http.Cookie, error) {
 	}
 	defer browser.Close()
 
-	page, err := browser.Page(proto.TargetCreateTarget{URL: profile.WarmupURL})
+	page, err := OpenOptimizedPage(browser, profile.WarmupURL)
 	if err != nil {
 		return nil, fmt.Errorf("page open failed: %w", err)
 	}
+	defer page.Close()
 
-	_ = page.WaitStable(1500 * time.Millisecond)
+	time.Sleep(350 * time.Millisecond)
 
 	deadline := time.Now().Add(14 * time.Second)
 	for time.Now().Before(deadline) {
@@ -394,7 +444,7 @@ func solveBrowserSession(profile SourceAccessProfile) ([]*http.Cookie, error) {
 				}
 			}
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(250 * time.Millisecond)
 	}
 
 	cookies, err := page.Cookies(cookieURLs(profile))
@@ -405,6 +455,11 @@ func solveBrowserSession(profile SourceAccessProfile) ([]*http.Cookie, error) {
 	if len(httpCookies) == 0 {
 		return nil, fmt.Errorf("no session cookies obtained")
 	}
+	log.Debug().
+		Str("source_id", profile.SourceID).
+		Int("cookie_count", len(httpCookies)).
+		Dur("took", time.Since(started)).
+		Msg("sourceaccess browser session solved")
 	return httpCookies, nil
 }
 

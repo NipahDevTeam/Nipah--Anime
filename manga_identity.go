@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -13,13 +14,41 @@ import (
 	cachepkg "miruro/backend/cache"
 	"miruro/backend/db"
 	"miruro/backend/extensions"
+	"miruro/backend/extensions/m440"
+	"miruro/backend/extensions/weebcentral"
 	"miruro/backend/metadata"
 )
 
-const unresolvedMangaIdentityTTL = 18 * time.Hour
+const unresolvedMangaIdentityTTL = 5 * time.Minute
 const maxResolvedSearchResults = 6
 const minCanonicalMangaMatchConfidence = 0.78
-const fastResolveCandidateBudget = 3
+const fastResolveCandidateBudget = 6
+const mangaAniListQueryBudget = 6
+const unresolvedMangaIdentityCacheTTL = 45 * time.Second
+const sourceSearchVariantBudget = 6
+const mangaResolverGeneration = "2026-03-28-stability-reset-2"
+
+var mangaIdentityTitleReplacer = strings.NewReplacer(
+	"\u3010", " ", "\u3011", " ",
+	"\u300c", " ", "\u300d", " ",
+	"\u300e", " ", "\u300f", " ",
+	"\uFF08", " ", "\uFF09", " ",
+	"[", " ", "]", " ",
+	"{", " ", "}", " ",
+	"<", " ", ">", " ",
+	"\u2010", " - ", "\u2011", " - ", "\u2012", " - ",
+	"\u2013", " - ", "\u2014", " - ", "\u2015", " - ", "\u2212", " - ",
+	"\uFF1A", ":", "\uFE13", ":", "\uFE55", ":",
+	"\\", " / ", "/", " / ",
+	"_", " ", ".", " ", ",", " ", ";", " ", "!", " ", "?", " ",
+	"\"", "", "'", "", "`", "",
+	"\u2018", "", "\u2019", "", "\u201C", "", "\u201D", "",
+	"|", " ", "~", " ", "*", " ", "+", " ",
+)
+
+var mangaPartSuffixPattern = regexp.MustCompile(`(?i)\b(?:part|parte|cour)\s+\d+\b.*$`)
+var mangaSeasonBasePattern = regexp.MustCompile(`(?i)\b(?:season|temporada)\s+\d+\b`)
+var mangaTitleDecorationPattern = regexp.MustCompile(`(?i)\b(?:part|parte|cour|volume|vol(?:ume)?|edition|special|novel|light novel|web novel|oneshot|one shot)\b`)
 
 var mangaSourceIDsByLang = map[string][]string{
 	"es": {"m440-es", "senshimanga-es", "mangaoni-es"},
@@ -44,6 +73,47 @@ type mangaIdentityResolution struct {
 	InMangaList      bool
 	MangaListStatus  string
 	ChaptersRead     int
+}
+
+type mangaSourceSearchStats struct {
+	CacheOrigin    string
+	CandidateCount int
+	SearchCalls    int
+	MatchedQuery   string
+}
+
+func currentMangaResolverGeneration() string {
+	return mangaResolverGeneration
+}
+
+func mangaScopedCacheKey(parts ...string) string {
+	base := []string{"manga", "v", currentMangaResolverGeneration()}
+	base = append(base, parts...)
+	return strings.Join(base, ":")
+}
+
+func mangaIdentityCacheKey(sourceID, sourceMangaID string, year int) string {
+	return mangaScopedCacheKey("identity", strings.TrimSpace(sourceID), strings.TrimSpace(sourceMangaID), fmt.Sprintf("%d", year))
+}
+
+func mangaSearchCacheKey(sourceID, lang, query string) string {
+	return mangaScopedCacheKey("search", strings.TrimSpace(sourceID), normalizeMangaSearchLang(lang), strings.ToLower(strings.TrimSpace(query)))
+}
+
+func mangaSourceResolveCacheKey(sourceID string, anilistID int, lang string) string {
+	return mangaScopedCacheKey("source-resolve", strings.TrimSpace(sourceID), fmt.Sprintf("%d", anilistID), normalizeMangaSearchLang(lang))
+}
+
+func mangaAniListChapterCacheKey(sourceID string, anilistID int, lang string, sourceMangaID string) string {
+	target := strings.TrimSpace(sourceMangaID)
+	if target == "" {
+		target = "_"
+	}
+	return mangaScopedCacheKey("anilist-chapters", strings.TrimSpace(sourceID), fmt.Sprintf("%d", anilistID), normalizeMangaSearchLang(lang), target)
+}
+
+func mangaSourceChapterCacheKey(sourceID, mangaID, lang string) string {
+	return mangaScopedCacheKey("chapters", strings.TrimSpace(sourceID), strings.TrimSpace(mangaID), normalizeMangaSearchLang(lang))
 }
 
 func normalizeMangaSearchLang(lang string) string {
@@ -126,10 +196,29 @@ func (a *App) resolveOnlineMangaIdentity(sourceID, sourceMangaID, sourceTitle, s
 		return nil, nil
 	}
 
-	cacheKey := fmt.Sprintf("manga:identity:%s:%s:%d", sourceID, sourceMangaID, year)
-	return cachepkg.RememberJSON(cachepkg.Global(), cacheKey, 30*time.Minute, func() (*mangaIdentityResolution, error) {
-		return a.resolveOnlineMangaIdentityUncached(sourceID, sourceMangaID, sourceTitle, sourceCover, year)
-	})
+	cacheKey := mangaIdentityCacheKey(sourceID, sourceMangaID, year)
+	if raw, ok := cachepkg.Global().GetBytes(cacheKey); ok {
+		var cached struct {
+			Resolved *mangaIdentityResolution `json:"resolved"`
+		}
+		if err := json.Unmarshal(raw, &cached); err == nil {
+			return cached.Resolved, nil
+		}
+	}
+
+	resolved, err := a.resolveOnlineMangaIdentityUncached(sourceID, sourceMangaID, sourceTitle, sourceCover, year)
+	if err != nil {
+		return nil, err
+	}
+
+	ttl := 30 * time.Minute
+	if resolved == nil {
+		ttl = unresolvedMangaIdentityCacheTTL
+	}
+	if raw, marshalErr := json.Marshal(map[string]interface{}{"resolved": resolved}); marshalErr == nil {
+		cachepkg.Global().SetBytes(cacheKey, raw, ttl)
+	}
+	return resolved, nil
 }
 
 func (a *App) resolveOnlineMangaIdentityUncached(sourceID, sourceMangaID, sourceTitle, sourceCover string, year int) (*mangaIdentityResolution, error) {
@@ -137,15 +226,27 @@ func (a *App) resolveOnlineMangaIdentityUncached(sourceID, sourceMangaID, source
 }
 
 func (a *App) resolveOnlineMangaIdentityWithNeedles(sourceID, sourceMangaID, sourceTitle, sourceCover string, year int, extraNeedles []string) (*mangaIdentityResolution, error) {
-	if existing, err := a.db.GetOnlineMangaSourceMap(sourceID, sourceMangaID); err == nil && existing != nil {
+	currentGeneration := currentMangaResolverGeneration()
+	allowUnresolvedThrottle := len(extraNeedles) == 0
+	if existing, err := a.db.GetOnlineMangaSourceMapForGeneration(sourceID, sourceMangaID, currentGeneration); err == nil && existing != nil {
 		if existing.AniListID > 0 {
 			meta, err := a.metadata.GetAniListMangaByID(existing.AniListID)
 			if err == nil && meta != nil {
 				return a.buildResolvedMangaIdentity(meta, existing.Confidence), nil
 			}
 		}
-		if time.Since(existing.LastSeenAt) < unresolvedMangaIdentityTTL {
+		if allowUnresolvedThrottle && time.Since(existing.LastSeenAt) < unresolvedMangaIdentityTTL {
 			return nil, nil
+		}
+	}
+	existingAnyGeneration, _ := a.db.GetOnlineMangaSourceMap(sourceID, sourceMangaID)
+	if existingAnyGeneration != nil &&
+		existingAnyGeneration.AniListID > 0 &&
+		existingAnyGeneration.ResolverGeneration != currentGeneration &&
+		cachedMangaSourceMapLooksPlausible(*existingAnyGeneration) {
+		meta, err := a.metadata.GetAniListMangaByID(existingAnyGeneration.AniListID)
+		if err == nil && meta != nil {
+			return a.buildResolvedMangaIdentity(meta, existingAnyGeneration.Confidence), nil
 		}
 	}
 
@@ -157,19 +258,35 @@ func (a *App) resolveOnlineMangaIdentityWithNeedles(sourceID, sourceMangaID, sou
 	}
 
 	mapEntry := db.OnlineMangaSourceMap{
-		SourceID:      sourceID,
-		SourceMangaID: sourceMangaID,
-		SourceTitle:   strings.TrimSpace(sourceTitle),
-		Confidence:    confidence,
+		SourceID:           sourceID,
+		SourceMangaID:      sourceMangaID,
+		SourceTitle:        strings.TrimSpace(sourceTitle),
+		Confidence:         confidence,
+		ResolverGeneration: currentGeneration,
 	}
 	if meta != nil {
 		mapEntry.AniListID = meta.AniListID
 		mapEntry.MatchedTitle = matchedTitle
 	}
-	_ = a.db.UpsertOnlineMangaSourceMap(mapEntry)
 
 	if meta == nil {
+		// Do not let a transient unresolved lookup wipe out an older verified
+		// mapping from a previous resolver generation.
+		if allowUnresolvedThrottle && (existingAnyGeneration == nil || existingAnyGeneration.AniListID == 0) {
+			_ = a.db.UpsertOnlineMangaSourceMap(mapEntry)
+		}
 		return nil, nil
+	}
+
+	shouldPersist := true
+	if existingAnyGeneration != nil && existingAnyGeneration.AniListID > 0 &&
+		existingAnyGeneration.ResolverGeneration == currentGeneration &&
+		existingAnyGeneration.AniListID == mapEntry.AniListID &&
+		existingAnyGeneration.Confidence > mapEntry.Confidence {
+		shouldPersist = false
+	}
+	if shouldPersist {
+		_ = a.db.UpsertOnlineMangaSourceMap(mapEntry)
 	}
 	return a.buildResolvedMangaIdentity(meta, confidence), nil
 }
@@ -224,8 +341,8 @@ func (a *App) matchAniListMangaCandidates(candidates []string, sourceYear int) (
 	}
 
 	queryLimit := len(candidates)
-	if queryLimit > 3 {
-		queryLimit = 3
+	if queryLimit > mangaAniListQueryBudget {
+		queryLimit = mangaAniListQueryBudget
 	}
 
 	seen := map[int]candidateResult{}
@@ -427,10 +544,8 @@ func buildMangaSearchCandidates(sourceTitle, sourceMangaID string) []string {
 }
 
 func cleanMangaIdentityTitle(value string) string {
-	value = strings.TrimSpace(value)
-	value = strings.ReplaceAll(value, ":", " ")
-	value = strings.ReplaceAll(value, "  ", " ")
-	value = strings.Trim(value, "-_. ")
+	value = mangaIdentityTitleReplacer.Replace(strings.TrimSpace(value))
+	value = strings.Trim(value, "-_.:/ ")
 	return strings.Join(strings.Fields(value), " ")
 }
 
@@ -469,6 +584,200 @@ func tokenizeMangaIdentityText(value string) []string {
 		}
 	}
 	return tokens
+}
+
+func scoreMangaTitleAgainstNeedles(title string, needles []string) int {
+	titleNorm := normalizeMangaIdentityText(title)
+	if titleNorm == "" {
+		return 0
+	}
+
+	best := 0
+	titleCompact := compactMangaIdentityText(title)
+	titleTokens := tokenizeMangaIdentityText(title)
+	for _, needle := range needles {
+		needleNorm := normalizeMangaIdentityText(needle)
+		if needleNorm == "" {
+			continue
+		}
+		if titleNorm == needleNorm {
+			return 100
+		}
+
+		needleCompact := compactMangaIdentityText(needle)
+		if titleCompact != "" && needleCompact != "" {
+			switch {
+			case titleCompact == needleCompact:
+				best = maxInt(best, 98)
+			case strings.HasPrefix(titleCompact, needleCompact) || strings.HasPrefix(needleCompact, titleCompact):
+				best = maxInt(best, 86)
+			case strings.Contains(titleCompact, needleCompact) || strings.Contains(needleCompact, titleCompact):
+				best = maxInt(best, 74)
+			}
+		}
+
+		switch {
+		case strings.HasPrefix(titleNorm, needleNorm) || strings.HasPrefix(needleNorm, titleNorm):
+			best = maxInt(best, 82)
+		case strings.Contains(titleNorm, needleNorm) || strings.Contains(needleNorm, titleNorm):
+			best = maxInt(best, 68)
+		}
+
+		needleTokens := tokenizeMangaIdentityText(needle)
+		if len(needleTokens) == 0 || len(titleTokens) == 0 {
+			continue
+		}
+		shared := 0
+		for _, token := range needleTokens {
+			for _, titleToken := range titleTokens {
+				if token == titleToken {
+					shared++
+					break
+				}
+			}
+		}
+		ratio := float64(shared) / math.Max(float64(len(needleTokens)), float64(len(titleTokens)))
+		if shared >= 3 && ratio >= 0.5 {
+			best = maxInt(best, 76)
+		} else if shared >= 2 && ratio >= 0.4 {
+			best = maxInt(best, 66)
+		}
+	}
+
+	return best
+}
+
+func bestMangaNeedleMatch(title string, needles []string) string {
+	bestNeedle := ""
+	bestScore := -1
+	for _, needle := range needles {
+		score := scoreMangaTitleAgainstNeedles(title, []string{needle})
+		if score > bestScore {
+			bestScore = score
+			bestNeedle = needle
+		}
+	}
+	return bestNeedle
+}
+
+func mangaTitleDecorationPenalty(title string, needles []string) int {
+	penalty := 0
+	if mangaTitleDecorationPattern.MatchString(title) {
+		penalty += 8
+	}
+
+	bestNeedle := bestMangaNeedleMatch(title, needles)
+	if bestNeedle == "" {
+		return penalty
+	}
+
+	titleTokens := tokenizeMangaIdentityText(title)
+	needleTokens := tokenizeMangaIdentityText(bestNeedle)
+	if extraTokens := len(titleTokens) - len(needleTokens); extraTokens > 0 {
+		penalty += extraTokens
+	}
+	return penalty
+}
+
+func shouldPreferMangaSourceMatch(candidateConfidence float64, candidateTitle string, needles []string, currentConfidence float64, currentTitle string) bool {
+	betterConfidence := candidateConfidence > currentConfidence
+	equalConfidence := math.Abs(candidateConfidence-currentConfidence) < 0.0001
+	if !betterConfidence && !equalConfidence {
+		return false
+	}
+	if betterConfidence {
+		return true
+	}
+
+	candidateTitleScore := scoreMangaTitleAgainstNeedles(candidateTitle, needles)
+	currentTitleScore := scoreMangaTitleAgainstNeedles(currentTitle, needles)
+	if candidateTitleScore != currentTitleScore {
+		return candidateTitleScore > currentTitleScore
+	}
+
+	candidatePenalty := mangaTitleDecorationPenalty(candidateTitle, needles)
+	currentPenalty := mangaTitleDecorationPenalty(currentTitle, needles)
+	if candidatePenalty != currentPenalty {
+		return candidatePenalty < currentPenalty
+	}
+
+	return len(strings.TrimSpace(candidateTitle)) < len(strings.TrimSpace(currentTitle))
+}
+
+func canStopMangaSourceResolveEarly(candidateConfidence float64, candidateTitle string, needles []string) bool {
+	if candidateConfidence < 0.9 {
+		return false
+	}
+
+	titleScore := scoreMangaTitleAgainstNeedles(candidateTitle, needles)
+	if titleScore == 100 {
+		return true
+	}
+	titlePenalty := mangaTitleDecorationPenalty(candidateTitle, needles)
+	return titleScore >= 98 && titlePenalty <= 2
+}
+
+func canTrustMangaSourceTitleDirectly(candidateTitle string, needles []string) bool {
+	titleScore := scoreMangaTitleAgainstNeedles(candidateTitle, needles)
+	if titleScore != 100 {
+		return false
+	}
+	return mangaTitleDecorationPenalty(candidateTitle, needles) == 0
+}
+
+func prioritizeMangaSourceVerificationCandidates(results []extensions.SearchResult, needles []string) []extensions.SearchResult {
+	if len(results) <= 1 {
+		return results
+	}
+
+	type rankedCandidate struct {
+		result   extensions.SearchResult
+		score    int
+		penalty  int
+		titleLen int
+		index    int
+	}
+
+	ranked := make([]rankedCandidate, 0, len(results))
+	for index, item := range results {
+		title := strings.TrimSpace(item.Title)
+		ranked = append(ranked, rankedCandidate{
+			result:   item,
+			score:    scoreMangaTitleAgainstNeedles(title, needles),
+			penalty:  mangaTitleDecorationPenalty(title, needles),
+			titleLen: len(title),
+			index:    index,
+		})
+	}
+
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].score != ranked[j].score {
+			return ranked[i].score > ranked[j].score
+		}
+		if ranked[i].penalty != ranked[j].penalty {
+			return ranked[i].penalty < ranked[j].penalty
+		}
+		if ranked[i].titleLen != ranked[j].titleLen {
+			return ranked[i].titleLen < ranked[j].titleLen
+		}
+		return ranked[i].index < ranked[j].index
+	})
+
+	limit := 3
+	if ranked[0].score >= 98 {
+		limit = 1
+	} else if len(ranked) < limit {
+		limit = len(ranked)
+	}
+	if limit > len(ranked) {
+		limit = len(ranked)
+	}
+
+	out := make([]extensions.SearchResult, 0, limit)
+	for _, item := range ranked[:limit] {
+		out = append(out, item.result)
+	}
+	return out
 }
 
 func scoreAniListMangaMatch(entry metadata.AniListMangaMetadata, needles []string, sourceYear int) (int, string) {
@@ -589,22 +898,76 @@ func writeCachedJSON(key string, ttl time.Duration, value interface{}) {
 	cachepkg.Global().SetBytes(key, raw, ttl)
 }
 
-func searchMangaSourceCached(src extensions.MangaSource, sourceID, query, lang string, hitTTL, missTTL time.Duration) ([]extensions.SearchResult, error) {
+func searchMangaSourceCached(src extensions.MangaSource, sourceID, query, lang string, hitTTL, missTTL time.Duration) ([]extensions.SearchResult, mangaSourceSearchStats, error) {
 	normalizedLang := normalizeMangaSearchLang(lang)
-	cacheKey := fmt.Sprintf("manga:search:%s:%s:%s", sourceID, normalizedLang, strings.ToLower(strings.TrimSpace(query)))
+	query = strings.TrimSpace(query)
+	cacheKey := mangaSearchCacheKey(sourceID, normalizedLang, query)
+	variants := buildSourceSearchQueryVariants(query)
+	stats := mangaSourceSearchStats{
+		CandidateCount: len(variants),
+		MatchedQuery:   query,
+	}
+
 	if cached, ok := readCachedJSON[[]extensions.SearchResult](cacheKey); ok {
-		return cached, nil
+		stats.CacheOrigin = "fresh_cache"
+		return cached, stats, nil
 	}
-	results, err := src.Search(query, extensions.Language(normalizedLang))
-	if err != nil {
-		return nil, err
+
+	var lastErr error
+	for index, candidate := range variants {
+		candidateKey := mangaSearchCacheKey(sourceID, normalizedLang, candidate)
+		if cached, ok := readCachedJSON[[]extensions.SearchResult](candidateKey); ok {
+			if len(cached) == 0 {
+				continue
+			}
+			if candidateKey != cacheKey {
+				writeCachedJSON(cacheKey, hitTTL, cached)
+			}
+			stats.CacheOrigin = "fresh_cache"
+			stats.MatchedQuery = candidate
+			return cached, stats, nil
+		}
+
+		stats.SearchCalls++
+		results, err := src.Search(candidate, extensions.Language(normalizedLang))
+		if err != nil {
+			if index == 0 {
+				return nil, stats, err
+			}
+			lastErr = err
+			continue
+		}
+
+		ttl := hitTTL
+		origin := "network"
+		if len(results) == 0 {
+			ttl = missTTL
+			if ttl > 20*time.Second {
+				ttl = 20 * time.Second
+			}
+			origin = "short_miss"
+		}
+		writeCachedJSON(candidateKey, ttl, results)
+		if len(results) == 0 {
+			continue
+		}
+		if candidateKey != cacheKey {
+			writeCachedJSON(cacheKey, hitTTL, results)
+		}
+		stats.CacheOrigin = origin
+		stats.MatchedQuery = candidate
+		return results, stats, nil
 	}
-	ttl := hitTTL
-	if len(results) == 0 {
-		ttl = missTTL
+
+	if lastErr != nil {
+		return nil, stats, lastErr
 	}
-	writeCachedJSON(cacheKey, ttl, results)
-	return results, nil
+	if missTTL > 20*time.Second {
+		missTTL = 20 * time.Second
+	}
+	writeCachedJSON(cacheKey, missTTL, []extensions.SearchResult{})
+	stats.CacheOrigin = "short_miss"
+	return []extensions.SearchResult{}, stats, nil
 }
 
 func fastResolveCandidates(meta *metadata.AniListMangaMetadata) []string {
@@ -733,8 +1096,8 @@ func buildCanonicalMangaQueryCandidates(query string) []string {
 }
 
 func buildExpandedMangaTitleVariants(value string) []string {
-	value = strings.TrimSpace(value)
-	if value == "" {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
 		return nil
 	}
 	seen := map[string]struct{}{}
@@ -751,22 +1114,32 @@ func buildExpandedMangaTitleVariants(value string) []string {
 		out = append(out, candidate)
 	}
 
-	push(value)
-	push(strings.ReplaceAll(strings.ReplaceAll(value, "-", " "), "_", " "))
-	push(strings.ReplaceAll(value, ":", " "))
-	push(strings.TrimSpace(strings.Split(value, "(")[0]))
+	normalized := cleanMangaIdentityTitle(raw)
+
+	push(raw)
+	push(normalized)
+	push(strings.TrimSpace(strings.Split(raw, "(")[0]))
+	push(strings.NewReplacer(" - ", " ", " / ", " ", ":", " ").Replace(normalized))
+	push(mangaPartSuffixPattern.ReplaceAllString(normalized, ""))
+	for _, compactVariant := range buildCompactMangaQueryVariants(normalized) {
+		push(compactVariant)
+	}
 
 	for _, separator := range []string{":", " - ", " — ", " – "} {
-		parts := strings.Split(value, separator)
+		parts := strings.Split(normalized, separator)
 		if len(parts) < 2 {
 			continue
 		}
 		push(parts[0])
-		push(parts[len(parts)-1])
+	}
+
+	if seasonLoc := mangaSeasonBasePattern.FindStringIndex(normalized); seasonLoc != nil {
+		push(normalized[:seasonLoc[1]])
+		push(normalized[:seasonLoc[0]])
 	}
 
 	for _, separator := range []string{",", " / "} {
-		parts := strings.Split(value, separator)
+		parts := strings.Split(normalized, separator)
 		if len(parts) < 2 {
 			continue
 		}
@@ -782,6 +1155,86 @@ func buildExpandedMangaTitleVariants(value string) []string {
 	return out
 }
 
+func buildSourceSearchQueryVariants(query string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	push := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, value)
+	}
+
+	push(query)
+	for _, variant := range buildExpandedMangaTitleVariants(query) {
+		push(variant)
+		if len(out) >= sourceSearchVariantBudget {
+			break
+		}
+	}
+	if len(out) > sourceSearchVariantBudget {
+		return out[:sourceSearchVariantBudget]
+	}
+	return out
+}
+
+func buildCompactMangaQueryVariants(value string) []string {
+	normalized := cleanMangaIdentityTitle(value)
+	if normalized == "" {
+		return nil
+	}
+
+	tokens := strings.Fields(normalized)
+	if len(tokens) < 2 {
+		return nil
+	}
+
+	seen := map[string]struct{}{}
+	var out []string
+	push := func(candidate string) {
+		candidate = cleanMangaIdentityTitle(candidate)
+		if candidate == "" {
+			return
+		}
+		if _, ok := seen[candidate]; ok {
+			return
+		}
+		seen[candidate] = struct{}{}
+		out = append(out, candidate)
+	}
+
+	for i := 0; i < len(tokens)-1; i++ {
+		if !shouldCompactJoinMangaTokens(tokens[i], tokens[i+1]) {
+			continue
+		}
+		merged := append([]string(nil), tokens...)
+		merged[i] = merged[i] + merged[i+1]
+		merged = append(merged[:i+1], merged[i+2:]...)
+		push(strings.Join(merged, " "))
+	}
+	return out
+}
+
+func shouldCompactJoinMangaTokens(left, right string) bool {
+	left = strings.ToLower(strings.TrimSpace(left))
+	right = strings.ToLower(strings.TrimSpace(right))
+	switch right {
+	case "san", "sama", "chan", "kun", "sensei", "desu", "masu":
+		return true
+	}
+	switch left + " " + right {
+	case "na desu", "nan desu", "de aru", "to aru", "shi te":
+		return true
+	}
+	return false
+}
+
 func (a *App) SearchMangaGlobal(query, lang string) ([]map[string]interface{}, error) {
 	started := time.Now()
 	if a.metadata == nil {
@@ -792,11 +1245,18 @@ func (a *App) SearchMangaGlobal(query, lang string) ([]map[string]interface{}, e
 		return []map[string]interface{}{}, nil
 	}
 
+	searchCandidates := buildCanonicalMangaQueryCandidates(normalizedQuery)
+	log.Debug().
+		Str("query", normalizedQuery).
+		Str("lang", normalizeMangaSearchLang(lang)).
+		Strs("candidates", searchCandidates).
+		Msg("SearchMangaGlobal candidates")
+
 	combined := make([]metadata.AniListMangaMetadata, 0, 12)
 	seen := map[int]struct{}{}
 	var lastErr error
 	var retryableFailure bool
-	for _, candidate := range buildCanonicalMangaQueryCandidates(normalizedQuery) {
+	for _, candidate := range searchCandidates {
 		results, err := a.metadata.SearchAniListMangaEntries(candidate)
 		if err != nil {
 			if metadata.IsRetryableAniListError(err) {
@@ -837,7 +1297,13 @@ func (a *App) SearchMangaGlobal(query, lang string) ([]map[string]interface{}, e
 			break
 		}
 	}
-	log.Debug().Str("query", normalizedQuery).Str("lang", normalizeMangaSearchLang(lang)).Int("results", len(out)).Dur("took", time.Since(started)).Msg("SearchMangaGlobal")
+	log.Debug().
+		Str("query", normalizedQuery).
+		Str("lang", normalizeMangaSearchLang(lang)).
+		Int("candidate_count", len(searchCandidates)).
+		Int("results", len(out)).
+		Dur("took", time.Since(started)).
+		Msg("SearchMangaGlobal")
 	return out, nil
 }
 
@@ -850,13 +1316,7 @@ func (a *App) GetMangaSourceMatches(anilistID int, lang string) ([]map[string]in
 	if err != nil {
 		return nil, err
 	}
-	cachedBySource := map[string]db.OnlineMangaSourceMap{}
-	for _, item := range cached {
-		if _, exists := cachedBySource[item.SourceID]; exists {
-			continue
-		}
-		cachedBySource[item.SourceID] = item
-	}
+	cachedBySource := selectBestCachedMangaSourceMapsBySource(cached)
 
 	out := make([]map[string]interface{}, 0, len(sourceIDs))
 	defaultSource := a.defaultMangaSourceForLang(lang)
@@ -884,7 +1344,7 @@ func (a *App) GetMangaSourceMatches(anilistID int, lang string) ([]map[string]in
 }
 
 func (a *App) ResolveMangaSourceForAniList(sourceID string, anilistID int, lang string) (map[string]interface{}, error) {
-	cacheKey := fmt.Sprintf("manga:source-resolve:%s:%d:%s", sourceID, anilistID, normalizeMangaSearchLang(lang))
+	cacheKey := mangaSourceResolveCacheKey(sourceID, anilistID, lang)
 	if cached, ok := readCachedJSON[map[string]interface{}](cacheKey); ok {
 		return cached, nil
 	}
@@ -893,18 +1353,33 @@ func (a *App) ResolveMangaSourceForAniList(sourceID string, anilistID int, lang 
 	}
 
 	if a.db != nil {
-		if cached, err := a.db.GetPreferredOnlineMangaSourceMap(sourceID, anilistID); err == nil && cached != nil && cached.Confidence >= minCanonicalMangaMatchConfidence {
-			result := map[string]interface{}{
-				"source_id":       sourceID,
-				"source_name":     a.mangaSourceLabel(sourceID),
-				"source_manga_id": cached.SourceMangaID,
-				"source_title":    cached.SourceTitle,
-				"matched_title":   cached.MatchedTitle,
-				"confidence":      cached.Confidence,
-				"status":          "ready",
+		if cachedEntries, err := a.db.GetOnlineMangaSourceMapsByAniListID(anilistID); err == nil {
+			if cached, cacheOrigin := selectBestCachedMangaSourceMapForSource(cachedEntries, sourceID); cached != nil {
+				if cacheOrigin == "legacy" {
+					log.Debug().
+						Str("source", sourceID).
+						Int("anilist_id", anilistID).
+						Str("resolver_generation", cached.ResolverGeneration).
+						Msg("ResolveMangaSourceForAniList reusing prior-generation cached map")
+				}
+				result := map[string]interface{}{
+					"source_id":       sourceID,
+					"source_name":     a.mangaSourceLabel(sourceID),
+					"source_manga_id": cached.SourceMangaID,
+					"source_title":    cached.SourceTitle,
+					"matched_title":   cached.MatchedTitle,
+					"confidence":      cached.Confidence,
+					"status":          "ready",
+				}
+				writeCachedJSON(cacheKey, 15*time.Minute, result)
+				return result, nil
 			}
-			writeCachedJSON(cacheKey, 15*time.Minute, result)
-			return result, nil
+		} else {
+			log.Debug().
+				Str("source", sourceID).
+				Int("anilist_id", anilistID).
+				Err(err).
+				Msg("ResolveMangaSourceForAniList cached source-map lookup failed")
 		}
 	}
 
@@ -921,7 +1396,7 @@ func (a *App) ResolveMangaSourceForAniList(sourceID string, anilistID int, lang 
 				"confidence":      0.0,
 				"status":          "unresolved",
 			}
-			writeCachedJSON(cacheKey, 45*time.Second, result)
+			writeCachedJSON(cacheKey, 15*time.Second, result)
 			return result, nil
 		}
 		return nil, err
@@ -952,11 +1427,13 @@ func (a *App) ResolveMangaSourceForAniList(sourceID string, anilistID int, lang 
 	log.Debug().
 		Str("source", sourceID).
 		Int("anilist_id", anilistID).
+		Str("lang", searchLang).
 		Strs("candidates", searchCandidates).
+		Str("resolver_generation", currentMangaResolverGeneration()).
 		Msg("ResolveMangaSourceForAniList candidates")
 	for _, candidate := range searchCandidates {
 		candidateStarted := time.Now()
-		results, err := searchMangaSourceCached(src, sourceID, candidate, searchLang, 10*time.Minute, 45*time.Second)
+		results, searchStats, err := searchMangaSourceCached(src, sourceID, candidate, searchLang, 10*time.Minute, 20*time.Second)
 		if err != nil {
 			log.Warn().Err(err).Str("source", sourceID).Int("anilist_id", anilistID).Str("candidate", candidate).Msg("ResolveMangaSourceForAniList source search failed")
 			continue
@@ -964,18 +1441,85 @@ func (a *App) ResolveMangaSourceForAniList(sourceID string, anilistID int, lang 
 		if len(results) == 0 {
 			log.Debug().
 				Str("source", sourceID).
+				Str("operation", "resolve").
 				Int("anilist_id", anilistID).
 				Str("candidate", candidate).
+				Str("cache_origin", searchStats.CacheOrigin).
+				Int("search_candidate_count", searchStats.CandidateCount).
+				Int("backend_search_calls", searchStats.SearchCalls).
+				Str("matched_query", searchStats.MatchedQuery).
+				Int("result_count", len(results)).
 				Dur("took", time.Since(candidateStarted)).
 				Msg("ResolveMangaSourceForAniList no source hits")
 		}
 		verificationNeedles := append(buildAniListMangaSearchCandidates(candidate, meta), candidate)
-		for _, item := range results {
+		for _, item := range prioritizeMangaSourceVerificationCandidates(results, verificationNeedles) {
+			if canTrustMangaSourceTitleDirectly(item.Title, verificationNeedles) {
+				best = map[string]interface{}{
+					"source_id":       sourceID,
+					"source_name":     a.mangaSourceLabel(sourceID),
+					"source_manga_id": item.ID,
+					"source_title":    item.Title,
+					"matched_title":   firstNonEmpty(meta.TitleEnglish, meta.TitleRomaji, meta.TitleNative),
+					"confidence":      1.0,
+					"status":          "ready",
+				}
+				log.Debug().
+					Str("source", sourceID).
+					Str("operation", "resolve").
+					Int("anilist_id", anilistID).
+					Str("candidate", candidate).
+					Str("source_title", item.Title).
+					Str("cache_origin", searchStats.CacheOrigin).
+					Int("search_candidate_count", searchStats.CandidateCount).
+					Int("backend_search_calls", searchStats.SearchCalls).
+					Str("matched_query", searchStats.MatchedQuery).
+					Int("result_count", len(results)).
+					Float64("confidence", 1.0).
+					Msg("ResolveMangaSourceForAniList direct title match")
+				goto resolveDone
+			}
 			resolved, err := a.resolveOnlineMangaIdentityWithNeedles(sourceID, item.ID, item.Title, item.CoverURL, item.Year, verificationNeedles)
-			if err != nil || resolved == nil || resolved.AniListID != anilistID || resolved.MatchConfidence < minCanonicalMangaMatchConfidence {
+			rejectReason := ""
+			switch {
+			case err != nil:
+				rejectReason = "identity_error"
+			case resolved == nil:
+				rejectReason = "identity_unresolved"
+			case resolved.AniListID != anilistID:
+				rejectReason = "metadata_mismatch"
+			case resolved.MatchConfidence < minCanonicalMangaMatchConfidence:
+				rejectReason = "low_confidence"
+			}
+			if rejectReason != "" {
+				log.Debug().
+					Str("source", sourceID).
+					Str("operation", "resolve").
+					Int("anilist_id", anilistID).
+					Str("candidate", candidate).
+					Str("source_title", item.Title).
+					Str("reject_reason", rejectReason).
+					Str("cache_origin", searchStats.CacheOrigin).
+					Dur("took", time.Since(candidateStarted)).
+					Msg("ResolveMangaSourceForAniList rejected")
 				continue
 			}
-			if resolved.MatchConfidence <= best["confidence"].(float64) {
+			titleScore := scoreMangaTitleAgainstNeedles(item.Title, verificationNeedles)
+			titlePenalty := mangaTitleDecorationPenalty(item.Title, verificationNeedles)
+			currentConfidence := best["confidence"].(float64)
+			currentTitle, _ := best["source_title"].(string)
+			if !shouldPreferMangaSourceMatch(resolved.MatchConfidence, item.Title, verificationNeedles, currentConfidence, currentTitle) {
+				log.Debug().
+					Str("source", sourceID).
+					Str("operation", "resolve").
+					Int("anilist_id", anilistID).
+					Str("candidate", candidate).
+					Str("source_title", item.Title).
+					Str("reject_reason", "inferior_match").
+					Float64("confidence", resolved.MatchConfidence).
+					Int("title_score", titleScore).
+					Int("title_penalty", titlePenalty).
+					Msg("ResolveMangaSourceForAniList rejected")
 				continue
 			}
 			best = map[string]interface{}{
@@ -989,42 +1533,108 @@ func (a *App) ResolveMangaSourceForAniList(sourceID string, anilistID int, lang 
 			}
 			log.Debug().
 				Str("source", sourceID).
+				Str("operation", "resolve").
 				Int("anilist_id", anilistID).
 				Str("candidate", candidate).
 				Str("source_title", item.Title).
+				Str("cache_origin", searchStats.CacheOrigin).
+				Int("search_candidate_count", searchStats.CandidateCount).
+				Int("backend_search_calls", searchStats.SearchCalls).
+				Str("matched_query", searchStats.MatchedQuery).
+				Int("result_count", len(results)).
 				Float64("confidence", resolved.MatchConfidence).
+				Int("title_score", titleScore).
+				Int("title_penalty", titlePenalty).
 				Dur("took", time.Since(candidateStarted)).
 				Msg("ResolveMangaSourceForAniList matched")
-			break
-		}
-		if best["status"] == "ready" {
-			writeCachedJSON(cacheKey, 15*time.Minute, best)
-			return best, nil
+			if canStopMangaSourceResolveEarly(resolved.MatchConfidence, item.Title, verificationNeedles) {
+				log.Debug().
+					Str("source", sourceID).
+					Str("operation", "resolve").
+					Int("anilist_id", anilistID).
+					Str("candidate", candidate).
+					Str("source_title", item.Title).
+					Float64("confidence", resolved.MatchConfidence).
+					Int("title_score", titleScore).
+					Int("title_penalty", titlePenalty).
+					Msg("ResolveMangaSourceForAniList early exit")
+				goto resolveDone
+			}
 		}
 	}
 
-	writeCachedJSON(cacheKey, 30*time.Second, best)
+resolveDone:
+	log.Debug().
+		Str("source", sourceID).
+		Str("operation", "resolve").
+		Int("anilist_id", anilistID).
+		Str("lang", searchLang).
+		Str("status", fmt.Sprint(best["status"])).
+		Int("result_count", 0).
+		Float64("confidence", best["confidence"].(float64)).
+		Msg("ResolveMangaSourceForAniList final")
+	if best["status"] == "ready" {
+		writeCachedJSON(cacheKey, 15*time.Minute, best)
+		return best, nil
+	}
+	writeCachedJSON(cacheKey, 20*time.Second, best)
 	return best, nil
 }
 
 func (a *App) GetMangaChaptersForAniListSource(sourceID string, anilistID int, lang string) (map[string]interface{}, error) {
-	cacheKey := fmt.Sprintf("manga:anilist-chapters:%s:%d:%s", sourceID, anilistID, normalizeMangaSearchLang(lang))
-	if cached, ok := readCachedJSON[map[string]interface{}](cacheKey); ok {
-		return cached, nil
-	}
 	match, err := a.ResolveMangaSourceForAniList(sourceID, anilistID, lang)
 	if err != nil {
 		return nil, err
 	}
 	if match == nil || match["status"] != "ready" {
+		rejectReason := fmt.Sprint(match["status"])
+		if rejectReason == "" || rejectReason == "<nil>" {
+			rejectReason = "hard_failure"
+		}
 		result := map[string]interface{}{
 			"source":   match,
 			"chapters": []map[string]interface{}{},
 		}
-		writeCachedJSON(cacheKey, 45*time.Second, result)
+		log.Debug().
+			Str("source_id", sourceID).
+			Str("operation", "resolve").
+			Int("anilist_id", anilistID).
+			Str("lang", normalizeMangaSearchLang(lang)).
+			Str("cache_origin", "short_miss").
+			Str("status", fmt.Sprint(match["status"])).
+			Str("reject_reason", rejectReason).
+			Int("result_count", 0).
+			Msg("GetMangaChaptersForAniListSource")
 		return result, nil
 	}
 	sourceMangaID, _ := match["source_manga_id"].(string)
+	cacheKey := mangaAniListChapterCacheKey(sourceID, anilistID, lang, sourceMangaID)
+	if cached, ok := readCachedJSON[map[string]interface{}](cacheKey); ok {
+		chapterCount := 0
+		switch cachedChapters := cached["chapters"].(type) {
+		case []map[string]interface{}:
+			chapterCount = len(cachedChapters)
+		case []interface{}:
+			chapterCount = len(cachedChapters)
+		}
+		sourceStatus := ""
+		if sourceMap, ok := cached["source"].(map[string]interface{}); ok {
+			sourceStatus, _ = sourceMap["status"].(string)
+		}
+		log.Debug().
+			Str("source_id", sourceID).
+			Str("operation", "resolve").
+			Int("anilist_id", anilistID).
+			Str("lang", normalizeMangaSearchLang(lang)).
+			Str("source_manga_id", sourceMangaID).
+			Str("cache_origin", "fresh_cache").
+			Str("status", sourceStatus).
+			Bool("partial", boolFromMap(cached, "partial")).
+			Bool("hydrating", boolFromMap(cached, "hydrating")).
+			Int("result_count", chapterCount).
+			Msg("GetMangaChaptersForAniListSource")
+		return cached, nil
+	}
 	chapters, err := a.GetMangaChaptersSource(sourceID, sourceMangaID, lang)
 	if err != nil {
 		return nil, err
@@ -1033,12 +1643,162 @@ func (a *App) GetMangaChaptersForAniListSource(sourceID string, anilistID int, l
 		"source":   match,
 		"chapters": chapters,
 	}
-	if len(chapters) == 0 {
-		writeCachedJSON(cacheKey, 45*time.Second, result)
+	partial, hydrating := mangaChapterLoadState(sourceID, sourceMangaID)
+	if partial {
+		result["partial"] = true
+	}
+	if hydrating {
+		result["hydrating"] = true
+	}
+	if partial || hydrating {
+		writeCachedJSON(cacheKey, 2*time.Second, result)
+	} else if len(chapters) == 0 {
+		writeCachedJSON(cacheKey, 15*time.Second, result)
 	} else {
 		writeCachedJSON(cacheKey, 15*time.Minute, result)
 	}
+	cacheOrigin := "network"
+	if partial || hydrating {
+		cacheOrigin = "partial"
+	} else if len(chapters) == 0 {
+		cacheOrigin = "short_miss"
+	}
+	log.Debug().
+		Str("source_id", sourceID).
+		Str("operation", "resolve").
+		Int("anilist_id", anilistID).
+		Str("lang", normalizeMangaSearchLang(lang)).
+		Str("cache_origin", cacheOrigin).
+		Str("status", fmt.Sprint(match["status"])).
+		Bool("partial", partial).
+		Bool("hydrating", hydrating).
+		Str("reject_reason", func() string {
+			if len(chapters) == 0 {
+				return "no_chapters"
+			}
+			return ""
+		}()).
+		Int("result_count", len(chapters)).
+		Msg("GetMangaChaptersForAniListSource")
 	return result, nil
+}
+
+func mangaChapterLoadState(sourceID, sourceMangaID string) (bool, bool) {
+	switch strings.TrimSpace(sourceID) {
+	case "weebcentral-en":
+		return weebcentral.GetChapterCacheState(sourceMangaID)
+	case "m440-es":
+		return m440.GetChapterCacheState(sourceMangaID)
+	default:
+		return false, false
+	}
+}
+
+func boolFromMap(value map[string]interface{}, key string) bool {
+	if value == nil {
+		return false
+	}
+	flag, _ := value[key].(bool)
+	return flag
+}
+
+func selectBestCachedMangaSourceMapsBySource(entries []db.OnlineMangaSourceMap) map[string]db.OnlineMangaSourceMap {
+	out := make(map[string]db.OnlineMangaSourceMap, len(entries))
+	legacy := make(map[string]db.OnlineMangaSourceMap, len(entries))
+	currentGeneration := currentMangaResolverGeneration()
+
+	for _, entry := range entries {
+		if strings.TrimSpace(entry.SourceID) == "" || !cachedMangaSourceMapLooksPlausible(entry) {
+			continue
+		}
+		if entry.ResolverGeneration == currentGeneration {
+			if _, exists := out[entry.SourceID]; !exists {
+				out[entry.SourceID] = entry
+			}
+			continue
+		}
+		if _, exists := out[entry.SourceID]; exists {
+			continue
+		}
+		if _, exists := legacy[entry.SourceID]; !exists {
+			legacy[entry.SourceID] = entry
+		}
+	}
+
+	for sourceID, entry := range legacy {
+		if _, exists := out[sourceID]; !exists {
+			out[sourceID] = entry
+		}
+	}
+	return out
+}
+
+func selectBestCachedMangaSourceMapForSource(entries []db.OnlineMangaSourceMap, sourceID string) (*db.OnlineMangaSourceMap, string) {
+	sourceID = strings.TrimSpace(sourceID)
+	if sourceID == "" {
+		return nil, ""
+	}
+
+	currentGeneration := currentMangaResolverGeneration()
+	var legacy *db.OnlineMangaSourceMap
+
+	for i := range entries {
+		entry := entries[i]
+		if entry.SourceID != sourceID || !cachedMangaSourceMapLooksPlausible(entry) {
+			continue
+		}
+		if entry.ResolverGeneration == currentGeneration {
+			match := entry
+			return &match, "current"
+		}
+		if legacy == nil {
+			match := entry
+			legacy = &match
+		}
+	}
+
+	if legacy != nil {
+		return legacy, "legacy"
+	}
+	return nil, ""
+}
+
+func cachedMangaSourceMapLooksPlausible(entry db.OnlineMangaSourceMap) bool {
+	if entry.AniListID <= 0 || strings.TrimSpace(entry.SourceMangaID) == "" || entry.Confidence < minCanonicalMangaMatchConfidence {
+		return false
+	}
+
+	title := strings.TrimSpace(entry.SourceTitle)
+	if title == "" {
+		slug := strings.Trim(strings.TrimSpace(entry.SourceMangaID), "/")
+		if slash := strings.LastIndex(slug, "/"); slash >= 0 {
+			slug = slug[slash+1:]
+		}
+		title = humanizeMangaSourceSlug(slug)
+	}
+	needles := buildExpandedMangaTitleVariants(entry.MatchedTitle)
+	if len(needles) == 0 {
+		return false
+	}
+	score := scoreMangaTitleAgainstNeedles(title, needles)
+	if score < 66 {
+		return false
+	}
+	penalty := mangaTitleDecorationPenalty(title, needles)
+	if penalty >= 18 && score < 82 {
+		return false
+	}
+	return true
+}
+
+func humanizeMangaSourceSlug(raw string) string {
+	raw = strings.TrimSpace(strings.Trim(raw, "/"))
+	if raw == "" {
+		return ""
+	}
+	raw = strings.ReplaceAll(raw, "-", " ")
+	raw = strings.ReplaceAll(raw, "_", " ")
+	return strings.Join(strings.Fields(raw), " ")
 }
 
 func (a *App) GetHomeMangaRecommendations(seedAniListIDs []int, excludeAniListIDs []int, lang string) ([]map[string]interface{}, error) {
@@ -1229,7 +1989,7 @@ func (a *App) hydrateOnlineMangaHistoryEntry(entry db.WatchHistoryEntry) db.Watc
 	}
 
 	if a.db != nil && entry.SourceID != "" && entry.AnimeID != "" {
-		if mapped, err := a.db.GetOnlineMangaSourceMap(entry.SourceID, entry.AnimeID); err == nil && mapped != nil && mapped.AniListID > 0 {
+		if mapped, err := a.db.GetOnlineMangaSourceMapForGeneration(entry.SourceID, entry.AnimeID, currentMangaResolverGeneration()); err == nil && mapped != nil && mapped.AniListID > 0 {
 			entry.AniListID = mapped.AniListID
 			if meta, metaErr := a.metadata.GetAniListMangaByID(mapped.AniListID); metaErr == nil && meta != nil {
 				resolveFromMeta(meta)

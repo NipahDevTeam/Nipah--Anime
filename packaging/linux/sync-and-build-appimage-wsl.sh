@@ -19,8 +19,5 @@ else
   rm -rf "$DST/frontend/node_modules" "$DST/frontend/dist" "$DST/build/bin" "$DST/build/appimage"
 fi
 
-mkdir -p "$DST/build"
-cp "$SRC/build/appicon.png" "$DST/build/appicon.png"
-
 cd "$DST"
 bash packaging/linux/build-linux-appimage.sh

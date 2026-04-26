@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { wails } from '../../lib/wails'
 import { toastError, toastSuccess } from '../ui/Toast'
 import { useI18n } from '../../lib/i18n'
@@ -10,7 +11,7 @@ const SPANISH_GROUPS = [
 ]
 
 const SOURCES = [
-  { value: 'animetosho', label: 'AnimeTosho', noteEn: 'Batch-focused index', noteEs: 'Indice orientado a packs' },
+  { value: 'animetosho', label: 'AnimeTosho', noteEn: 'Batch-focused index', noteEs: 'Índice orientado a packs' },
   { value: 'nyaa', label: 'Nyaa', noteEn: 'Episode and fansub torrents', noteEs: 'Torrents de episodios y fansubs' },
 ]
 
@@ -34,11 +35,24 @@ function magnetResult(rawMagnet) {
   }
 }
 
+function formatFolderPath(path) {
+  const value = (path ?? '').trim()
+  if (!value) return 'Auto'
+  if (value.length <= 42) return value
+
+  const normalized = value.replaceAll('\\', '/')
+  const segments = normalized.split('/').filter(Boolean)
+  if (segments.length >= 2) {
+    return `.../${segments.slice(-2).join('/')}`
+  }
+  return `...${value.slice(-39)}`
+}
+
 export default function TorrentSearch({ onClose }) {
   const { lang } = useI18n()
   const isEnglish = lang === 'en'
   const [query, setQuery] = useState('')
-  const [source, setSource] = useState('animetosho')
+  const [source, setSource] = useState('nyaa')
   const [filter, setFilter] = useState('batch')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
@@ -50,6 +64,15 @@ export default function TorrentSearch({ onClose }) {
     wails.getDefaultDownloadPath()
       .then((path) => setDlPath(path ?? ''))
       .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
   }, [])
 
   const handleSearch = useCallback(async () => {
@@ -102,7 +125,7 @@ export default function TorrentSearch({ onClose }) {
     return !result.is_batch
   })
 
-  return (
+  const modal = (
     <div className="torrent-modal-overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
       <div className="torrent-modal torrent-modal-rich">
         <div className="torrent-modal-header torrent-rich-header">
@@ -115,17 +138,13 @@ export default function TorrentSearch({ onClose }) {
                 : 'Busca packs, abre un magnet manual o manda un torrent directo a MPV usando el puente local.'}
             </div>
           </div>
-          <button className="btn btn-ghost" onClick={onClose} type="button">×</button>
+          <button className="btn btn-ghost" onClick={onClose} type="button" aria-label={isEnglish ? 'Close' : 'Cerrar'}>×</button>
         </div>
 
         <div className="torrent-rich-meta">
           <div className="torrent-rich-meta-card">
             <span className="torrent-rich-meta-label">{isEnglish ? 'Default folder' : 'Carpeta por defecto'}</span>
-            <span className="torrent-rich-meta-value">{dlPath || 'Auto'}</span>
-          </div>
-          <div className="torrent-rich-meta-card">
-            <span className="torrent-rich-meta-label">{isEnglish ? 'Playback' : 'Reproducción'}</span>
-            <span className="torrent-rich-meta-value">MPV</span>
+            <span className="torrent-rich-meta-value" title={dlPath || 'Auto'}>{formatFolderPath(dlPath)}</span>
           </div>
           <div className="torrent-rich-meta-card">
             <span className="torrent-rich-meta-label">{isEnglish ? 'Best use' : 'Uso ideal'}</span>
@@ -284,4 +303,10 @@ export default function TorrentSearch({ onClose }) {
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') {
+    return modal
+  }
+
+  return createPortal(modal, document.body)
 }

@@ -82,7 +82,7 @@ function DownloadRow({ item, onPlay, onCancel, onRemove }) {
   )
 }
 
-export default function Downloads() {
+export default function Downloads({ embedded = false }) {
   const [downloads, setDownloads] = useState([])
   const [loading, setLoading] = useState(true)
   const [dlDir, setDlDir] = useState('')
@@ -154,7 +154,7 @@ export default function Downloads() {
   )
 
   return (
-    <div className="fade-in downloads-page">
+    <div className={`fade-in downloads-page${embedded ? ' local-section-embedded' : ''}`}>
       <div className="dl-header">
         <h2 className="page-title">{t('Descargas')}</h2>
         {dlDir && (

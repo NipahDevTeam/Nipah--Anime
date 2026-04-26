@@ -1,0 +1,109 @@
+package auth
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"net"
+	"net/http"
+	"time"
+)
+
+// callbackResult is returned by the ephemeral localhost server after OAuth redirect.
+type callbackResult struct {
+	Code  string
+	State string
+	Error string
+}
+
+// RandomString generates a cryptographically random hex string of n bytes.
+func RandomString(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// CallbackServer manages the local HTTP server for OAuth callbacks.
+type CallbackServer struct {
+	Port        int
+	RedirectURI string
+	listener    net.Listener
+	srv         *http.Server
+	resultCh    chan callbackResult
+}
+
+// StartCallbackServer binds to the configured localhost callback port.
+// A fixed redirect URI keeps provider configuration stable across launches.
+func StartCallbackServer() (*CallbackServer, error) {
+	listener, err := net.Listen("tcp", OAuthListenAddress())
+	if err != nil {
+		return nil, fmt.Errorf("failed to start callback server on %s: %w", OAuthRedirectURI(), err)
+	}
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	resultCh := make(chan callbackResult, 1)
+	callbackPath := "/"
+	if OAuthCallbackPath != "" {
+		callbackPath = OAuthCallbackPath
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(callbackPath, func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if errMsg := q.Get("error"); errMsg != "" {
+			resultCh <- callbackResult{Error: errMsg}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprintf(w, `<html><body style="background:#0a0a0e;color:#f0f0f5;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h2>Error de autenticacion</h2><p>%s</p><p style="color:#888">Puedes cerrar esta pestana.</p></div></body></html>`, errMsg)
+			return
+		}
+		resultCh <- callbackResult{
+			Code:  q.Get("code"),
+			State: q.Get("state"),
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<html><body style="background:#0a0a0e;color:#f0f0f5;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h2 style="color:#f5a623">Conectado!</h2><p>Tu cuenta ha sido vinculada a Nipah! Anime.</p><p style="color:#888">Puedes cerrar esta pestana.</p></div></body></html>`)
+	})
+
+	// If the callback path is not root, also accept root and explain the expected path.
+	if callbackPath != "/" {
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, callbackPath, http.StatusTemporaryRedirect)
+		})
+	}
+
+	srv := &http.Server{Handler: mux}
+	go func() {
+		_ = srv.Serve(listener)
+	}()
+
+	return &CallbackServer{
+		Port:        port,
+		RedirectURI: OAuthRedirectURI(),
+		listener:    listener,
+		srv:         srv,
+		resultCh:    resultCh,
+	}, nil
+}
+
+// WaitForCode blocks until the OAuth callback arrives or the timeout is reached.
+func (cs *CallbackServer) WaitForCode(timeout time.Duration) (code string, err error) {
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = cs.srv.Shutdown(ctx)
+	}()
+
+	select {
+	case res := <-cs.resultCh:
+		if res.Error != "" {
+			return "", fmt.Errorf("OAuth error: %s", res.Error)
+		}
+		if res.Code == "" {
+			return "", fmt.Errorf("no authorization code received")
+		}
+		return res.Code, nil
+	case <-time.After(timeout):
+		return "", fmt.Errorf("OAuth callback timed out after %v", timeout)
+	}
+}

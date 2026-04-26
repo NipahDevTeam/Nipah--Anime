@@ -1,0 +1,5 @@
+packaging/arch/PKGBUILD text eol=lf
+packaging/linux/*.sh text eol=lf
+packaging/linux/*.desktop text eol=lf
+packaging/linux/*.yaml text eol=lf
+scripts/*.sh text eol=lf

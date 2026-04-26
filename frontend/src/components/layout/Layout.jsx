@@ -20,7 +20,7 @@ function SidebarIcon({ kind }) {
   switch (kind) {
     case 'home':
       return <svg {...common}><path d="M2.5 7.2 8 2.8l5.5 4.4" /><path d="M4 6.8V13h8V6.8" /></svg>
-    case 'anime':
+    case 'local':
       return <svg {...common}><circle cx="8" cy="8" r="5.5" /><path d="m6.8 5.9 3.1 2.1-3.1 2.1z" fill="currentColor" stroke="none" /></svg>
     case 'manga':
       return <svg {...common}><path d="M3.5 3.5h4.2v9H3.5z" /><path d="M8.3 3.5h4.2v9H8.3z" /><path d="M7.7 4.4h.6M7.7 11.6h.6" /></svg>
@@ -47,10 +47,8 @@ export default function Layout({ children }) {
 
   const libraryItems = [
     { to: '/home', label: t('Inicio'), icon: 'home' },
-    { to: '/anime', label: t('Anime'), icon: 'anime' },
-    { to: '/manga', label: t('Manga'), icon: 'manga' },
+    { to: '/local', label: lang === 'en' ? 'Local' : 'Local', icon: 'local' },
     { to: '/mis-listas', label: t('Mis Listas'), icon: 'lists' },
-    { to: '/descargas', label: t('Descargas'), icon: 'download' },
   ]
 
   const onlineItems = [
@@ -67,10 +65,7 @@ export default function Layout({ children }) {
     .sort((a, b) => b.to.length - a.to.length)
     .find((item) => location.pathname.startsWith(item.to))?.label ?? 'Nipah!'
 
-  const pageGroup = location.pathname.startsWith('/search') ||
-    location.pathname.startsWith('/manga-online')
-    ? (lang === 'en' ? 'Online' : 'Online')
-    : (lang === 'en' ? 'Library' : 'Biblioteca')
+  const hideTopbarTitle = location.pathname.startsWith('/mis-listas')
 
   useEffect(() => {
     const raf = window.requestAnimationFrame(() => {
@@ -120,12 +115,6 @@ export default function Layout({ children }) {
         <div className="sidebar-logo">
           <div className="sidebar-brand">
             <span className="sidebar-logo-mark">N!</span>
-            <div className="sidebar-brand-copy">
-              <div className="sidebar-brand-title">Nipah! Anime</div>
-              <div className="sidebar-brand-subtitle">
-                {lang === 'en' ? 'Watch, read, track' : 'Mira, lee, sigue'}
-              </div>
-            </div>
           </div>
         </div>
 
@@ -196,10 +185,11 @@ export default function Layout({ children }) {
 
       <div className="app-main">
         <header className="topbar">
-          <div className="topbar-copy">
-            <span className="topbar-kicker">{pageGroup}</span>
-            <span className="topbar-title">{pageTitle}</span>
-          </div>
+          {!hideTopbarTitle ? (
+            <div className="topbar-copy">
+              <span className="topbar-title">{pageTitle}</span>
+            </div>
+          ) : <div />}
           <div className="topbar-actions">
             <div className="topbar-chip">
               Nipah! Anime

@@ -4,7 +4,9 @@ package player
 
 import (
 	"fmt"
+	"hash/fnv"
 	"strings"
+	"unicode"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
@@ -163,7 +165,7 @@ func buildMPRISMetadata(snapshot PlaybackSnapshot) map[string]dbus.Variant {
 	}
 
 	metadata := map[string]dbus.Variant{
-		"mpris:trackid": dbus.MakeVariant(dbus.ObjectPath(fmt.Sprintf("%s/%d", mprisPath, snapshot.EpisodeID))),
+		"mpris:trackid": dbus.MakeVariant(buildMPRISTrackID(snapshot)),
 		"xesam:title":   dbus.MakeVariant(title),
 		"xesam:album":   dbus.MakeVariant(album),
 		"xesam:url":     dbus.MakeVariant(snapshot.FilePath),
@@ -175,6 +177,56 @@ func buildMPRISMetadata(snapshot PlaybackSnapshot) map[string]dbus.Variant {
 		metadata["xesam:trackNumber"] = dbus.MakeVariant(int32(snapshot.EpisodeNum))
 	}
 	return metadata
+}
+
+func buildMPRISTrackID(snapshot PlaybackSnapshot) dbus.ObjectPath {
+	if snapshot.EpisodeID > 0 {
+		return dbus.ObjectPath(fmt.Sprintf("%s/track/episode_%d", mprisPath, snapshot.EpisodeID))
+	}
+
+	seed := firstNonEmptyTrackSeed(
+		snapshot.FilePath,
+		snapshot.AnimeTitle,
+		snapshot.EpisodeTitle,
+	)
+	if seed == "" {
+		return dbus.ObjectPath(fmt.Sprintf("%s/track/online", mprisPath))
+	}
+
+	sanitized := sanitizeMPRISPathSegment(seed)
+	if sanitized == "" {
+		h := fnv.New64a()
+		_, _ = h.Write([]byte(seed))
+		sanitized = fmt.Sprintf("online_%x", h.Sum64())
+	}
+	return dbus.ObjectPath(fmt.Sprintf("%s/track/%s", mprisPath, sanitized))
+}
+
+func firstNonEmptyTrackSeed(values ...string) string {
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func sanitizeMPRISPathSegment(value string) string {
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(unicode.ToLower(r))
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			b.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	return strings.Trim(b.String(), "_")
 }
 
 func (r *mprisRoot) Raise() *dbus.Error { return nil }

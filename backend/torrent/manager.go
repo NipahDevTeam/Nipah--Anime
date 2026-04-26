@@ -11,8 +11,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type TorrentResult struct {
@@ -72,7 +75,7 @@ func SearchAnimeTosho(query string, anilistID int) ([]TorrentResult, error) {
 			InfoHash: e.InfoHash,
 		})
 	}
-	return sortResults(out), nil
+	return sortResults(out, query), nil
 }
 
 // ── Nyaa ──────────────────────────────────────────────────────────────────────
@@ -93,7 +96,8 @@ type nyaaItem struct {
 
 func SearchNyaa(query string) ([]TorrentResult, error) {
 	var out []TorrentResult
-	for _, cat := range []string{"1_4", "1_2"} {
+	seen := map[string]struct{}{}
+	for _, cat := range []string{"1_2", "1_4"} {
 		apiURL := fmt.Sprintf("https://nyaa.si/?page=rss&q=%s&c=%s&f=0",
 			url.QueryEscape(query), cat)
 		body, err := httpGet(apiURL)
@@ -113,6 +117,14 @@ func SearchNyaa(query string) ([]TorrentResult, error) {
 			if magnet == "" {
 				continue
 			}
+			key := strings.TrimSpace(item.InfoHash)
+			if key == "" {
+				key = strings.TrimSpace(magnet)
+			}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
 			out = append(out, TorrentResult{
 				Title:    item.Title,
 				Magnet:   magnet,
@@ -127,7 +139,7 @@ func SearchNyaa(query string) ([]TorrentResult, error) {
 			})
 		}
 	}
-	return sortResults(out), nil
+	return sortResults(out, query), nil
 }
 
 // ── Torrent client ────────────────────────────────────────────────────────────
@@ -204,30 +216,155 @@ func isSpanishGroup(title string) bool {
 	return false
 }
 
-// sortResults puts Spanish groups first, then batches, then by seeders.
-func sortResults(results []TorrentResult) []TorrentResult {
-	score := func(r TorrentResult) int {
-		s := 0
-		if isSpanishGroup(r.Title) {
-			s += 1000
+// sortResults prefers accurate English-subbed releases and stronger swarm health.
+func sortResults(results []TorrentResult, query string) []TorrentResult {
+	sort.SliceStable(results, func(i, j int) bool {
+		leftScore, leftSeeders := rankResult(results[i], query)
+		rightScore, rightSeeders := rankResult(results[j], query)
+		if leftScore == rightScore {
+			if leftSeeders == rightSeeders {
+				return strings.ToLower(results[i].Title) < strings.ToLower(results[j].Title)
+			}
+			return leftSeeders > rightSeeders
 		}
-		if isPTGroup(r.Title) {
-			s += 1000
-		}
-		if r.IsBatch {
-			s += 500
-		}
-		s += r.Seeders
-		return s
+		return leftScore > rightScore
+	})
+	return results
+}
+
+func rankResult(result TorrentResult, query string) (int, int) {
+	title := strings.ToLower(strings.TrimSpace(result.Title))
+	queryNorm := normalizeTorrentText(query)
+	titleNorm := normalizeTorrentText(title)
+	score := result.Seeders * 4
+
+	if queryNorm != "" && titleNorm == queryNorm {
+		score += 500
 	}
-	for i := 0; i < len(results)-1; i++ {
-		for j := i + 1; j < len(results); j++ {
-			if score(results[j]) > score(results[i]) {
-				results[i], results[j] = results[j], results[i]
+	if queryNorm != "" && strings.Contains(titleNorm, queryNorm) {
+		score += 260
+	}
+	score += tokenOverlapScore(queryNorm, titleNorm)
+
+	if prefersEnglishSubs(title) {
+		score += 220
+	}
+	if indicatesRaw(title) {
+		score -= 320
+	}
+	if isSpanishGroup(title) || isPTGroup(title) {
+		score -= 240
+	}
+	if indicatesDub(title) {
+		score -= 140
+	}
+	if result.IsBatch {
+		score += 35
+	}
+
+	switch strings.ToUpper(result.Quality) {
+	case "1080P":
+		score += 60
+	case "720P":
+		score += 25
+	case "4K":
+		score += 12
+	case "480P":
+		score -= 10
+	}
+
+	if ep := extractEpisodeHint(queryNorm); ep > 0 {
+		if strings.Contains(titleNorm, fmt.Sprintf(" %02d ", ep)) || strings.Contains(titleNorm, fmt.Sprintf(" %d ", ep)) {
+			score += 110
+		}
+	}
+
+	return score, result.Seeders
+}
+
+func normalizeTorrentText(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	b.Grow(len(value))
+	lastSpace := true
+	for _, r := range value {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			b.WriteRune(r)
+			lastSpace = false
+		default:
+			if !lastSpace {
+				b.WriteByte(' ')
+				lastSpace = true
 			}
 		}
 	}
-	return results
+	return strings.TrimSpace(b.String())
+}
+
+func tokenOverlapScore(queryNorm, titleNorm string) int {
+	if queryNorm == "" || titleNorm == "" {
+		return 0
+	}
+	titleTokens := map[string]struct{}{}
+	for _, token := range strings.Fields(titleNorm) {
+		titleTokens[token] = struct{}{}
+	}
+
+	score := 0
+	for _, token := range strings.Fields(queryNorm) {
+		if len(token) <= 1 {
+			continue
+		}
+		if _, ok := titleTokens[token]; ok {
+			score += 32
+		}
+	}
+	return score
+}
+
+func prefersEnglishSubs(title string) bool {
+	for _, marker := range []string{
+		" english", " eng sub", " engsubs", " subsplease", " erai", " sub ", " softsub", " multi sub",
+	} {
+		if strings.Contains(title, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func indicatesRaw(title string) bool {
+	for _, marker := range []string{" raw", "[raw]", " no subs", " unsubbed"} {
+		if strings.Contains(title, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func indicatesDub(title string) bool {
+	for _, marker := range []string{" dub", "dual audio", "multi audio", "eng dub"} {
+		if strings.Contains(title, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractEpisodeHint(queryNorm string) int {
+	tokens := strings.Fields(queryNorm)
+	for i := len(tokens) - 1; i >= 0; i-- {
+		token := tokens[i]
+		if n, err := strconv.Atoi(token); err == nil && n > 0 && n < 5000 {
+			return n
+		}
+	}
+	return 0
 }
 
 func isBatch(title string) bool {

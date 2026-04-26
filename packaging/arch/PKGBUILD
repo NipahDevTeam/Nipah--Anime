@@ -1,17 +1,21 @@
 pkgname=nipah-anime
-pkgver=2.3.0
+pkgver=2.5.4
 pkgrel=1
 pkgdesc="Anime streaming and manga reader desktop client with AniList sync"
 arch=('x86_64')
 url="https://github.com/NipahDevTeam/Nipah--Anime"
 license=('GPL3')
 depends=('mpv' 'gtk3' 'webkit2gtk-4.1')
+optdepends=('chromium: enables AnimePahe browser-backed DDoS-Guard bypass on Linux')
 makedepends=('go' 'npm')
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/NipahDevTeam/Nipah--Anime/archive/refs/tags/v${pkgver}.tar.gz")
 sha256sums=('SKIP')
 
 build() {
   cd "${srcdir}/Nipah--Anime-${pkgver}"
+  export GO111MODULE=on
+  export GOWORK=off
+  export GOFLAGS="-mod=mod"
   npm --prefix frontend install
   go run github.com/wailsapp/wails/v2/cmd/wails@v2.11.0 build -clean -platform linux/amd64 -tags webkit2_41
 }
@@ -20,7 +24,7 @@ package() {
   cd "${srcdir}/Nipah--Anime-${pkgver}"
 
   install -Dm755 "build/bin/Nipah! Anime" "${pkgdir}/usr/lib/nipah-anime/nipah-anime"
-  install -Dm644 "build/appicon.png" "${pkgdir}/usr/share/icons/hicolor/512x512/apps/nipah-anime.png"
+  install -Dm644 "appimg.png" "${pkgdir}/usr/share/icons/hicolor/512x512/apps/nipah-anime.png"
   install -Dm644 "packaging/linux/nipah-anime.desktop" "${pkgdir}/usr/share/applications/nipah-anime.desktop"
   install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/nipah-anime/LICENSE"
 

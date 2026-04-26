@@ -39,11 +39,6 @@ ERROR.txt
 *.dylib
 *.a
 
-# === Auth & OAuth ===
-backend/auth/
-
-# === Local Tool Config ===
-.claude/
 
 # === Personal / Internal Files ===
 backup/

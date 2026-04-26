@@ -3,10 +3,12 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { MANGA_SOURCE_IDS, normalizeMangaSourceID } from '../lib/mangaSources'
 import { buildOrderedMangaSearchCandidates } from '../lib/mangaSearchCandidates'
+import { isAniListUnavailableErrorMessage } from '../lib/anilistStatus'
 import { proxyImage, wails } from '../lib/wails'
 import { enrichJKAnimeHit } from '../lib/onlineAnimeResolver'
 import { toastSuccess, toastError } from '../components/ui/Toast'
 import { useI18n } from '../lib/i18n'
+import { EventsOn } from '../../wailsjs/runtime/runtime'
 
 /* ─────────────────────────────────────────────────────────────
    Manga grid card — large portrait card used in the manga tab
@@ -136,8 +138,30 @@ const HOME_GENRE_ROWS = [
   { key: 'comedy', genre: 'Comedy', labelEs: 'Comedia para relajar', labelEn: 'Comedy comfort picks' },
 ]
 
+const HOME_QUERY_TIMEOUT_MS = 6500
+
+function runHomeQueryWithTimeout(promise, label) {
+  let timer = null
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = window.setTimeout(() => {
+      reject(new Error(`AniList ${label} timeout`))
+    }, HOME_QUERY_TIMEOUT_MS)
+  })
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer != null) window.clearTimeout(timer)
+  })
+}
+
 function isMangaHistorySource(sourceID) {
-  return MANGA_SOURCE_IDS.has(normalizeMangaSourceID(sourceID))
+  const raw = String(sourceID || '').trim()
+  if (!raw) return false
+  return MANGA_SOURCE_IDS.has(normalizeMangaSourceID(raw))
+}
+
+function normalizeOptionalMangaSourceID(sourceID) {
+  const raw = String(sourceID || '').trim()
+  return raw ? normalizeMangaSourceID(raw) : ''
 }
 
 function getListStatusLabel(status, isEnglish = false) {
@@ -200,11 +224,22 @@ function normalizeHomeMangaKey(item) {
     .trim()}`
 }
 
+function getHomeDirectMangaID(item) {
+  const explicitSourceMangaID = String(item?.source_manga_id || '').trim()
+  if (explicitSourceMangaID) return explicitSourceMangaID
+  const sourceID = normalizeOptionalMangaSourceID(item?.source_id || '')
+  if (!isMangaHistorySource(sourceID)) return ''
+  return String(item?.anime_id || '').trim()
+}
+
 function buildHomeMangaNavigationState(item) {
   const preferredAnilistID = Number(item?.anilist_id || item?.AniListID || 0)
+  const preferredSourceID = normalizeOptionalMangaSourceID(item?.default_source_id || item?.source_id || '')
+  const directMangaID = getHomeDirectMangaID(item)
   const candidates = buildOrderedMangaSearchCandidates(item)
   const preSearch = candidates[0] || ''
   const altSearch = candidates.find((value) => value && value !== preSearch) || ''
+  const canAutoOpenDirect = Boolean(preferredSourceID && directMangaID && (String(item?.source_manga_id || '').trim() || isMangaHistorySource(preferredSourceID)))
   const state = {}
   const seedItem = {
     anilist_id: preferredAnilistID,
@@ -228,6 +263,30 @@ function buildHomeMangaNavigationState(item) {
     synonyms: Array.isArray(item?.synonyms) ? item.synonyms : [],
     chapters_read: Number(item?.chapters_read || 0),
     chapters_total: Number(item?.chapters_total || 0),
+    default_source_id: preferredSourceID,
+    search_candidates: candidates,
+  }
+  if (canAutoOpenDirect) {
+    state.autoOpen = {
+      id: directMangaID,
+      title: item?.title || item?.anime_title || item?.manga_title || '',
+      cover_url: item?.resolved_cover_url || item?.cover_url || item?.cover_image || '',
+      resolved_cover_url: item?.resolved_cover_url || item?.cover_url || item?.cover_image || '',
+      resolved_banner_url: item?.resolved_banner_url || item?.banner_url || item?.banner_image || '',
+      resolved_description: item?.resolved_description || item?.description || '',
+      canonical_title: item?.canonical_title || item?.title || item?.anime_title || item?.manga_title || '',
+      canonical_title_english: item?.canonical_title_english || item?.title_english || '',
+      anilist_id: preferredAnilistID,
+      mal_id: Number(item?.mal_id || item?.MalID || 0),
+      in_manga_list: Boolean(item?.in_manga_list),
+      manga_list_status: item?.manga_list_status || item?.status || '',
+      chapters_read: Number(item?.chapters_read || 0),
+      year: Number(item?.resolved_year || item?.year || 0),
+      resolved_year: Number(item?.resolved_year || item?.year || 0),
+      source_id: preferredSourceID,
+    }
+    if (item?.episode_id) state.autoReadChapterID = item.episode_id
+    return state
   }
   if (preferredAnilistID > 0) state.preferredAnilistID = preferredAnilistID
   if (candidates.length > 0) state.searchCandidates = candidates
@@ -467,6 +526,138 @@ function ContinueCard({ item, onClick }) {
   )
 }
 
+function formatCompactDuration(seconds, isEnglish = false) {
+  const safe = Math.max(0, Math.round(Number(seconds || 0)))
+  if (safe >= 3600) {
+    const hours = Math.floor(safe / 3600)
+    const minutes = Math.floor((safe % 3600) / 60)
+    return `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`
+  }
+  const minutes = Math.max(1, Math.round(safe / 60))
+  return isEnglish ? `${minutes} min` : `${minutes} min`
+}
+
+function buildResumeBadge(progressSec, durationSec, isEnglish = false) {
+  const progress = Number(progressSec || 0)
+  const duration = Number(durationSec || 0)
+  if (duration > 0 && progress > 0) {
+    const remaining = Math.max(duration - progress, 0)
+    if (remaining > 0) {
+      return isEnglish ? `${formatCompactDuration(remaining, true)} left` : `${formatCompactDuration(remaining)} restantes`
+    }
+    return isEnglish ? 'Ready to finish' : 'Listo para terminar'
+  }
+  return isEnglish ? 'Resume' : 'Continuar'
+}
+
+function ContinueWatchingRailCard({ entry }) {
+  const [imgErr, setImgErr] = useState(false)
+  const progressWidth = entry.progressPercent != null ? `${Math.max(4, Math.min(100, Math.round(entry.progressPercent)))}%` : '0%'
+
+  return (
+    <button type="button" className="home-crunchy-card" onClick={entry.onOpen}>
+      <div className="home-crunchy-card-media">
+        {!imgErr && entry.image ? (
+          <img src={entry.image} alt={entry.animeTitle} className="home-crunchy-card-image" onError={() => setImgErr(true)} />
+        ) : (
+          <div className="home-crunchy-card-image home-crunchy-card-image-fallback">
+            {entry.animeTitle?.[0] ?? '?'}
+          </div>
+        )}
+        <div className="home-crunchy-card-shade" />
+        <div className="home-crunchy-card-play">▶</div>
+        <div className="home-crunchy-card-pill">{entry.badge}</div>
+        {entry.progressPercent != null ? (
+          <div className="home-crunchy-card-progress">
+            <span style={{ width: progressWidth }} />
+          </div>
+        ) : null}
+      </div>
+      <div className="home-crunchy-card-copy">
+        <div className="home-crunchy-card-series">{entry.animeTitle}</div>
+        <div className="home-crunchy-card-episode">{entry.episodeTitle}</div>
+        <div className="home-crunchy-card-meta">{entry.metaLine}</div>
+      </div>
+    </button>
+  )
+}
+
+function WatchHistoryDrawer({
+  open,
+  onClose,
+  items = [],
+  isLoading = false,
+  error = '',
+  isEnglish = false,
+  onOpenItem,
+  onRemoveItem,
+  onClearAll,
+}) {
+  if (!open) return null
+
+  return (
+    <div className="home-history-overlay" onClick={(event) => event.target === event.currentTarget && onClose?.()}>
+      <aside className="home-history-drawer">
+        <div className="home-history-header">
+          <div>
+            <div className="home-history-title">{isEnglish ? 'Watch history' : 'Historial'}</div>
+            <div className="home-history-subtitle">
+              {isEnglish ? 'Your latest online anime sessions.' : 'Tus sesiones recientes de anime online.'}
+            </div>
+          </div>
+          <div className="home-history-actions">
+            {items.length > 0 ? (
+              <button type="button" className="btn btn-ghost" onClick={onClearAll}>
+                {isEnglish ? 'Clear all' : 'Limpiar'}
+              </button>
+            ) : null}
+            <button type="button" className="btn btn-ghost" onClick={onClose}>×</button>
+          </div>
+        </div>
+
+        <div className="home-history-body">
+          {isLoading ? <div className="home-history-empty">{isEnglish ? 'Loading history...' : 'Cargando historial...'}</div> : null}
+          {!isLoading && error ? <div className="home-history-empty">{error}</div> : null}
+          {!isLoading && !error && items.length === 0 ? (
+            <div className="home-history-empty">
+              {isEnglish ? 'No recent online episodes yet.' : 'Todavia no hay episodios online recientes.'}
+            </div>
+          ) : null}
+          {!isLoading && !error && items.length > 0 ? items.map((item) => {
+            const image = item.episode_thumbnail || item.banner_image || item.cover_url
+            const watchedAt = item.watched_at ? new Date(item.watched_at).toLocaleDateString() : ''
+            const progressBadge = buildResumeBadge(item.progress_sec, item.duration_sec, isEnglish)
+            return (
+              <div key={`${item.source_id}-${item.episode_id}`} className="home-history-item">
+                <button type="button" className="home-history-hit" onClick={() => onOpenItem?.(item)}>
+                  <div className="home-history-thumb">
+                    {image ? <img src={proxyImage(image)} alt={item.anime_title} className="home-history-thumb-image" /> : <div className="home-history-thumb-image" />}
+                  </div>
+                  <div className="home-history-copy">
+                    <div className="home-history-anime">{item.anime_title}</div>
+                    <div className="home-history-episode">{item.episode_title || `${isEnglish ? 'Episode' : 'Episodio'} ${item.episode_num ?? '?'}`}</div>
+                    <div className="home-history-meta">
+                      {[item.source_name, progressBadge, watchedAt].filter(Boolean).join(' · ')}
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="home-history-remove"
+                  onClick={() => onRemoveItem?.(item.source_id, item.anime_id)}
+                  title={isEnglish ? 'Remove from history' : 'Eliminar del historial'}
+                >
+                  ×
+                </button>
+              </div>
+            )
+          }) : null}
+        </div>
+      </aside>
+    </div>
+  )
+}
+
 function TrackedListCard({ item, navigate, type = 'anime', isEnglish = false, className = '' }) {
   const progressDone = type === 'manga' ? item.chapters_read : item.episodes_watched
   const progressTotal = type === 'manga' ? item.chapters_total : item.episodes_total
@@ -485,7 +676,11 @@ function TrackedListCard({ item, navigate, type = 'anime', isEnglish = false, cl
         onClick={() => navigate(type === 'manga' ? '/manga-online' : '/search', {
           state: type === 'manga'
             ? buildHomeMangaNavigationState(item)
-            : { preSearch: item.title, altSearch: item.title_english },
+            : {
+              preSearch: item.title,
+              altSearch: item.title_english,
+              preferredAnilistID: Number(item.anilist_id || item.id || 0),
+            },
         })}
       />
   )
@@ -588,10 +783,12 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [loadingMangaTab, setLoadingMangaTab] = useState(false)
   const [loadedMangaTab, setLoadedMangaTab] = useState(false)
-  const [editMode, setEditMode] = useState(false)
   const [heroIndex, setHeroIndex] = useState(0)
   const [searchingIDs, setSearchingIDs] = useState(new Set())
   const [homeTab, setHomeTab] = useState('anime')
+  const [mangaRecommendationsReady, setMangaRecommendationsReady] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyReloadToken, setHistoryReloadToken] = useState(0)
   const { t, lang } = useI18n()
   const isEnglish = lang === 'en'
   const navigate = useNavigate()
@@ -619,6 +816,43 @@ export default function Home() {
     load()
   }, [load])
 
+  const refreshDashboard = useCallback(() => {
+    load()
+    setHistoryReloadToken((value) => value + 1)
+  }, [load])
+
+  useEffect(() => {
+    if (!(typeof window !== 'undefined' && window?.runtime?.EventsOnMultiple)) {
+      return undefined
+    }
+    const unsubscribe = EventsOn('history:online-updated', () => {
+      refreshDashboard()
+    })
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe()
+    }
+  }, [refreshDashboard])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshDashboard()
+      }
+    }
+    const handleFocus = () => {
+      refreshDashboard()
+    }
+
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [refreshDashboard])
+
   useEffect(() => {
     if (homeTab !== 'manga') return
     if (loadedMangaTab || loadingMangaTab) return
@@ -632,42 +866,49 @@ export default function Home() {
       })
   }, [homeTab, loadedMangaTab, loadingMangaTab])
 
+  const homeHeroQuery = useQuery({
+    queryKey: ['home-catalog-anime-hero', lang],
+    enabled: homeTab === 'anime',
+    queryFn: async () => {
+      const trendingRes = await runHomeQueryWithTimeout(wails.getTrending(lang), 'home hero')
+      const trending = uniqueMedia(trendingRes?.data?.Page?.media ?? [])
+      const heroSlides = trending.filter((item) => item.bannerImage || item.coverImage?.extraLarge || item.coverImage?.large).slice(0, 6)
+      return heroSlides.length ? heroSlides : trending.slice(0, 6)
+    },
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  })
+
   const homeCatalogQuery = useQuery({
     queryKey: ['home-catalog-anime-primary', lang],
     enabled: homeTab === 'anime',
     queryFn: async () => {
       const currentYear = new Date().getFullYear()
       const settled = await Promise.allSettled([
-        wails.getTrending(lang),
-        wails.discoverAnime('', '', currentYear, 'POPULARITY_DESC', '', 1),
-        wails.discoverAnime('', '', currentYear, 'START_DATE_DESC', '', 1),
+        runHomeQueryWithTimeout(wails.discoverAnime('', '', currentYear, 'POPULARITY_DESC', '', 1), 'home popular'),
+        runHomeQueryWithTimeout(wails.discoverAnime('', '', currentYear, 'START_DATE_DESC', '', 1), 'home new releases'),
       ])
 
       const pick = (index) => (settled[index]?.status === 'fulfilled' ? settled[index].value : null)
-      const trendingRes = pick(0)
-      const popularYearRes = pick(1)
-      const newReleaseRes = pick(2)
+      const popularYearRes = pick(0)
+      const newReleaseRes = pick(1)
 
-      const trending = uniqueMedia(trendingRes?.data?.Page?.media ?? [])
-      const heroSlides = trending.filter((item) => item.bannerImage || item.coverImage?.extraLarge || item.coverImage?.large).slice(0, 6)
-
-      return {
-        heroSlides: heroSlides.length ? heroSlides : trending.slice(0, 6),
-        rows: [
-          {
-            key: 'popular',
-            title: isEnglish ? `Popular in ${currentYear}` : `Populares en ${currentYear}`,
-            subtitle: isEnglish ? 'The shows everyone is opening right now' : 'Los shows que mas se estan abriendo ahora mismo',
-            items: uniqueMedia(popularYearRes?.data?.Page?.media ?? []).slice(0, 14),
-          },
-          {
-            key: 'new',
-            title: isEnglish ? 'New releases' : 'Nuevos lanzamientos',
-            subtitle: isEnglish ? 'Fresh series and newer premieres' : 'Series frescas y estrenos recientes',
-            items: uniqueMedia(newReleaseRes?.data?.Page?.media ?? []).slice(0, 14),
-          },
-        ],
-      }
+      return [
+        {
+          key: 'popular',
+          title: isEnglish ? `Popular in ${currentYear}` : `Populares en ${currentYear}`,
+          subtitle: isEnglish ? 'The shows everyone is opening right now' : 'Los shows que mas se estan abriendo ahora mismo',
+          items: uniqueMedia(popularYearRes?.data?.Page?.media ?? []).slice(0, 14),
+        },
+        {
+          key: 'new',
+          title: isEnglish ? 'Not yet released' : 'Aun no estrenados',
+          subtitle: isEnglish ? 'Upcoming series and premieres' : 'Series y estrenos por venir',
+          items: uniqueMedia(newReleaseRes?.data?.Page?.media ?? []).slice(0, 14),
+        },
+      ]
     },
     staleTime: 10 * 60_000,
     gcTime: 30 * 60_000,
@@ -680,7 +921,7 @@ export default function Home() {
     enabled: homeTab === 'anime' && Boolean(homeCatalogQuery.data),
     queryFn: async () => {
       const genreResults = await Promise.allSettled(
-        HOME_GENRE_ROWS.map((row) => wails.discoverAnime(row.genre, '', 0, 'POPULARITY_DESC', '', 1)),
+        HOME_GENRE_ROWS.map((row) => runHomeQueryWithTimeout(wails.discoverAnime(row.genre, '', 0, 'POPULARITY_DESC', '', 1), `genre ${row.key}`)),
       )
 
       return HOME_GENRE_ROWS.map((row, index) => ({
@@ -696,9 +937,20 @@ export default function Home() {
     refetchOnMount: false,
   })
 
-  const heroSlides = homeCatalogQuery.data?.heroSlides ?? []
-  const primaryAnimeRows = homeCatalogQuery.data?.rows ?? []
+  const heroSlides = homeHeroQuery.data ?? []
+  const primaryAnimeRows = (homeCatalogQuery.data ?? []).filter((row) => (row?.items?.length ?? 0) > 0)
   const genreAnimeRows = genreCatalogQuery.data ?? []
+  const homeAniListUnavailable = isAniListUnavailableErrorMessage(homeHeroQuery.error)
+    || isAniListUnavailableErrorMessage(homeCatalogQuery.error)
+    || isAniListUnavailableErrorMessage(genreCatalogQuery.error)
+
+  const historyQuery = useQuery({
+    queryKey: ['home-watch-history', historyReloadToken],
+    enabled: historyOpen,
+    queryFn: async () => wails.getWatchHistory(60),
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  })
 
   useEffect(() => {
     if (homeTab !== 'anime') return
@@ -746,15 +998,40 @@ export default function Home() {
     try {
       await wails.removeAnimeFromHistory(sourceID, animeID)
       load()
+      setHistoryReloadToken((value) => value + 1)
     } catch (error) {
       toastError(`${isEnglish ? 'Error removing from history' : 'Error al eliminar'}: ${error?.message ?? error}`)
     }
   }, [isEnglish, load])
 
+  const handleClearHistory = useCallback(async () => {
+    try {
+      await wails.clearWatchHistory()
+      setHistoryReloadToken((value) => value + 1)
+      toastSuccess(isEnglish ? 'History cleared.' : 'Historial limpiado.')
+    } catch (error) {
+      toastError(`${isEnglish ? 'Error clearing history' : 'Error al limpiar el historial'}: ${error?.message ?? error}`)
+    }
+  }, [isEnglish])
+
   const handleOpenHomeManga = useCallback((item) => {
     const state = buildHomeMangaNavigationState(item)
     navigate('/manga-online', { state: Object.keys(state).length > 0 ? state : undefined })
   }, [navigate])
+
+  const handlePlayLocalEpisode = useCallback(async (item) => {
+    try {
+      await wails.playEpisode(item.episode_id)
+      toastSuccess(isEnglish ? 'Opening in MPV...' : 'Abriendo en MPV...')
+    } catch (error) {
+      const msg = error?.message ?? String(error)
+      if (msg.includes('MPV') || msg.includes('player')) {
+        toastError(isEnglish ? 'MPV not found. Check the path in Settings.' : 'MPV no encontrado. Verifica la ruta en Ajustes.')
+      } else {
+        toastError(isEnglish ? `Could not play it: ${msg}` : `No se pudo reproducir: ${msg}`)
+      }
+    }
+  }, [isEnglish])
 
   const continueOnline = (dash?.continue_watching_online ?? []).filter((entry) => !isMangaHistorySource(entry.source_id))
   const continueLocal = dash?.continue_watching ?? []
@@ -777,6 +1054,40 @@ export default function Home() {
   const plannedAnime = sortTrackedEntries(planningList).slice(0, 14)
   const onHoldAnime = sortTrackedEntries(onHoldList).slice(0, 14)
   const mangaListHighlights = sortTrackedEntries(syncedManga)
+  const resumeAnimeEntries = [
+    ...continueOnline.map((item) => {
+      const durationSec = Number(item.duration_sec || 0)
+      const progressSec = Number(item.progress_sec || 0)
+      const progressPercent = durationSec > 0 ? (progressSec / durationSec) * 100 : null
+      const fallbackEpisodeTitle = `${isEnglish ? 'Episode' : 'Episodio'} ${item.episode_num ?? '?'}`
+      return {
+        key: `online-${item.source_id}-${item.episode_id}`,
+        animeTitle: item.anime_title || 'Anime',
+        episodeTitle: item.episode_title || fallbackEpisodeTitle,
+        image: item.episode_thumbnail ? proxyImage(item.episode_thumbnail) : (item.banner_image ? proxyImage(item.banner_image) : (item.cover_url ? proxyImage(item.cover_url) : '')),
+        badge: buildResumeBadge(progressSec, durationSec, isEnglish),
+        metaLine: [item.source_name, `${isEnglish ? 'Episode' : 'Episodio'} ${item.episode_num ?? '?'}`].filter(Boolean).join(' · '),
+        progressPercent,
+        onOpen: () => handleOpenOnlineAnime(item),
+      }
+    }),
+    ...continueLocal.map((item) => {
+      const durationSec = Number(item.duration_sec || 0)
+      const progressSec = Number(item.progress_sec || 0)
+      const progressPercent = item.percent != null && item.percent > 0 ? item.percent : (durationSec > 0 ? (progressSec / durationSec) * 100 : null)
+      const fallbackEpisodeTitle = `${isEnglish ? 'Episode' : 'Episodio'} ${item.episode_num ?? '?'}`
+      return {
+        key: `local-${item.episode_id}`,
+        animeTitle: item.anime_title || 'Anime',
+        episodeTitle: item.episode_title || fallbackEpisodeTitle,
+        image: item.episode_thumbnail || item.banner_image || item.cover_image || '',
+        badge: buildResumeBadge(progressSec, durationSec, isEnglish),
+        metaLine: [(isEnglish ? 'Local library' : 'Biblioteca local'), `${isEnglish ? 'Episode' : 'Episodio'} ${item.episode_num ?? '?'}`].join(' · '),
+        progressPercent,
+        onOpen: () => handlePlayLocalEpisode(item),
+      }
+    }),
+  ]
 
   const continueMangaSeen = new Set()
   const continueMangaHistory = []
@@ -829,12 +1140,29 @@ export default function Home() {
       .map((item) => Number(item?.anilist_id || item?.AniListID || 0))
       .filter((value) => value > 0),
   ))
+  const recommendationSeedKey = recommendationSeedIDs.join(',')
+  const recommendationExcludeKey = recommendationExcludeIDs.join(',')
+
+  useEffect(() => {
+    if (homeTab !== 'manga' || recommendationSeedIDs.length === 0) {
+      setMangaRecommendationsReady(false)
+      return
+    }
+    setMangaRecommendationsReady(false)
+    const timer = window.setTimeout(() => {
+      setMangaRecommendationsReady(true)
+    }, 2500)
+    return () => window.clearTimeout(timer)
+  }, [homeTab, recommendationExcludeKey, recommendationSeedKey, recommendationSeedIDs.length])
 
   const homeMangaRecommendationsQuery = useQuery({
-    queryKey: ['home-manga-recommendations', lang, recommendationSeedIDs.join(','), recommendationExcludeIDs.join(',')],
-    enabled: homeTab === 'manga' && recommendationSeedIDs.length > 0,
+    queryKey: ['home-manga-recommendations', lang, recommendationSeedKey, recommendationExcludeKey],
+    enabled: homeTab === 'manga' && mangaRecommendationsReady && recommendationSeedIDs.length > 0,
     queryFn: async () => wails.getHomeMangaRecommendations(recommendationSeedIDs, recommendationExcludeIDs, lang),
     staleTime: 20 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   })
 
   if (loading && !dash && !homeCatalogQuery.data) {
@@ -850,7 +1178,7 @@ export default function Home() {
   const droppedCards = droppedManga.map((item) => buildTrackedMangaCard(item, isEnglish, handleOpenHomeManga))
   const recommendationCards = (homeMangaRecommendationsQuery.data ?? []).map((item) => buildRecommendedMangaCard(item, isEnglish, handleOpenHomeManga))
 
-  const hasUserAnimeContent = continueOnline.length > 0 || continueLocal.length > 0 || continueTrackedAnime.length > 0 || plannedAnime.length > 0 || onHoldAnime.length > 0
+  const hasUserAnimeContent = resumeAnimeEntries.length > 0 || continueTrackedAnime.length > 0 || plannedAnime.length > 0 || onHoldAnime.length > 0
 
   const userAnimeSlot = hasUserAnimeContent ? (
     <div className="home-user-band home-user-band-anime">
@@ -858,20 +1186,34 @@ export default function Home() {
         {isEnglish ? 'Anime progress' : 'Tu anime'}
       </div>
 
-      {(continueOnline.length > 0 || continueLocal.length > 0 || continueTrackedAnime.length > 0) && (
+      {resumeAnimeEntries.length > 0 && (
         <ShelfSection
           title={isEnglish ? 'Continue watching' : 'Seguir viendo'}
           subtitle={isEnglish ? 'Pick up what you already started' : 'Retoma lo que ya empezaste'}
           action={(
             <button
               className="btn btn-ghost"
-              style={{ fontSize: 11, padding: '6px 12px', color: editMode ? 'var(--accent)' : 'var(--text-muted)' }}
-              onClick={() => setEditMode((value) => !value)}
+              style={{ fontSize: 11, padding: '6px 12px', color: 'var(--text-muted)' }}
+              onClick={() => setHistoryOpen(true)}
               type="button"
             >
-              {editMode ? (isEnglish ? 'Done' : 'Listo') : (isEnglish ? 'Edit' : 'Editar')}
+              {isEnglish ? 'View History' : 'Ver historial'}
             </button>
           )}
+          customTrack
+        >
+          <ShelfScroller showArrows className="home-shelf-track-arrows home-crunchy-rail-track">
+            {resumeAnimeEntries.map((entry) => (
+              <ContinueWatchingRailCard key={entry.key} entry={entry} />
+            ))}
+          </ShelfScroller>
+        </ShelfSection>
+      )}
+
+      {false && (continueOnline.length > 0 || continueLocal.length > 0 || continueTrackedAnime.length > 0) && (
+        <ShelfSection
+          title={isEnglish ? 'Watching list' : 'En seguimiento'}
+          subtitle={isEnglish ? 'Tracked titles without an active resume point' : 'Titulos seguidos sin un punto de reanudacion activo'}
           customTrack
         >
           <ShelfScroller showArrows className="home-shelf-track-arrows">
@@ -1017,7 +1359,7 @@ export default function Home() {
                 lang={lang}
                 searching={searchingIDs}
               />
-            ) : (homeCatalogQuery.isLoading || homeCatalogQuery.isFetching) ? (
+            ) : (homeHeroQuery.isLoading || homeHeroQuery.isFetching) ? (
               <HomeDiscoverFallback isEnglish={isEnglish} />
             ) : null}
 
@@ -1059,7 +1401,26 @@ export default function Home() {
               </ShelfSection>
             ))}
 
-            {!heroSlides.length && !primaryAnimeRows.length && !genreAnimeRows.length && !homeCatalogQuery.isLoading && !homeCatalogQuery.isFetching ? (
+            {!heroSlides.length && !primaryAnimeRows.length && !genreAnimeRows.length && homeAniListUnavailable ? (
+              <section className="home-shelf">
+                <div className="home-shelf-header">
+                  <div className="home-shelf-copy">
+                    <div className="home-shelf-title">{isEnglish ? 'AniList catalog temporarily unavailable' : 'Catalogo de AniList temporalmente no disponible'}</div>
+                    <div className="home-shelf-subtitle">{isEnglish ? 'Home recommendations are limited right now, but direct source search still works.' : 'Las recomendaciones del inicio estan limitadas por ahora, pero la busqueda directa en fuentes sigue funcionando.'}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <button type="button" className="btn btn-ghost" onClick={() => navigate('/search')}>
+                      {isEnglish ? 'Open Anime Online' : 'Abrir Anime online'}
+                    </button>
+                    <button type="button" className="btn btn-ghost" onClick={() => navigate('/manga-online')}>
+                      {isEnglish ? 'Open Manga Online' : 'Abrir Manga online'}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
+            {!heroSlides.length && !primaryAnimeRows.length && !genreAnimeRows.length && !homeAniListUnavailable && !homeCatalogQuery.isLoading && !homeCatalogQuery.isFetching ? (
               <HomeDiscoverFallback isEnglish={isEnglish} />
             ) : null}
           </>
@@ -1144,6 +1505,21 @@ export default function Home() {
         })()}
 
       </div>
+
+      <WatchHistoryDrawer
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        items={historyQuery.data ?? []}
+        isLoading={historyQuery.isLoading}
+        error={historyQuery.error?.message ?? ''}
+        isEnglish={isEnglish}
+        onOpenItem={(item) => {
+          setHistoryOpen(false)
+          handleOpenOnlineAnime(item)
+        }}
+        onRemoveItem={handleRemoveAnime}
+        onClearAll={handleClearHistory}
+      />
     </div>
   )
 }

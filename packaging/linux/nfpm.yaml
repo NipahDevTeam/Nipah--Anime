@@ -1,7 +1,7 @@
 name: "nipah-anime"
 arch: "amd64"
 platform: "linux"
-version: "2.3.0"
+version: "2.5.4"
 section: "video"
 priority: "optional"
 maintainer: "Nipah! Anime"
@@ -17,7 +17,7 @@ contents:
     dst: "/usr/lib/nipah-anime/nipah-anime"
     file_info:
       mode: 0755
-  - src: "./build/appicon.png"
+  - src: "./appimg.png"
     dst: "/usr/share/icons/hicolor/512x512/apps/nipah-anime.png"
     file_info:
       mode: 0644

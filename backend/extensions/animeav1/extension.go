@@ -259,6 +259,7 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 					URL:      resolved.URL,
 					Quality:  resolved.Quality,
 					Language: extensions.LangSpanish,
+					Audio:    embedTrackAudio(candidate.track),
 					Referer:  candidate.url,
 				},
 				ok: true,
@@ -291,6 +292,7 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 				URL:      resolved.URL,
 				Quality:  resolved.Quality,
 				Language: extensions.LangSpanish,
+				Audio:    embedTrackAudio(candidate.track),
 				Referer:  candidate.url,
 			})
 			if len(sources) >= 2 {
@@ -414,6 +416,17 @@ func embedTrackRank(track string) int {
 		return 3
 	default:
 		return 2
+	}
+}
+
+func embedTrackAudio(track string) string {
+	switch strings.ToUpper(strings.TrimSpace(track)) {
+	case "DUB", "LAT", "ESP":
+		return "dub"
+	case "SUB", "VOSE", "CAST", "RAW":
+		return "sub"
+	default:
+		return ""
 	}
 }
 

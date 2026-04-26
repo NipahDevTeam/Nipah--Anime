@@ -19,9 +19,7 @@ const (
 	LangJapanese   Language = "ja"
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Shared types
-// ─────────────────────────────────────────────────────────────────────────────
 
 // SearchResult is a generic search result returned by any source extension.
 type SearchResult struct {
@@ -44,12 +42,14 @@ type Episode struct {
 }
 
 // StreamSource represents a playable stream URL for an episode.
-// Miruro passes this to an external player — it never proxies the stream itself.
+// Miruro passes this to an external player; it never proxies the stream itself.
 type StreamSource struct {
 	URL       string          `json:"url"`
 	Quality   string          `json:"quality,omitempty"` // "1080p", "720p", etc.
 	Language  Language        `json:"language"`
-	Referer   string          `json:"referer,omitempty"` // Required by some CDNs (e.g. kwik→uwucdn)
+	Audio     string          `json:"audio,omitempty"`   // "sub", "dub", "raw", etc.
+	Referer   string          `json:"referer,omitempty"` // Required by some CDNs (e.g. kwik -> uwucdn)
+	Cookie    string          `json:"cookie,omitempty"`  // Session cookies required by some browser-rendered hosts
 	Subtitles []SubtitleTrack `json:"subtitles,omitempty"`
 }
 
@@ -80,15 +80,13 @@ type PageSource struct {
 	Index int    `json:"index"`
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Extension interfaces
-// ─────────────────────────────────────────────────────────────────────────────
 
 // AnimeSource is the interface all anime extensions must implement.
 type AnimeSource interface {
 	// ID returns the unique identifier for this source (e.g., "animeflv-es")
 	ID() string
-	// Name returns the human-readable name (e.g., "AnimeFLV (Español)")
+	// Name returns the human-readable name (e.g., "AnimeFLV (Espanol)")
 	Name() string
 	// Languages returns the list of languages this source supports
 	Languages() []Language

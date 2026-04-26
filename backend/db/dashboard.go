@@ -13,6 +13,7 @@ type ContinueWatchingItem struct {
 	AnimeTitle   string  `json:"anime_title"`
 	CoverImage   string  `json:"cover_image"`
 	BannerImage  string  `json:"banner_image"`
+	EpisodeThumb string  `json:"episode_thumbnail"`
 	EpisodeID    int     `json:"episode_id"`
 	EpisodeNum   float64 `json:"episode_num"`
 	EpisodeTitle string  `json:"episode_title"`
@@ -28,6 +29,7 @@ func (d *Database) GetContinueWatching(limit int) ([]ContinueWatchingItem, error
 			a.id, COALESCE(a.title_spanish, a.title_english, a.title_romaji, '') as title,
 			COALESCE(a.cover_image, '') as cover,
 			COALESCE(a.banner_image, '') as banner,
+			COALESCE(e.thumbnail, '') as thumb,
 			e.id, COALESCE(e.episode_num, 0),
 			COALESCE(e.title_es, e.title, '') as ep_title,
 			e.progress_s, COALESCE(e.duration_s, 0)
@@ -47,6 +49,7 @@ func (d *Database) GetContinueWatching(limit int) ([]ContinueWatchingItem, error
 		var item ContinueWatchingItem
 		if err := rows.Scan(
 			&item.AnimeID, &item.AnimeTitle, &item.CoverImage, &item.BannerImage,
+			&item.EpisodeThumb,
 			&item.EpisodeID, &item.EpisodeNum, &item.EpisodeTitle,
 			&item.ProgressSec, &item.DurationSec,
 		); err != nil {

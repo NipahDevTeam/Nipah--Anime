@@ -197,7 +197,7 @@ func (m *Manager) clearState() {
 // OpenEpisode launches MPV with IPC enabled, then connects to track playback.
 // Optional referer is passed as HTTP header for streams that require it (e.g. kwik→uwucdn).
 func (m *Manager) OpenEpisode(filePath string, episodeID int, episodeNum float64, animeTitle, episodeTitle string, startSec float64, referer ...string) error {
-	bin, err := findBinary(PlayerMPV)
+	bin, err := findBinary(m.preferred)
 	if err != nil {
 		return fmt.Errorf("MPV not found — install from https://mpv.io: %w", err)
 	}
@@ -241,14 +241,26 @@ func (m *Manager) OpenEpisode(filePath string, episodeID int, episodeNum float64
 		)
 	}
 
+	refererHeader := ""
+	if len(referer) > 0 {
+		refererHeader = strings.TrimSpace(referer[0])
+	}
+	cookieHeader := ""
+	if len(referer) > 1 {
+		cookieHeader = strings.TrimSpace(referer[1])
+	}
+
 	headerFields := []string{
 		"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
 	}
-	if len(referer) > 0 && referer[0] != "" {
-		headerFields = append(headerFields, fmt.Sprintf("Referer: %s", referer[0]))
-		if origin := originFromURL(referer[0]); origin != "" {
+	if refererHeader != "" {
+		headerFields = append(headerFields, fmt.Sprintf("Referer: %s", refererHeader))
+		if origin := originFromURL(refererHeader); origin != "" {
 			headerFields = append(headerFields, fmt.Sprintf("Origin: %s", origin))
 		}
+	}
+	if cookieHeader != "" {
+		headerFields = append(headerFields, fmt.Sprintf("Cookie: %s", cookieHeader))
 	}
 	// Use --http-header-fields-append per header instead of comma-joining.
 	// MPV's list parser splits on commas, and the User-Agent value contains
@@ -258,9 +270,9 @@ func (m *Manager) OpenEpisode(filePath string, episodeID int, episodeNum float64
 			fmt.Sprintf("--http-header-fields-append=%s", hf),
 		}, args...)
 	}
-	if len(referer) > 0 && referer[0] != "" {
+	if refererHeader != "" {
 		args = append([]string{
-			fmt.Sprintf("--referrer=%s", referer[0]),
+			fmt.Sprintf("--referrer=%s", refererHeader),
 		}, args...)
 	}
 
@@ -286,6 +298,25 @@ func (m *Manager) OpenEpisode(filePath string, episodeID int, episodeNum float64
 		return fmt.Errorf("failed to start MPV: %w", err)
 	}
 
+	procDone := make(chan error, 1)
+	go func() {
+		procDone <- cmd.Wait()
+	}()
+
+	if err := m.waitForSocketOrExit(8*time.Second, procDone); err != nil {
+		_ = cmd.Process.Kill()
+		return err
+	}
+	if err := m.connectIPC(); err != nil {
+		_ = cmd.Process.Kill()
+		return err
+	}
+	if err := m.waitForStableStartup(1200*time.Millisecond, procDone); err != nil {
+		m.disconnectIPC()
+		_ = cmd.Process.Kill()
+		return err
+	}
+
 	m.updateState(func(s *PlaybackState) {
 		s.Active = true
 		s.FilePath = filePath
@@ -306,26 +337,22 @@ func (m *Manager) OpenEpisode(filePath string, episodeID int, episodeNum float64
 			})
 		}
 
-		defer func() {
-			_ = cmd.Wait()
-			m.clearState()
-			m.disconnectIPC()
-			finishPlayback()
-		}()
-
-		if err := m.waitForSocket(8 * time.Second); err != nil {
-			return
-		}
-		if err := m.connectIPC(); err != nil {
-			return
-		}
-
 		m.observeProperty(1, "time-pos")
 		m.observeProperty(2, "duration")
 		m.observeProperty(3, "pause")
 		m.observeProperty(4, "percent-pos")
 
-		m.runEventLoop(episodeID, finishPlayback)
+		eventsDone := make(chan struct{})
+		go func() {
+			defer close(eventsDone)
+			m.runEventLoop(episodeID, finishPlayback)
+		}()
+
+		<-procDone
+		m.disconnectIPC()
+		<-eventsDone
+		m.clearState()
+		finishPlayback()
 	}()
 
 	return nil
@@ -393,6 +420,46 @@ func (m *Manager) waitForSocket(timeout time.Duration) error {
 		time.Sleep(200 * time.Millisecond)
 	}
 	return fmt.Errorf("timeout waiting for MPV socket")
+}
+
+func (m *Manager) waitForSocketOrExit(timeout time.Duration, procDone <-chan error) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-procDone:
+			if err != nil {
+				return fmt.Errorf("mpv exited before playback became ready: %w", err)
+			}
+			return fmt.Errorf("mpv exited before playback became ready")
+		default:
+		}
+
+		if runtime.GOOS == "windows" {
+			f, err := os.OpenFile(ipcPath(), os.O_RDWR, os.ModeNamedPipe)
+			if err == nil {
+				f.Close()
+				return nil
+			}
+		} else {
+			if _, err := os.Stat(ipcPath()); err == nil {
+				return nil
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("timeout waiting for MPV socket")
+}
+
+func (m *Manager) waitForStableStartup(grace time.Duration, procDone <-chan error) error {
+	select {
+	case err := <-procDone:
+		if err != nil {
+			return fmt.Errorf("mpv closed right after launch: %w", err)
+		}
+		return fmt.Errorf("mpv closed right after launch")
+	case <-time.After(grace):
+		return nil
+	}
 }
 
 func (m *Manager) connectIPC() error {
@@ -560,6 +627,10 @@ func findYtdlp() string {
 }
 
 func findBinary(name string) (string, error) {
+	if preferred := resolvePreferredBinary(name); preferred != "" {
+		return preferred, nil
+	}
+
 	candidates := []string{}
 
 	switch runtime.GOOS {
@@ -627,4 +698,75 @@ func findBinary(name string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("%s not found", name)
+}
+
+func resolvePreferredBinary(name string) string {
+	value := strings.TrimSpace(name)
+	if value == "" {
+		return ""
+	}
+
+	if runtime.GOOS == "windows" {
+		if resolved := resolveWindowsPreferredBinary(value); resolved != "" {
+			return resolved
+		}
+	} else {
+		if info, err := os.Stat(value); err == nil {
+			if info.IsDir() {
+				candidate := filepath.Join(value, PlayerMPV)
+				if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
+					return candidate
+				}
+			} else {
+				return value
+			}
+		}
+	}
+
+	if p, err := exec.LookPath(value); err == nil {
+		return p
+	}
+	return ""
+}
+
+func resolveWindowsPreferredBinary(value string) string {
+	if info, err := os.Stat(value); err == nil {
+		if info.IsDir() {
+			candidates := []string{
+				filepath.Join(value, "mpv.exe"),
+				filepath.Join(value, "mpv.com"),
+			}
+			for _, candidate := range candidates {
+				if stat, statErr := os.Stat(candidate); statErr == nil && !stat.IsDir() {
+					return candidate
+				}
+			}
+			return ""
+		}
+		lower := strings.ToLower(value)
+		if strings.HasSuffix(lower, ".exe") || strings.HasSuffix(lower, ".com") {
+			return value
+		}
+	}
+
+	if strings.Contains(value, `\`) || strings.Contains(value, `/`) {
+		candidates := []string{value}
+		lower := strings.ToLower(value)
+		if !strings.HasSuffix(lower, ".exe") && !strings.HasSuffix(lower, ".com") {
+			candidates = append(candidates, value+".exe", filepath.Join(value, "mpv.exe"))
+		}
+		for _, candidate := range candidates {
+			if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
+				return candidate
+			}
+		}
+	}
+
+	if p, err := exec.LookPath(value); err == nil {
+		lower := strings.ToLower(p)
+		if strings.HasSuffix(lower, ".exe") || strings.HasSuffix(lower, ".com") {
+			return p
+		}
+	}
+	return ""
 }
