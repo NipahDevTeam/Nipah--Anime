@@ -4,7 +4,7 @@ import { wails, proxyImage } from '../../lib/wails'
 import { toastError, toastSuccess } from '../ui/Toast'
 import { useI18n } from '../../lib/i18n'
 import IntegratedVideoPlayer from './IntegratedVideoPlayer'
-import { perfEnd, perfMark } from '../../lib/perfDebug'
+import { perfEnd, perfMark } from '../../lib/perfTrace'
 
 const SOURCE_LABELS = {
   'jkanime-es': { name: 'JKAnime', color: '#c084fc', flag: 'ES' },

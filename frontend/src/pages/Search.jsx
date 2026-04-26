@@ -14,7 +14,7 @@ import { buildExpandedTitleVariants } from '../lib/titleMatching'
 import { isAniListUnavailableErrorMessage } from '../lib/anilistStatus'
 import VirtualMediaGrid from '../components/ui/VirtualMediaGrid'
 import { useI18n } from '../lib/i18n'
-import { perfEnd, perfMark, perfStart } from '../lib/perfDebug'
+import { perfEnd, perfMark, perfStart } from '../lib/perfTrace'
 
 // Spanish sources: purple family  |  English sources: blue family
 const SOURCE_META = {

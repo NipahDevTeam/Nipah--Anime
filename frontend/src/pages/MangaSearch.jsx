@@ -12,7 +12,7 @@ import MangaReader from '../components/ui/MangaReader'
 import { toastError } from '../components/ui/Toast'
 import VirtualMediaGrid from '../components/ui/VirtualMediaGrid'
 import { useI18n } from '../lib/i18n'
-import { perfEnd, perfMark, perfStart } from '../lib/perfDebug'
+import { perfEnd, perfMark, perfStart } from '../lib/perfTrace'
 
 const LANG_OPTIONS = [{ value: 'es', label: 'Espanol' }, { value: 'en', label: 'English' }]
 const GENRE_LABELS = {

@@ -1,7 +1,7 @@
 name: "nipah-anime"
 arch: "amd64"
 platform: "linux"
-version: "2.5.6"
+version: "2.5.7"
 section: "video"
 priority: "optional"
 maintainer: "Nipah! Anime"
