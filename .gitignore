@@ -29,6 +29,8 @@ frontend/package.json.md5
 # === Temporary & Scrape Cache Files ===
 .tmp_*
 *.tmp
+tmp_*.html
+ERROR.txt
 
 # === Build Outputs ===
 *.exe
@@ -37,13 +39,16 @@ frontend/package.json.md5
 *.dylib
 *.a
 
-# === Auth & OAuth ===
-backend/auth/
-
-# === Local Tool Config ===
-.claude/
 
 # === Personal / Internal Files ===
 backup/
 PROJECT_HANDOFF*.md
 RELEASE_README_DRAFT*.md
+GUI_HANDOFF_*.md
+HANDOFF_*.md
+PHASE_HANDOFF_*.md
+Nipah_*.docx
+docs/README_GITHUB_*.md
+docs/performance/
+frontend/src/_backup_*/
+tools/windows-build/

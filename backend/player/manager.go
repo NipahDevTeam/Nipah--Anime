@@ -9,13 +9,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 )
 
@@ -29,6 +30,14 @@ func ipcPath() string {
 		return `\\.\pipe\nipah-mpv`
 	}
 	return "/tmp/nipah-mpv.sock"
+}
+
+func originFromURL(raw string) string {
+	u, err := neturl.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,20 +58,49 @@ type PlaybackState struct {
 	Percent      float64 `json:"percent"`
 }
 
+type PlaybackSnapshot struct {
+	Active       bool
+	FilePath     string
+	EpisodeID    int
+	EpisodeNum   float64
+	AnimeTitle   string
+	EpisodeTitle string
+	PositionSec  float64
+	DurationSec  float64
+	Paused       bool
+	Percent      float64
+}
+
 func (s *PlaybackState) Snapshot() map[string]interface{} {
+	snap := s.Copy()
+	return map[string]interface{}{
+		"active":        snap.Active,
+		"file_path":     snap.FilePath,
+		"episode_id":    snap.EpisodeID,
+		"episode_num":   snap.EpisodeNum,
+		"anime_title":   snap.AnimeTitle,
+		"episode_title": snap.EpisodeTitle,
+		"position_sec":  snap.PositionSec,
+		"duration_sec":  snap.DurationSec,
+		"paused":        snap.Paused,
+		"percent":       snap.Percent,
+	}
+}
+
+func (s *PlaybackState) Copy() PlaybackSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return map[string]interface{}{
-		"active":        s.Active,
-		"file_path":     s.FilePath,
-		"episode_id":    s.EpisodeID,
-		"episode_num":   s.EpisodeNum,
-		"anime_title":   s.AnimeTitle,
-		"episode_title": s.EpisodeTitle,
-		"position_sec":  s.PositionSec,
-		"duration_sec":  s.DurationSec,
-		"paused":        s.Paused,
-		"percent":       s.Percent,
+	return PlaybackSnapshot{
+		Active:       s.Active,
+		FilePath:     s.FilePath,
+		EpisodeID:    s.EpisodeID,
+		EpisodeNum:   s.EpisodeNum,
+		AnimeTitle:   s.AnimeTitle,
+		EpisodeTitle: s.EpisodeTitle,
+		PositionSec:  s.PositionSec,
+		DurationSec:  s.DurationSec,
+		Paused:       s.Paused,
+		Percent:      s.Percent,
 	}
 }
 
@@ -95,28 +133,71 @@ func (s *PlaybackState) clear() {
 
 type ProgressCallback func(episodeID int, positionSec float64, percent float64)
 type EndedCallback func(episodeID int)
+type StateCallback func(snapshot PlaybackSnapshot)
 
-type Manager struct {
-	preferred  string
-	State      PlaybackState
-	conn       net.Conn
-	connMu     sync.Mutex
-	reqID      atomic.Int64
-	OnProgress ProgressCallback
-	OnEnded    EndedCallback
+type mpvMessage struct {
+	Event     string          `json:"event"`
+	Name      string          `json:"name"`
+	Data      json.RawMessage `json:"data"`
+	RequestID int64           `json:"request_id"`
+	Error     string          `json:"error"`
 }
 
-func NewManager(preferred string) *Manager {
+type mpvCommand struct {
+	Command   []interface{} `json:"command"`
+	RequestID int64         `json:"request_id"`
+}
+
+type Manager struct {
+	preferred     string
+	anime4K       string
+	State         PlaybackState
+	conn          net.Conn
+	connMu        sync.Mutex
+	reqID         atomic.Int64
+	OnProgress    ProgressCallback
+	OnEnded       EndedCallback
+	OnStateChange StateCallback
+	mpris         mprisBridge
+}
+
+func NewManager(preferred string, anime4KLevel ...string) *Manager {
 	if preferred == "" {
 		preferred = PlayerMPV
 	}
-	return &Manager{preferred: preferred}
+	level := "off"
+	if len(anime4KLevel) > 0 && anime4KLevel[0] != "" {
+		level = anime4KLevel[0]
+	}
+	m := &Manager{preferred: preferred, anime4K: level}
+	m.mpris = newMPRISBridge(m)
+	return m
+}
+
+func (m *Manager) SetAnime4KLevel(level string) {
+	m.anime4K = level
+}
+
+func (m *Manager) emitStateChange() {
+	if m.OnStateChange != nil {
+		m.OnStateChange(m.State.Copy())
+	}
+}
+
+func (m *Manager) updateState(fn func(*PlaybackState)) {
+	m.State.update(fn)
+	m.emitStateChange()
+}
+
+func (m *Manager) clearState() {
+	m.State.clear()
+	m.emitStateChange()
 }
 
 // OpenEpisode launches MPV with IPC enabled, then connects to track playback.
 // Optional referer is passed as HTTP header for streams that require it (e.g. kwik→uwucdn).
 func (m *Manager) OpenEpisode(filePath string, episodeID int, episodeNum float64, animeTitle, episodeTitle string, startSec float64, referer ...string) error {
-	bin, err := findBinary(PlayerMPV)
+	bin, err := findBinary(m.preferred)
 	if err != nil {
 		return fmt.Errorf("MPV not found — install from https://mpv.io: %w", err)
 	}
@@ -124,6 +205,16 @@ func (m *Manager) OpenEpisode(filePath string, episodeID int, episodeNum float64
 	if runtime.GOOS != "windows" {
 		_ = os.Remove(ipcPath())
 	}
+
+	// For HTTP stream URLs we have already resolved the direct CDN link ourselves.
+	// Enabling yt-dlp on a pre-resolved URL causes two problems:
+	//   1. yt-dlp may recognise the CDN domain (tapecontent.net for Streamtape,
+	//      a*.mp4upload.com for MP4Upload, etc.) and attempt its own extraction,
+	//      which fails on raw CDN links and causes MPV to exit silently.
+	//   2. Even when yt-dlp passes the URL through, the extra round-trip adds
+	//      latency and can trigger anti-hotlink checks on the CDN.
+	// yt-dlp is only useful for local files or unresolved site URLs.
+	isHTTPStream := strings.HasPrefix(filePath, "http://") || strings.HasPrefix(filePath, "https://")
 
 	args := []string{
 		fmt.Sprintf("--input-ipc-server=%s", ipcPath()),
@@ -133,24 +224,66 @@ func (m *Manager) OpenEpisode(filePath string, episodeID int, episodeNum float64
 		"--demuxer-max-bytes=50MiB",
 		"--demuxer-readahead-secs=20",
 		"--network-timeout=30",
-		"--ytdl=yes",
-		"--ytdl-format=bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
 		filePath,
 	}
+	if shaderArgs := anime4KShaderArgs(m.anime4K); len(shaderArgs) > 0 {
+		args = append(shaderArgs, args...)
+	}
+	if isHTTPStream {
+		// Pre-resolved CDN URL — tell MPV to play it directly, no yt-dlp.
+		args = append(args[:len(args)-1], "--ytdl=no", filePath)
+	} else {
+		// Local file — yt-dlp useful for format selection / metadata.
+		args = append(args[:len(args)-1],
+			"--ytdl=yes",
+			"--ytdl-format=bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+			filePath,
+		)
+	}
 
-	// Pass Referer header to MPV for CDNs that require it
-	if len(referer) > 0 && referer[0] != "" {
+	refererHeader := ""
+	if len(referer) > 0 {
+		refererHeader = strings.TrimSpace(referer[0])
+	}
+	cookieHeader := ""
+	if len(referer) > 1 {
+		cookieHeader = strings.TrimSpace(referer[1])
+	}
+
+	headerFields := []string{
+		"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+	}
+	if refererHeader != "" {
+		headerFields = append(headerFields, fmt.Sprintf("Referer: %s", refererHeader))
+		if origin := originFromURL(refererHeader); origin != "" {
+			headerFields = append(headerFields, fmt.Sprintf("Origin: %s", origin))
+		}
+	}
+	if cookieHeader != "" {
+		headerFields = append(headerFields, fmt.Sprintf("Cookie: %s", cookieHeader))
+	}
+	// Use --http-header-fields-append per header instead of comma-joining.
+	// MPV's list parser splits on commas, and the User-Agent value contains
+	// commas (e.g. "(KHTML, like Gecko)") which breaks the parsing.
+	for _, hf := range headerFields {
 		args = append([]string{
-			fmt.Sprintf("--http-header-fields=Referer: %s", referer[0]),
+			fmt.Sprintf("--http-header-fields-append=%s", hf),
+		}, args...)
+	}
+	if refererHeader != "" {
+		args = append([]string{
+			fmt.Sprintf("--referrer=%s", refererHeader),
 		}, args...)
 	}
 
-	// On Windows, help MPV find yt-dlp by adding Scoop and common paths to its search
-	if ytdlpPath := findYtdlp(); ytdlpPath != "" {
-		args = append(args[:len(args)-1],
-			fmt.Sprintf("--ytdl-raw-options=yt-dlp-path=%s", ytdlpPath),
-			filePath,
-		)
+	// On Windows, help MPV find yt-dlp — but only when we actually use it (local files).
+	if !isHTTPStream {
+		if ytdlpPath := findYtdlp(); ytdlpPath != "" {
+			args = append(args[:len(args)-1],
+				fmt.Sprintf("--ytdl-raw-options=yt-dlp-path=%s", ytdlpPath),
+				filePath,
+			)
+		}
 	}
 	// Only add --start if resuming mid-episode
 	if startSec > 0 {
@@ -159,17 +292,32 @@ func (m *Manager) OpenEpisode(filePath string, episodeID int, episodeNum float64
 
 	// Launch MPV — on Windows use CREATE_NEW_CONSOLE so it gets its own visible window
 	cmd := exec.Command(bin, args...)
-	if runtime.GOOS == "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			CreationFlags: 0x00000010, // CREATE_NEW_CONSOLE
-		}
-	}
+	applyPlatformCmdOptions(cmd)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start MPV: %w", err)
 	}
 
-	m.State.update(func(s *PlaybackState) {
+	procDone := make(chan error, 1)
+	go func() {
+		procDone <- cmd.Wait()
+	}()
+
+	if err := m.waitForSocketOrExit(8*time.Second, procDone); err != nil {
+		_ = cmd.Process.Kill()
+		return err
+	}
+	if err := m.connectIPC(); err != nil {
+		_ = cmd.Process.Kill()
+		return err
+	}
+	if err := m.waitForStableStartup(1200*time.Millisecond, procDone); err != nil {
+		m.disconnectIPC()
+		_ = cmd.Process.Kill()
+		return err
+	}
+
+	m.updateState(func(s *PlaybackState) {
 		s.Active = true
 		s.FilePath = filePath
 		s.EpisodeID = episodeID
@@ -180,29 +328,31 @@ func (m *Manager) OpenEpisode(filePath string, episodeID int, episodeNum float64
 	})
 
 	go func() {
-		defer func() {
-			_ = cmd.Wait()
-			m.State.clear()
-			m.disconnectIPC()
-			if m.OnEnded != nil {
-				m.OnEnded(episodeID)
-			}
-		}()
-
-		if err := m.waitForSocket(8 * time.Second); err != nil {
-			return
-		}
-		if err := m.connectIPC(); err != nil {
-			return
+		var endedOnce sync.Once
+		finishPlayback := func() {
+			endedOnce.Do(func() {
+				if m.OnEnded != nil {
+					m.OnEnded(episodeID)
+				}
+			})
 		}
 
 		m.observeProperty(1, "time-pos")
 		m.observeProperty(2, "duration")
 		m.observeProperty(3, "pause")
 		m.observeProperty(4, "percent-pos")
-		m.observeProperty(5, "eof-reached")
 
-		m.runEventLoop(episodeID)
+		eventsDone := make(chan struct{})
+		go func() {
+			defer close(eventsDone)
+			m.runEventLoop(episodeID, finishPlayback)
+		}()
+
+		<-procDone
+		m.disconnectIPC()
+		<-eventsDone
+		m.clearState()
+		finishPlayback()
 	}()
 
 	return nil
@@ -213,16 +363,40 @@ func (m *Manager) IsAvailable() bool {
 	return err == nil
 }
 
+func (m *Manager) TogglePause() error {
+	return m.sendCommand("cycle", "pause")
+}
+
+func (m *Manager) SetPaused(paused bool) error {
+	return m.sendCommand("set_property", "pause", paused)
+}
+
 func (m *Manager) Pause() error {
-	return m.sendIPC([]interface{}{"cycle", "pause"})
+	return m.SetPaused(true)
+}
+
+func (m *Manager) Play() error {
+	return m.SetPaused(false)
 }
 
 func (m *Manager) Seek(seconds float64) error {
-	return m.sendIPC([]interface{}{"seek", seconds, "absolute"})
+	return m.sendCommand("seek", seconds, "absolute")
+}
+
+func (m *Manager) Stop() error {
+	return m.sendCommand("stop")
 }
 
 func (m *Manager) Quit() error {
-	return m.sendIPC([]interface{}{"quit"})
+	return m.sendCommand("quit")
+}
+
+func (m *Manager) Close() error {
+	m.disconnectIPC()
+	if m.mpris != nil {
+		return m.mpris.Close()
+	}
+	return nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -246,6 +420,46 @@ func (m *Manager) waitForSocket(timeout time.Duration) error {
 		time.Sleep(200 * time.Millisecond)
 	}
 	return fmt.Errorf("timeout waiting for MPV socket")
+}
+
+func (m *Manager) waitForSocketOrExit(timeout time.Duration, procDone <-chan error) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-procDone:
+			if err != nil {
+				return fmt.Errorf("mpv exited before playback became ready: %w", err)
+			}
+			return fmt.Errorf("mpv exited before playback became ready")
+		default:
+		}
+
+		if runtime.GOOS == "windows" {
+			f, err := os.OpenFile(ipcPath(), os.O_RDWR, os.ModeNamedPipe)
+			if err == nil {
+				f.Close()
+				return nil
+			}
+		} else {
+			if _, err := os.Stat(ipcPath()); err == nil {
+				return nil
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("timeout waiting for MPV socket")
+}
+
+func (m *Manager) waitForStableStartup(grace time.Duration, procDone <-chan error) error {
+	select {
+	case err := <-procDone:
+		if err != nil {
+			return fmt.Errorf("mpv closed right after launch: %w", err)
+		}
+		return fmt.Errorf("mpv closed right after launch")
+	case <-time.After(grace):
+		return nil
+	}
 }
 
 func (m *Manager) connectIPC() error {
@@ -276,17 +490,14 @@ func (m *Manager) disconnectIPC() {
 	}
 }
 
-func (m *Manager) sendIPC(args []interface{}) error {
+func (m *Manager) sendCommand(args ...interface{}) error {
 	m.connMu.Lock()
 	defer m.connMu.Unlock()
 	if m.conn == nil {
 		return fmt.Errorf("IPC not connected")
 	}
 	id := m.reqID.Add(1)
-	data, err := json.Marshal(map[string]interface{}{
-		"command":    args,
-		"request_id": id,
-	})
+	data, err := json.Marshal(mpvCommand{Command: args, RequestID: id})
 	if err != nil {
 		return err
 	}
@@ -296,10 +507,10 @@ func (m *Manager) sendIPC(args []interface{}) error {
 }
 
 func (m *Manager) observeProperty(id int, prop string) {
-	_ = m.sendIPC([]interface{}{"observe_property", id, prop})
+	_ = m.sendCommand("observe_property", id, prop)
 }
 
-func (m *Manager) runEventLoop(episodeID int) {
+func (m *Manager) runEventLoop(episodeID int, onEnd func()) {
 	m.connMu.Lock()
 	conn := m.conn
 	m.connMu.Unlock()
@@ -309,47 +520,46 @@ func (m *Manager) runEventLoop(episodeID int) {
 
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
-		var event map[string]interface{}
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+		var msg mpvMessage
+		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
 			continue
 		}
 
-		if event["event"] != "property-change" {
-			if event["event"] == "end-file" {
-				return
+		if msg.Event == "end-file" {
+			if onEnd != nil {
+				onEnd()
 			}
+			return
+		}
+
+		if msg.Event != "property-change" {
 			continue
 		}
 
-		name, _ := event["name"].(string)
-		val := event["data"]
-
-		switch name {
+		switch msg.Name {
 		case "time-pos":
-			if pos, ok := toFloat(val); ok {
-				m.State.update(func(s *PlaybackState) { s.PositionSec = pos })
+			var pos float64
+			if len(msg.Data) > 0 && json.Unmarshal(msg.Data, &pos) == nil {
+				m.updateState(func(s *PlaybackState) { s.PositionSec = pos })
 				if m.OnProgress != nil {
-					snap := m.State.Snapshot()
-					m.OnProgress(episodeID, pos, snap["percent"].(float64))
+					snap := m.State.Copy()
+					m.OnProgress(episodeID, pos, snap.Percent)
 				}
 			}
 		case "duration":
-			if dur, ok := toFloat(val); ok {
-				m.State.update(func(s *PlaybackState) { s.DurationSec = dur })
+			var dur float64
+			if len(msg.Data) > 0 && json.Unmarshal(msg.Data, &dur) == nil {
+				m.updateState(func(s *PlaybackState) { s.DurationSec = dur })
 			}
 		case "pause":
-			if paused, ok := val.(bool); ok {
-				m.State.update(func(s *PlaybackState) { s.Paused = paused })
+			var paused bool
+			if len(msg.Data) > 0 && json.Unmarshal(msg.Data, &paused) == nil {
+				m.updateState(func(s *PlaybackState) { s.Paused = paused })
 			}
 		case "percent-pos":
-			if pct, ok := toFloat(val); ok {
-				m.State.update(func(s *PlaybackState) { s.Percent = pct })
-			}
-		case "eof-reached":
-			if reached, ok := val.(bool); ok && reached {
-				if m.OnEnded != nil {
-					m.OnEnded(episodeID)
-				}
+			var pct float64
+			if len(msg.Data) > 0 && json.Unmarshal(msg.Data, &pct) == nil {
+				m.updateState(func(s *PlaybackState) { s.Percent = pct })
 			}
 		}
 	}
@@ -417,6 +627,10 @@ func findYtdlp() string {
 }
 
 func findBinary(name string) (string, error) {
+	if preferred := resolvePreferredBinary(name); preferred != "" {
+		return preferred, nil
+	}
+
 	candidates := []string{}
 
 	switch runtime.GOOS {
@@ -465,7 +679,16 @@ func findBinary(name string) (string, error) {
 		}
 	case "linux":
 		if name == PlayerMPV {
-			candidates = []string{"/usr/bin/mpv", "/usr/local/bin/mpv"}
+			// Check bundled mpv first (AppImage: mpv lives alongside the binary)
+			if exe, err := os.Executable(); err == nil {
+				bundled := filepath.Join(filepath.Dir(exe), "mpv")
+				candidates = append(candidates, bundled)
+			}
+			// Also honour $APPDIR set by the AppImage runtime
+			if appdir := os.Getenv("APPDIR"); appdir != "" {
+				candidates = append(candidates, filepath.Join(appdir, "usr", "bin", "mpv"))
+			}
+			candidates = append(candidates, "/usr/bin/mpv", "/usr/local/bin/mpv")
 		}
 	}
 
@@ -475,4 +698,75 @@ func findBinary(name string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("%s not found", name)
+}
+
+func resolvePreferredBinary(name string) string {
+	value := strings.TrimSpace(name)
+	if value == "" {
+		return ""
+	}
+
+	if runtime.GOOS == "windows" {
+		if resolved := resolveWindowsPreferredBinary(value); resolved != "" {
+			return resolved
+		}
+	} else {
+		if info, err := os.Stat(value); err == nil {
+			if info.IsDir() {
+				candidate := filepath.Join(value, PlayerMPV)
+				if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
+					return candidate
+				}
+			} else {
+				return value
+			}
+		}
+	}
+
+	if p, err := exec.LookPath(value); err == nil {
+		return p
+	}
+	return ""
+}
+
+func resolveWindowsPreferredBinary(value string) string {
+	if info, err := os.Stat(value); err == nil {
+		if info.IsDir() {
+			candidates := []string{
+				filepath.Join(value, "mpv.exe"),
+				filepath.Join(value, "mpv.com"),
+			}
+			for _, candidate := range candidates {
+				if stat, statErr := os.Stat(candidate); statErr == nil && !stat.IsDir() {
+					return candidate
+				}
+			}
+			return ""
+		}
+		lower := strings.ToLower(value)
+		if strings.HasSuffix(lower, ".exe") || strings.HasSuffix(lower, ".com") {
+			return value
+		}
+	}
+
+	if strings.Contains(value, `\`) || strings.Contains(value, `/`) {
+		candidates := []string{value}
+		lower := strings.ToLower(value)
+		if !strings.HasSuffix(lower, ".exe") && !strings.HasSuffix(lower, ".com") {
+			candidates = append(candidates, value+".exe", filepath.Join(value, "mpv.exe"))
+		}
+		for _, candidate := range candidates {
+			if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
+				return candidate
+			}
+		}
+	}
+
+	if p, err := exec.LookPath(value); err == nil {
+		lower := strings.ToLower(p)
+		if strings.HasSuffix(lower, ".exe") || strings.HasSuffix(lower, ".com") {
+			return p
+		}
+	}
+	return ""
 }

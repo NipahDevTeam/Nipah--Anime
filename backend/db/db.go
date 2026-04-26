@@ -6,8 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"miruro/backend/logger"
+
 	_ "modernc.org/sqlite"
 )
+
+var log = logger.For("DB")
 
 // Database wraps the SQLite connection.
 type Database struct {
@@ -21,6 +25,8 @@ func New() (*Database, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not resolve DB path: %w", err)
 	}
+	_, statErr := os.Stat(dbPath)
+	freshDB := os.IsNotExist(statErr)
 
 	// Ensure the directory exists
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
@@ -31,11 +37,25 @@ func New() (*Database, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not open database: %w", err)
 	}
+	conn.SetMaxOpenConns(1)
+	conn.SetMaxIdleConns(1)
 
 	db := &Database{conn: conn}
 
+	if err := db.configureConnection(); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("database tuning failed: %w", err)
+	}
+
 	if err := db.migrate(); err != nil {
+		_ = conn.Close()
 		return nil, fmt.Errorf("migration failed: %w", err)
+	}
+	if freshDB {
+		if err := db.applyFreshInstallDefaults(); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("fresh install defaults failed: %w", err)
+		}
 	}
 
 	return db, nil
@@ -77,6 +97,7 @@ func (d *Database) migrate() error {
 		anilist_id     INTEGER,
 		anidb_id       INTEGER,
 		cover_image    TEXT,
+		cover_blurhash TEXT,
 		banner_image   TEXT,
 		synopsis       TEXT,
 		synopsis_es    TEXT,
@@ -112,6 +133,7 @@ func (d *Database) migrate() error {
 		mangadex_id    TEXT,
 		anilist_id     INTEGER,
 		cover_image    TEXT,
+		cover_blurhash TEXT,
 		synopsis       TEXT,
 		synopsis_es    TEXT,
 		year           INTEGER,
@@ -161,15 +183,24 @@ func (d *Database) migrate() error {
 		anime_id    TEXT NOT NULL,
 		anime_title TEXT NOT NULL,
 		cover_url   TEXT,
+		anilist_id  INTEGER DEFAULT 0,
 		episode_id  TEXT NOT NULL,
 		episode_num REAL,
 		episode_title TEXT,
+		episode_thumbnail TEXT,
+		progress_s  INTEGER DEFAULT 0,
 		watched_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
 		duration_s  INTEGER DEFAULT 0,
 		completed   BOOLEAN DEFAULT FALSE,
 		hidden      BOOLEAN DEFAULT FALSE,
 		UNIQUE(source_id, episode_id)
 	);
+	CREATE INDEX IF NOT EXISTS idx_watch_history_source_anime_recent
+		ON watch_history(source_id, anime_id, watched_at DESC, id DESC);
+	CREATE INDEX IF NOT EXISTS idx_watch_history_visible_recent
+		ON watch_history(hidden, source_id, anime_id, watched_at DESC, id DESC);
+	CREATE INDEX IF NOT EXISTS idx_watch_history_continue_recent
+		ON watch_history(completed, source_id, anime_id, watched_at DESC, id DESC);
 
 	-- User anime list (MAL-like tracking: Watching, Planning, etc.)
 	CREATE TABLE IF NOT EXISTS anime_list (
@@ -250,9 +281,14 @@ func (d *Database) migrate() error {
 		anilist_id      INTEGER DEFAULT 0,
 		matched_title   TEXT DEFAULT '',
 		confidence      REAL DEFAULT 0,
+		resolver_generation TEXT NOT NULL DEFAULT '',
 		last_seen_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
 		UNIQUE(source_id, source_manga_id)
 	);
+	CREATE INDEX IF NOT EXISTS idx_online_manga_source_map_anilist_generation
+		ON online_manga_source_map(anilist_id, resolver_generation, confidence DESC, last_seen_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_online_manga_source_map_source_anilist_generation
+		ON online_manga_source_map(source_id, anilist_id, resolver_generation, confidence DESC, last_seen_at DESC);
 
 	-- Online manga reading history with canonical AniList identity when available
 	CREATE TABLE IF NOT EXISTS online_manga_history (
@@ -271,6 +307,10 @@ func (d *Database) migrate() error {
 		completed          BOOLEAN DEFAULT FALSE,
 		UNIQUE(source_id, chapter_id)
 	);
+	CREATE INDEX IF NOT EXISTS idx_online_manga_history_source_recent
+		ON online_manga_history(source_id, source_manga_id, read_at DESC, id DESC);
+	CREATE INDEX IF NOT EXISTS idx_online_manga_history_continue_recent
+		ON online_manga_history(completed, source_id, source_manga_id, read_at DESC, id DESC);
 
 	CREATE TABLE IF NOT EXISTS remote_list_sync_queue (
 		id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -300,8 +340,11 @@ func (d *Database) migrate() error {
 		('manga_reading_direction', 'ltr'),
 		('data_saver', 'false'),
 		('auto_scan_on_startup', 'true'),
+		('download_path', ''),
+		('anime_import_path', ''),
 		('preferred_quality', '1080p'),
 		('preferred_audio', 'sub'),
+		('anime4k_level', 'off'),
 		('torrent_client_path', ''),
 		('torrent_download_path', '');
 	`
@@ -311,11 +354,118 @@ func (d *Database) migrate() error {
 		return err
 	}
 	_, _ = d.conn.Exec(`ALTER TABLE anime ADD COLUMN banner_image TEXT`)
+	_, _ = d.conn.Exec(`ALTER TABLE anime ADD COLUMN cover_blurhash TEXT`)
+	_, _ = d.conn.Exec(`ALTER TABLE manga ADD COLUMN cover_blurhash TEXT`)
 	_, _ = d.conn.Exec(`ALTER TABLE anime_list ADD COLUMN banner_image TEXT`)
 	// Add hidden column to existing DBs — ignore error if already exists
 	_, _ = d.conn.Exec(`ALTER TABLE watch_history ADD COLUMN hidden BOOLEAN DEFAULT FALSE`)
+	_, _ = d.conn.Exec(`ALTER TABLE watch_history ADD COLUMN anilist_id INTEGER DEFAULT 0`)
+	_, _ = d.conn.Exec(`ALTER TABLE watch_history ADD COLUMN episode_thumbnail TEXT`)
+	_, _ = d.conn.Exec(`ALTER TABLE watch_history ADD COLUMN progress_s INTEGER DEFAULT 0`)
 	_, _ = d.conn.Exec(`ALTER TABLE remote_list_sync_queue ADD COLUMN last_attempt_at DATETIME`)
+	_, _ = d.conn.Exec(`ALTER TABLE online_manga_source_map ADD COLUMN resolver_generation TEXT NOT NULL DEFAULT ''`)
+	if err := d.ensureLegacySchemaCompatibility(); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (d *Database) applyFreshInstallDefaults() error {
+	defaultLang := preferredUILanguage()
+	return d.SetSettings(map[string]string{
+		"language":           defaultLang,
+		"preferred_sub_lang": defaultLang,
+	})
+}
+
+func (d *Database) configureConnection() error {
+	pragmas := []string{
+		`PRAGMA journal_mode=WAL`,
+		`PRAGMA synchronous=NORMAL`,
+		`PRAGMA foreign_keys=ON`,
+		`PRAGMA cache_size=-32000`,
+		`PRAGMA temp_store=MEMORY`,
+		`PRAGMA mmap_size=134217728`,
+		`PRAGMA busy_timeout=5000`,
+	}
+
+	for _, pragma := range pragmas {
+		if _, err := d.conn.Exec(pragma); err != nil {
+			return fmt.Errorf("%s: %w", pragma, err)
+		}
+	}
+	return nil
+}
+
+func (d *Database) ensureLegacySchemaCompatibility() error {
+	requiredColumns := []struct {
+		table      string
+		column     string
+		definition string
+	}{
+		{"anime_list", "mal_id", "INTEGER DEFAULT 0"},
+		{"anime_list", "title_english", "TEXT DEFAULT ''"},
+		{"anime_list", "banner_image", "TEXT DEFAULT ''"},
+		{"anime_list", "episodes_watched", "INTEGER DEFAULT 0"},
+		{"anime_list", "episodes_total", "INTEGER DEFAULT 0"},
+		{"anime_list", "score", "REAL DEFAULT 0"},
+		{"anime_list", "airing_status", "TEXT DEFAULT ''"},
+		{"anime_list", "year", "INTEGER DEFAULT 0"},
+		{"anime_list", "added_at", "TEXT DEFAULT ''"},
+		{"anime_list", "updated_at", "TEXT DEFAULT ''"},
+		{"manga_list", "mal_id", "INTEGER DEFAULT 0"},
+		{"manga_list", "title_english", "TEXT DEFAULT ''"},
+		{"manga_list", "banner_image", "TEXT DEFAULT ''"},
+		{"manga_list", "chapters_read", "INTEGER DEFAULT 0"},
+		{"manga_list", "chapters_total", "INTEGER DEFAULT 0"},
+		{"manga_list", "volumes_read", "INTEGER DEFAULT 0"},
+		{"manga_list", "volumes_total", "INTEGER DEFAULT 0"},
+		{"manga_list", "score", "REAL DEFAULT 0"},
+		{"manga_list", "year", "INTEGER DEFAULT 0"},
+		{"manga_list", "added_at", "TEXT DEFAULT ''"},
+		{"manga_list", "updated_at", "TEXT DEFAULT ''"},
+	}
+
+	for _, column := range requiredColumns {
+		if err := d.ensureColumnExists(column.table, column.column, column.definition); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Database) ensureColumnExists(table, column, definition string) error {
+	if d.columnExists(table, column) {
+		return nil
+	}
+	if _, err := d.conn.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)); err != nil {
+		return fmt.Errorf("ensure column %s.%s: %w", table, column, err)
+	}
+	return nil
+}
+
+func (d *Database) columnExists(table, column string) bool {
+	rows, err := d.conn.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var colType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultValue, &pk); err != nil {
+			continue
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -334,6 +484,90 @@ func getDBPath() (string, error) {
 		dataDir = filepath.Dir(exe)
 	}
 	dbPath := filepath.Join(dataDir, "Nipah", "nipah.db")
-	fmt.Printf("[DB] Database path: %s\n", dbPath)
+	if err := migrateLegacyDBIfNeeded(dbPath); err != nil {
+		log.Warn().Err(err).Str("path", dbPath).Msg("legacy database migration skipped")
+	}
+	log.Info().Str("path", dbPath).Msg("database path")
 	return dbPath, nil
+}
+
+func migrateLegacyDBIfNeeded(targetPath string) error {
+	if targetPath == "" {
+		return nil
+	}
+	if _, err := os.Stat(targetPath); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+		return err
+	}
+
+	for _, candidate := range legacyDBCandidates(targetPath) {
+		if candidate == "" || candidate == targetPath {
+			continue
+		}
+		if _, err := os.Stat(candidate); err != nil {
+			continue
+		}
+		if err := copyFile(candidate, targetPath); err != nil {
+			return err
+		}
+		for _, suffix := range []string{"-wal", "-shm"} {
+			srcSidecar := candidate + suffix
+			if _, err := os.Stat(srcSidecar); err == nil {
+				_ = copyFile(srcSidecar, targetPath+suffix)
+			}
+		}
+		log.Info().Str("from", candidate).Str("to", targetPath).Msg("migrated legacy database path")
+		return nil
+	}
+	return nil
+}
+
+func legacyDBCandidates(targetPath string) []string {
+	candidates := []string{}
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		candidates = append(candidates,
+			filepath.Join(exeDir, "nipah.db"),
+			filepath.Join(exeDir, "Nipah", "nipah.db"),
+			filepath.Join(exeDir, "Nipah! Anime", "nipah.db"),
+		)
+	}
+	if configDir, err := os.UserConfigDir(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(configDir, "Nipah! Anime", "nipah.db"),
+			filepath.Join(configDir, "nipah-anime", "nipah.db"),
+		)
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidate = filepath.Clean(candidate)
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		out = append(out, candidate)
+	}
+	return out
+}
+
+func copyFile(srcPath, dstPath string) error {
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dst, err := os.Create(dstPath)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	if _, err := dst.ReadFrom(src); err != nil {
+		return err
+	}
+	return nil
 }

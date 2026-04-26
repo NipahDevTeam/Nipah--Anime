@@ -1,4 +1,4 @@
-// Package animepahe implements AnimeSource for AnimePahe (animepahe.si).
+// Package animepahe implements AnimeSource for AnimePahe (animepahe.pw).
 // Uses AnimePahe's JSON API for search and episode listing, and resolves
 // kwik.si embeds to direct HLS stream URLs.
 package animepahe
@@ -6,19 +6,32 @@ package animepahe
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
+	"html"
+	neturl "net/url"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
+	"sync"
+
+	azuretls "github.com/Noooste/azuretls-client"
 
 	"miruro/backend/extensions"
+	"miruro/backend/httpclient"
+	"miruro/backend/logger"
 )
 
-const baseURL = "https://animepahe.si"
+var log = logger.For("AnimePahe")
 
-var httpClient = &http.Client{Timeout: 15 * time.Second}
+const baseURL = "https://animepahe.pw"
+
+var animePaheMirrorBases = []string{
+	"https://animepahe.pw",
+	"https://animepahe.si",
+	"https://animepahe.com",
+	"https://animepahe.org",
+}
+
+var httpSession = httpclient.NewSession(15)
 
 type Extension struct{}
 
@@ -48,28 +61,79 @@ type searchItem struct {
 }
 
 func (e *Extension) Search(query string, lang extensions.Language) ([]extensions.SearchResult, error) {
-	apiURL := fmt.Sprintf("%s/api?m=search&q=%s", baseURL, urlEncode(query))
-	body, err := fetchAPI(apiURL)
-	if err != nil {
-		return nil, fmt.Errorf("animepahe: search failed: %w", err)
-	}
+	var lastErr error
+	seen := map[string]bool{}
+	out := make([]extensions.SearchResult, 0, 24)
+	for _, candidate := range animePaheSearchQueries(query) {
+		for _, base := range animePaheBaseCandidates() {
+			apiURL := fmt.Sprintf("%s/api?m=search&q=%s", base, urlEncode(candidate))
+			body, err := fetchAPIWithBrowserFallback(apiURL)
+			if err != nil {
+				lastErr = err
+				continue
+			}
 
-	var resp searchResponse
-	if err := json.Unmarshal([]byte(body), &resp); err != nil {
-		return nil, fmt.Errorf("animepahe: search parse failed: %w", err)
-	}
+			var resp searchResponse
+			if err := json.Unmarshal([]byte(body), &resp); err != nil {
+				lastErr = fmt.Errorf("animepahe: search parse failed: %w", err)
+				continue
+			}
 
-	out := make([]extensions.SearchResult, 0, len(resp.Data))
-	for _, item := range resp.Data {
-		out = append(out, extensions.SearchResult{
-			ID:        item.Session,
-			Title:     item.Title,
-			CoverURL:  item.Poster,
-			Year:      item.Year,
-			Languages: []extensions.Language{extensions.LangEnglish},
-		})
+			rememberAnimePaheBase(base)
+			for _, item := range resp.Data {
+				if item.Session == "" || seen[item.Session] {
+					continue
+				}
+				seen[item.Session] = true
+				out = append(out, extensions.SearchResult{
+					ID:        item.Session,
+					Title:     item.Title,
+					CoverURL:  item.Poster,
+					Year:      item.Year,
+					Languages: []extensions.Language{extensions.LangEnglish},
+				})
+			}
+			if len(out) > 0 {
+				return out, nil
+			}
+		}
 	}
-	return out, nil
+	if len(out) > 0 {
+		return out, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("animepahe: search failed")
+	}
+	return nil, fmt.Errorf("animepahe: search failed: %w", lastErr)
+}
+
+func animePaheSearchQueries(query string) []string {
+	trimmed := strings.TrimSpace(html.UnescapeString(query))
+	if trimmed == "" {
+		return nil
+	}
+	variants := []string{trimmed}
+	sanitized := strings.NewReplacer(":", " ", ";", " ", "/", " ", "-", " ", "_", " ", ".", " ").Replace(trimmed)
+	sanitized = strings.Join(strings.Fields(sanitized), " ")
+	if sanitized != "" && !strings.EqualFold(sanitized, trimmed) {
+		variants = append(variants, sanitized)
+	}
+	base := regexp.MustCompile(`(?i)\b(?:\d{1,2}(?:st|nd|rd|th)\s+season|season\s+\d{1,2}|part\s+\d{1,2}|cour\s+\d{1,2}|ova|ona|special|movie|film)\b`).ReplaceAllString(trimmed, " ")
+	base = strings.Join(strings.Fields(base), " ")
+	if base != "" && !strings.EqualFold(base, trimmed) {
+		variants = append(variants, base)
+	}
+	out := make([]string, 0, len(variants))
+	seen := map[string]bool{}
+	for _, variant := range variants {
+		key := strings.ToLower(strings.TrimSpace(variant))
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, variant)
+	}
+	return out
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -93,36 +157,49 @@ type releaseItem struct {
 func (e *Extension) GetEpisodes(animeID string) ([]extensions.Episode, error) {
 	var all []extensions.Episode
 
-	for page := 1; ; page++ {
-		apiURL := fmt.Sprintf("%s/api?m=release&id=%s&sort=episode_asc&page=%d", baseURL, animeID, page)
-		body, err := fetchAPI(apiURL)
-		if err != nil {
-			if page == 1 {
-				return nil, fmt.Errorf("animepahe: episodes failed: %w", err)
+	var lastErr error
+	for _, base := range animePaheBaseCandidates() {
+		all = all[:0]
+		for page := 1; ; page++ {
+			apiURL := fmt.Sprintf("%s/api?m=release&id=%s&sort=episode_asc&page=%d", base, animeID, page)
+			body, err := fetchAPIWithBrowserFallback(apiURL)
+			if err != nil {
+				lastErr = err
+				if page == 1 {
+					break
+				}
+				break
 			}
-			break
+
+			var resp releaseResponse
+			if err := json.Unmarshal([]byte(body), &resp); err != nil {
+				lastErr = err
+				break
+			}
+
+			for _, item := range resp.Data {
+				all = append(all, extensions.Episode{
+					ID:        animeID + "/" + item.Session,
+					Number:    item.Episode,
+					Title:     fmt.Sprintf("Episode %g", item.Episode),
+					Thumbnail: item.Snapshot,
+				})
+			}
+
+			if resp.CurrentPage >= resp.LastPage || len(resp.Data) == 0 {
+				break
+			}
 		}
 
-		var resp releaseResponse
-		if err := json.Unmarshal([]byte(body), &resp); err != nil {
-			break
-		}
-
-		for _, item := range resp.Data {
-			all = append(all, extensions.Episode{
-				ID:        animeID + "/" + item.Session,
-				Number:    item.Episode,
-				Title:     fmt.Sprintf("Episode %g", item.Episode),
-				Thumbnail: item.Snapshot,
-			})
-		}
-
-		if resp.CurrentPage >= resp.LastPage || len(resp.Data) == 0 {
-			break
+		if len(all) > 0 {
+			rememberAnimePaheBase(base)
+			return all, nil
 		}
 	}
-
-	return all, nil
+	if lastErr == nil {
+		lastErr = fmt.Errorf("animepahe: no episodes found")
+	}
+	return nil, fmt.Errorf("animepahe: episodes failed: %w", lastErr)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,38 +214,48 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 	animeSession := episodeID[:idx]
 	epSession := episodeID[idx+1:]
 
-	playURL := fmt.Sprintf("%s/play/%s/%s", baseURL, animeSession, epSession)
-	body, err := fetchPage(playURL, baseURL)
-	if err != nil {
-		return nil, fmt.Errorf("animepahe: play page failed: %w", err)
-	}
-
-	kwikEntries := extractKwikURLs(body)
-	if len(kwikEntries) == 0 {
-		return nil, fmt.Errorf("animepahe: no embeds found on play page")
-	}
-
-	var sources []extensions.StreamSource
-	for _, ke := range kwikEntries {
-		m3u8, qual := resolveKwik(ke.url, playURL)
-		if m3u8 == "" {
+	var lastErr error
+	for _, base := range animePaheBaseCandidates() {
+		playURL := fmt.Sprintf("%s/play/%s/%s", base, animeSession, epSession)
+		body, err := fetchPageWithBrowserFallback(playURL, base)
+		if err != nil {
+			lastErr = err
 			continue
 		}
-		if qual == "" {
-			qual = ke.quality
-		}
-		sources = append(sources, extensions.StreamSource{
-			URL:      m3u8,
-			Quality:  qual,
-			Language: extensions.LangEnglish,
-			Referer:  "https://kwik.cx/",
-		})
-	}
 
-	if len(sources) == 0 {
-		return nil, fmt.Errorf("animepahe: all kwik streams failed to resolve")
+		kwikEntries := extractKwikURLs(body)
+		if len(kwikEntries) == 0 {
+			lastErr = fmt.Errorf("animepahe: no embeds found on play page")
+			continue
+		}
+
+		var sources []extensions.StreamSource
+		for _, ke := range kwikEntries {
+			m3u8, qual := resolveKwik(ke.url, playURL)
+			if m3u8 == "" {
+				continue
+			}
+			if qual == "" {
+				qual = ke.quality
+			}
+			sources = append(sources, extensions.StreamSource{
+				URL:      m3u8,
+				Quality:  qual,
+				Language: extensions.LangEnglish,
+				Referer:  streamRefererForAnimePahe(ke.url, m3u8, playURL),
+			})
+		}
+
+		if len(sources) > 0 {
+			rememberAnimePaheBase(base)
+			return sources, nil
+		}
+		lastErr = fmt.Errorf("animepahe: all kwik streams failed to resolve")
 	}
-	return sources, nil
+	if lastErr == nil {
+		lastErr = fmt.Errorf("animepahe: all mirrors failed")
+	}
+	return nil, lastErr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -183,12 +270,25 @@ type kwikEntry struct {
 // cleanQualityLabel extracts the resolution from quality labels like
 // "FLE &middot; 1080p" or "SubsPlease · 720p" → "1080p" / "720p"
 func cleanQualityLabel(raw string) string {
+	raw = html.UnescapeString(raw)
 	// Extract NNNp pattern
 	re := regexp.MustCompile(`(\d{3,4}p)`)
 	if m := re.FindString(raw); m != "" {
 		return m
 	}
 	return strings.TrimSpace(raw)
+}
+
+func streamRefererForAnimePahe(embedURL, streamURL, playURL string) string {
+	if embedURL != "" {
+		return embedURL
+	}
+	if streamURL != "" {
+		if parsed, err := neturl.Parse(streamURL); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+			return fmt.Sprintf("%s://%s/", parsed.Scheme, parsed.Host)
+		}
+	}
+	return playURL
 }
 
 // extractKwikURLs finds all kwik embed links in the AnimePahe play page.
@@ -354,7 +454,7 @@ func parseBaseN(s string, base int) int {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func fetchAPI(rawURL string) (string, error) {
-	return fetchWithCookies(rawURL, baseURL, map[string]string{
+	return fetchWithCookies(rawURL, animePaheOrigin(rawURL), map[string]string{
 		"Accept":           "application/json, */*;q=0.9",
 		"X-Requested-With": "XMLHttpRequest",
 	}, true)
@@ -367,47 +467,157 @@ func fetchPage(rawURL, referer string) (string, error) {
 	}, true)
 }
 
+func fetchAPIWithBrowserFallback(rawURL string) (string, error) {
+	body, err := fetchAPI(rawURL)
+	if err == nil && !animePaheBlockedBody(body) {
+		return body, nil
+	}
+	browserBody, browserErr := browserFetch(rawURL, "application/json, */*;q=0.9", true)
+	if browserErr == nil && !animePaheBlockedBody(browserBody) {
+		return browserBody, nil
+	}
+	if err != nil {
+		if browserErr != nil {
+			return "", fmt.Errorf("%w; browser fallback failed: %v", err, browserErr)
+		}
+		return "", err
+	}
+	if browserErr != nil {
+		return "", browserErr
+	}
+	return "", fmt.Errorf("animepahe: blocked response")
+}
+
+func fetchPageWithBrowserFallback(rawURL, referer string) (string, error) {
+	body, err := fetchPage(rawURL, referer)
+	if err == nil && !animePaheBlockedBody(body) {
+		return body, nil
+	}
+	browserBody, browserErr := browserFetch(rawURL, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", false)
+	if browserErr == nil && !animePaheBlockedBody(browserBody) {
+		return browserBody, nil
+	}
+	if err != nil {
+		if browserErr != nil {
+			return "", fmt.Errorf("%w; browser fallback failed: %v", err, browserErr)
+		}
+		return "", err
+	}
+	if browserErr != nil {
+		return "", browserErr
+	}
+	return "", fmt.Errorf("animepahe: blocked page response")
+}
+
 func fetchWithCookies(rawURL, referer string, extraHeaders map[string]string, retryOnBlock bool) (string, error) {
-	cookies, err := getValidCookies()
-	if err != nil {
-		return "", fmt.Errorf("animepahe: DDoS-Guard bypass failed: %w", err)
+	body, status, err := doAnimePaheRequest(rawURL, referer, extraHeaders, "")
+	if err == nil && status < 400 && !animePaheBlockedBody(body) {
+		return body, nil
 	}
 
-	req, err := http.NewRequest("GET", rawURL, nil)
-	if err != nil {
-		return "", err
+	cookies, cookieErr := getValidCookies(animePaheOrigin(rawURL))
+	if cookieErr != nil {
+		if err != nil {
+			return "", err
+		}
+		return "", fmt.Errorf("animepahe: DDoS-Guard bypass failed: %w", cookieErr)
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", referer)
-	for k, v := range extraHeaders {
-		req.Header.Set(k, v)
-	}
+
+	cookieParts := make([]string, 0, len(cookies))
 	for _, c := range cookies {
-		req.AddCookie(c)
+		cookieParts = append(cookieParts, c.Name+"="+c.Value)
 	}
+	cookieHeader := strings.Join(cookieParts, "; ")
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
+	body, status, err = doAnimePaheRequest(rawURL, referer, extraHeaders, cookieHeader)
 	if err != nil {
 		return "", err
 	}
 
 	// DDoS-Guard blocked us again — invalidate cookies and retry once
-	if resp.StatusCode == 403 && retryOnBlock {
-		fmt.Println("[AnimePahe] Got 403, refreshing DDoS-Guard cookies...")
+	if (status == 403 || animePaheBlockedBody(body)) && retryOnBlock {
+		log.Warn().Msg("got blocked response, refreshing DDoS-Guard cookies")
 		invalidateCookies()
 		return fetchWithCookies(rawURL, referer, extraHeaders, false)
 	}
 
-	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	if status >= 400 {
+		return "", fmt.Errorf("HTTP %d", status)
 	}
-	return string(body), nil
+	return body, nil
+}
+
+func doAnimePaheRequest(rawURL, referer string, extraHeaders map[string]string, cookieHeader string) (string, int, error) {
+	oh := azuretls.OrderedHeaders{
+		{"Referer", referer},
+	}
+	for k, v := range extraHeaders {
+		oh = append(oh, []string{k, v})
+	}
+	if cookieHeader != "" {
+		oh = append(oh, []string{"Cookie", cookieHeader})
+	}
+
+	req := &azuretls.Request{
+		Url:            rawURL,
+		Method:         "GET",
+		OrderedHeaders: oh,
+	}
+
+	resp, err := httpSession.Do(req)
+	if err != nil {
+		return "", 0, err
+	}
+	return string(resp.Body), resp.StatusCode, nil
+}
+
+func animePaheBlockedBody(body string) bool {
+	value := strings.ToLower(body)
+	return strings.Contains(value, "ddos-guard") ||
+		strings.Contains(value, "enable javascript") ||
+		strings.Contains(value, "checking your browser") ||
+		strings.Contains(value, "access denied")
+}
+
+func animePaheOrigin(rawURL string) string {
+	parsed, err := neturl.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return baseURL
+	}
+	return parsed.Scheme + "://" + parsed.Host
+}
+
+var (
+	animePaheBaseMu     sync.RWMutex
+	animePaheActiveBase = baseURL
+)
+
+func animePaheBaseCandidates() []string {
+	animePaheBaseMu.RLock()
+	active := animePaheActiveBase
+	animePaheBaseMu.RUnlock()
+
+	out := []string{}
+	seen := map[string]bool{}
+	for _, base := range append([]string{active}, animePaheMirrorBases...) {
+		base = strings.TrimSpace(base)
+		if base == "" || seen[base] {
+			continue
+		}
+		seen[base] = true
+		out = append(out, base)
+	}
+	return out
+}
+
+func rememberAnimePaheBase(base string) {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return
+	}
+	animePaheBaseMu.Lock()
+	animePaheActiveBase = base
+	animePaheBaseMu.Unlock()
 }
 
 func urlEncode(s string) string {

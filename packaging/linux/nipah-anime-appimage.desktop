@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Nipah! Anime
+Comment=Anime streaming and manga reader desktop client
+Exec=AppRun
+Icon=nipah-anime
+Terminal=false
+Categories=AudioVideo;Video;Viewer;
+StartupNotify=true

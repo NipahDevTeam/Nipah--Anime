@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"io"
-	"net/http"
 	"net/url"
 	"regexp"
 	"sort"
@@ -16,9 +14,15 @@ import (
 	"sync"
 	"time"
 
+	azuretls "github.com/Noooste/azuretls-client"
+
 	"miruro/backend/extensions"
 	"miruro/backend/extensions/animeflv"
+	"miruro/backend/httpclient"
+	"miruro/backend/logger"
 )
+
+var log = logger.For("JKAnime")
 
 const baseURL = "https://jkanime.net"
 
@@ -651,7 +655,9 @@ func (e *Extension) GetEpisodes(animeID string) ([]extensions.Episode, error) {
 	if idx := strings.Index(body, `<span>Episodios:</span>`); idx != -1 {
 		chunk := body[idx+len(`<span>Episodios:</span>`):]
 		chunk = strings.TrimSpace(chunk)
-		fmt.Sscanf(chunk, "%d", &total)
+		if _, err := fmt.Sscanf(chunk, "%d", &total); err != nil {
+			total = 0
+		}
 	}
 
 	if total == 0 {
@@ -726,7 +732,9 @@ func (e *Extension) getEpisodesFromPageHTML(slug, body string) []extensions.Epis
 					j--
 				}
 				var num int
-				fmt.Sscanf(chunk[j:i+1], "%d", &num)
+				if _, err := fmt.Sscanf(chunk[j:i+1], "%d", &num); err != nil {
+					num = 0
+				}
 				if num > maxEp && num < 2000 {
 					maxEp = num
 					latestFromMarker = num
@@ -788,7 +796,9 @@ func getEpisodesFromLatestMarker(slug, body string) []extensions.Episode {
 	}
 
 	var latest int
-	fmt.Sscanf(match[1], "%d", &latest)
+	if _, err := fmt.Sscanf(match[1], "%d", &latest); err != nil {
+		latest = 0
+	}
 	if latest <= 0 || latest >= 2000 {
 		return nil
 	}
@@ -823,7 +833,7 @@ func (e *Extension) getEpisodeCount(slug string) (int, error) {
 				return resp.Count, nil
 			}
 			var total int
-			if fmt.Sscanf(resp.Total, "%d", &total); total > 0 {
+			if _, err := fmt.Sscanf(resp.Total, "%d", &total); err == nil && total > 0 {
 				return total, nil
 			}
 		}
@@ -1451,39 +1461,35 @@ func fetchFullBrowser(url string) (string, error) {
 	})
 }
 
+var jkSession = httpclient.NewSession(12)
+
 func fetchFullBrowserWithFinalURL(rawURL string) (string, string, error) {
-	req, err := http.NewRequest("GET", rawURL, nil)
-	if err != nil {
-		return "", "", err
+	req := &azuretls.Request{
+		Url:    rawURL,
+		Method: "GET",
+		OrderedHeaders: azuretls.OrderedHeaders{
+			{"Referer", baseURL},
+			{"Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
+			{"Accept-Language", "es-419,es;q=0.9"},
+			{"Upgrade-Insecure-Requests", "1"},
+			{"Sec-Fetch-Dest", "document"},
+			{"Sec-Fetch-Mode", "navigate"},
+			{"Sec-Fetch-Site", "none"},
+			{"Cache-Control", "max-age=0"},
+		},
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", baseURL)
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "es-419,es;q=0.9")
-	req.Header.Set("Upgrade-Insecure-Requests", "1")
-	req.Header.Set("Sec-Fetch-Dest", "document")
-	req.Header.Set("Sec-Fetch-Mode", "navigate")
-	req.Header.Set("Sec-Fetch-Site", "none")
-	req.Header.Set("Cache-Control", "max-age=0")
 
-	client := &http.Client{Timeout: 12 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "", err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
+	resp, err := jkSession.Do(req)
 	if err != nil {
 		return "", "", err
 	}
 
-	finalURL := rawURL
-	if resp.Request != nil && resp.Request.URL != nil {
-		finalURL = resp.Request.URL.String()
+	finalURL := resp.Url
+	if finalURL == "" {
+		finalURL = rawURL
 	}
 
-	return string(body), finalURL, nil
+	return string(resp.Body), finalURL, nil
 }
 
 func urlEncode(s string) string {

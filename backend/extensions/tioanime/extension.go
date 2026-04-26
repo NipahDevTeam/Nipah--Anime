@@ -10,7 +10,10 @@ import (
 
 	"miruro/backend/extensions"
 	"miruro/backend/extensions/animeflv"
+	"miruro/backend/logger"
 )
+
+var log = logger.For("TioAnime")
 
 const baseURL = "https://tioanime.com"
 
@@ -34,7 +37,7 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 	body, err := fetchPage(apiURL, baseURL)
 	if err != nil {
 		// Return empty rather than error — don't block other sources
-		fmt.Printf("[TioAnime] search failed: %v\n", err)
+		log.Error().Err(err).Msg("Search failed")
 		return nil, nil
 	}
 	results := parseResults(body)
@@ -62,9 +65,9 @@ func parseResults(html string) []extensions.SearchResult {
 					cover = baseURL + cover
 				}
 				out = append(out, extensions.SearchResult{
-					ID:       "/anime/" + item.Slug,
-					Title:    item.Title,
-					CoverURL: cover,
+					ID:        "/anime/" + item.Slug,
+					Title:     item.Title,
+					CoverURL:  cover,
 					Languages: []extensions.Language{extensions.LangSpanish},
 				})
 			}
@@ -136,7 +139,9 @@ func parseEpisodes(html, animeSlug string) []extensions.Episode {
 	countRe := regexp.MustCompile(`<span[^>]*class="[^"]*chapters[^"]*"[^>]*>(\d+)`)
 	total := 0
 	if m := countRe.FindStringSubmatch(html); len(m) >= 2 {
-		fmt.Sscanf(m[1], "%d", &total)
+		if _, err := fmt.Sscanf(m[1], "%d", &total); err != nil {
+			total = 0
+		}
 	}
 	if total == 0 {
 		return nil
@@ -187,8 +192,8 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 }
 
 // TioAnime stores videos as: var videos = [["server","url"],...]
-var videosRe  = regexp.MustCompile(`var videos\s*=\s*(\[[\s\S]+?\]);`)
-var iframeRe  = regexp.MustCompile(`<iframe[^>]+src="(https?://[^"]+)"`)
+var videosRe = regexp.MustCompile(`var videos\s*=\s*(\[[\s\S]+?\]);`)
+var iframeRe = regexp.MustCompile(`<iframe[^>]+src="(https?://[^"]+)"`)
 
 func extractEmbeds(html string) []string {
 	var out []string

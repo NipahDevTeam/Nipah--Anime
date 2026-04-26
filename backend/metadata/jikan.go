@@ -3,7 +3,6 @@ package metadata
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"time"
 )
 
@@ -85,28 +84,24 @@ func (m *Manager) FetchMALUserAnimeList(username string) ([]JikanAnimeEntry, err
 	return allEntries, nil
 }
 
-func (m *Manager) fetchJikanPage(url string) ([]JikanAnimeEntry, bool, error) {
-	resp, err := m.client.Get(url)
+func (m *Manager) fetchJikanPage(reqURL string) ([]JikanAnimeEntry, bool, error) {
+	resp, err := httpSession.Get(reqURL)
 	if err != nil {
 		return nil, false, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode == 404 {
 		return nil, false, fmt.Errorf("usuario no encontrado")
 	}
 	if resp.StatusCode == 429 {
 		time.Sleep(2 * time.Second)
-		return m.fetchJikanPage(url)
+		return m.fetchJikanPage(reqURL)
 	}
 	if resp.StatusCode != 200 {
 		return nil, false, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, false, fmt.Errorf("read body: %w", err)
-	}
+	body := resp.Body
 
 	var result jikanUserListResponse
 	if err := json.Unmarshal(body, &result); err != nil {

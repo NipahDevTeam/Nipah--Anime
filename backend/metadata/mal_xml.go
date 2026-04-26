@@ -7,7 +7,11 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"miruro/backend/logger"
 )
+
+var log = logger.For("AniListEnrich")
 
 // MAL XML export format
 type malExport struct {
@@ -142,7 +146,7 @@ func (m *Manager) EnrichEntriesWithAniList(entries []JikanAnimeEntry) []JikanAni
 
 		body, err := m.postJSON(anilistEndpoint, payload)
 		if err != nil {
-			fmt.Printf("[AniList Enrich] Batch request failed: %v\n", err)
+			log.Error().Err(err).Msg("Batch request failed")
 			time.Sleep(1 * time.Second)
 			continue
 		}
@@ -170,7 +174,7 @@ func (m *Manager) EnrichEntriesWithAniList(entries []JikanAnimeEntry) []JikanAni
 		}
 
 		if err := json.Unmarshal(body, &resp); err != nil {
-			fmt.Printf("[AniList Enrich] Parse failed: %v\n", err)
+			log.Error().Err(err).Msg("Parse failed")
 			time.Sleep(1 * time.Second)
 			continue
 		}
@@ -211,8 +215,7 @@ func (m *Manager) EnrichEntriesWithAniList(entries []JikanAnimeEntry) []JikanAni
 			found++
 		}
 
-		fmt.Printf("[AniList Enrich] Batch %d-%d: %d/%d covers found\n",
-			start+1, end, found, len(batch))
+		log.Info().Int("from", start+1).Int("to", end).Int("found", found).Int("total", len(batch)).Msg("Batch covers found")
 
 		// Rate limit: AniList allows 90 req/min, be conservative
 		time.Sleep(800 * time.Millisecond)

@@ -5,21 +5,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"io"
-	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"miruro/backend/extensions"
-	"miruro/backend/extensions/animeflv"
+	"miruro/backend/extensions/sourceaccess"
 )
 
-const baseURL = "https://manga-oni.com"
+const (
+	sourceID           = "mangaoni-es"
+	baseURL            = "https://manga-oni.com"
+	searchBootstrapTTL = 10 * time.Minute
+	searchCacheTTL     = 10 * time.Minute
+	searchMissTTL      = 30 * time.Second
+	chapterCacheTTL    = 20 * time.Minute
+	chapterMissTTL     = 30 * time.Second
+	pageCacheTTL       = 30 * time.Minute
+)
 
 var (
 	csrfTokenRe = regexp.MustCompile(`<meta name="csrf-token" content="([^"]+)"`)
@@ -29,9 +36,51 @@ var (
 
 type Extension struct{}
 
+type cachedToken struct {
+	token   string
+	expires time.Time
+}
+
+type cachedSearch struct {
+	results []extensions.SearchResult
+	expires time.Time
+}
+
+type cachedChapters struct {
+	chapters []extensions.Chapter
+	expires  time.Time
+}
+
+type cachedPages struct {
+	pages   []extensions.PageSource
+	expires time.Time
+}
+
+var (
+	tokenMu        sync.Mutex
+	searchToken    cachedToken
+	searchCacheMu  sync.Mutex
+	searchCache    = map[string]cachedSearch{}
+	chapterCacheMu sync.Mutex
+	chapterCache   = map[string]cachedChapters{}
+	pageCacheMu    sync.Mutex
+	pageCache      = map[string]cachedPages{}
+)
+
+func init() {
+	sourceaccess.RegisterProfile(sourceaccess.SourceAccessProfile{
+		SourceID:             sourceID,
+		BaseURL:              baseURL,
+		WarmupURL:            baseURL + "/",
+		DefaultReferer:       baseURL + "/",
+		CookieDomains:        []string{"manga-oni.com"},
+		ChallengeStatusCodes: []int{403},
+	})
+}
+
 func New() *Extension { return &Extension{} }
 
-func (e *Extension) ID() string   { return "mangaoni-es" }
+func (e *Extension) ID() string   { return sourceID }
 func (e *Extension) Name() string { return "MangaOni" }
 func (e *Extension) Languages() []extensions.Language {
 	return []extensions.Language{extensions.LangSpanish}
@@ -43,7 +92,11 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 		return []extensions.SearchResult{}, nil
 	}
 
-	token, client, err := newSearchClient()
+	if cached, ok := readSearchCache(query); ok {
+		return cached, nil
+	}
+
+	token, err := cachedSearchTokenValue()
 	if err != nil {
 		return nil, fmt.Errorf("mangaoni search init: %w", err)
 	}
@@ -52,30 +105,20 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 	form.Set("buscar", query)
 	form.Set("_token", token)
 
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/buscar", strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", browserUA)
-	req.Header.Set("Referer", baseURL+"/")
-	req.Header.Set("Origin", baseURL)
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("Accept-Language", "es-419,es;q=0.9,en;q=0.8")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-
-	resp, err := client.Do(req)
+	body, err := sourceaccess.FetchJSON(sourceID, baseURL+"/buscar", sourceaccess.RequestOptions{
+		Method:  "POST",
+		Body:    []byte(form.Encode()),
+		Referer: baseURL + "/",
+		Headers: map[string]string{
+			"Origin":           baseURL,
+			"Accept":           "application/json, text/plain, */*",
+			"Accept-Language":  "es-419,es;q=0.9,en;q=0.8",
+			"Content-Type":     "application/x-www-form-urlencoded; charset=UTF-8",
+			"X-Requested-With": "XMLHttpRequest",
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("mangaoni search request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("mangaoni search http %d", resp.StatusCode)
 	}
 
 	var payload struct {
@@ -107,17 +150,25 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 			Languages:   []extensions.Language{extensions.LangSpanish},
 		})
 	}
+
+	storeSearchCache(query, results)
 	return results, nil
 }
 
 func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]extensions.Chapter, error) {
-	body, err := fetchPage(normalizeMangaURL(mangaID), baseURL+"/")
+	normalizedID := normalizeMangaURL(mangaID)
+	if cached, ok := readChapterCache(normalizedID); ok {
+		return cached, nil
+	}
+
+	body, err := fetchPage(normalizedID, baseURL+"/")
 	if err != nil {
 		return nil, fmt.Errorf("mangaoni chapters: %w", err)
 	}
 
 	matches := chapterRe.FindAllStringSubmatch(body, -1)
 	if len(matches) == 0 {
+		storeChapterCache(normalizedID, nil)
 		return nil, fmt.Errorf("mangaoni: no chapters found")
 	}
 
@@ -125,7 +176,7 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 	chapters := make([]extensions.Chapter, 0, len(matches))
 	for _, match := range matches {
 		chapterURL := normalizeChapterURL(match[1])
-		if seen[chapterURL] {
+		if chapterURL == "" || seen[chapterURL] {
 			continue
 		}
 		seen[chapterURL] = true
@@ -133,7 +184,7 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 		number := parseChapterNumber(match[2])
 		title := cleanText(match[4])
 		if title == "" {
-			title = fmt.Sprintf("Capítulo %s", strings.TrimSpace(match[2]))
+			title = fmt.Sprintf("CapÃ­tulo %s", strings.TrimSpace(match[2]))
 		}
 
 		chapters = append(chapters, extensions.Chapter{
@@ -152,11 +203,16 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 		return chapters[i].Number < chapters[j].Number
 	})
 
+	storeChapterCache(normalizedID, chapters)
 	return chapters, nil
 }
 
 func (e *Extension) GetPages(chapterID string) ([]extensions.PageSource, error) {
 	chapterURL := normalizeChapterURL(chapterID)
+	if cached, ok := readPageCache(chapterURL); ok {
+		return cached, nil
+	}
+
 	body, err := fetchPage(chapterURL, chapterURL)
 	if err != nil {
 		return nil, fmt.Errorf("mangaoni pages: %w", err)
@@ -200,60 +256,49 @@ func (e *Extension) GetPages(chapterID string) ([]extensions.PageSource, error) 
 	if len(pages) == 0 {
 		return nil, fmt.Errorf("mangaoni: no valid pages found")
 	}
+
+	storePageCache(chapterURL, pages)
 	return pages, nil
 }
 
-const browserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+func cachedSearchTokenValue() (string, error) {
+	tokenMu.Lock()
+	cached := searchToken
+	tokenMu.Unlock()
 
-func newSearchClient() (string, *http.Client, error) {
-	jar, err := cookiejar.New(nil)
+	if cached.token != "" && time.Now().Before(cached.expires) {
+		return cached.token, nil
+	}
+
+	body, err := fetchPage(baseURL+"/", baseURL+"/")
 	if err != nil {
-		return "", nil, err
-	}
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-		Jar:     jar,
+		return "", err
 	}
 
-	req, err := http.NewRequest(http.MethodGet, baseURL+"/", nil)
-	if err != nil {
-		return "", nil, err
-	}
-	req.Header.Set("User-Agent", browserUA)
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "es-419,es;q=0.9,en;q=0.8")
-	req.Header.Set("Referer", baseURL+"/")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", nil, fmt.Errorf("mangaoni home http %d", resp.StatusCode)
-	}
-
-	match := csrfTokenRe.FindStringSubmatch(string(body))
+	match := csrfTokenRe.FindStringSubmatch(body)
 	if len(match) < 2 {
-		return "", nil, fmt.Errorf("mangaoni csrf token not found")
+		return "", fmt.Errorf("mangaoni csrf token not found")
 	}
-	return match[1], client, nil
+
+	token := strings.TrimSpace(match[1])
+	tokenMu.Lock()
+	searchToken = cachedToken{token: token, expires: time.Now().Add(searchBootstrapTTL)}
+	tokenMu.Unlock()
+	return token, nil
 }
 
 func fetchPage(pageURL, referer string) (string, error) {
-	return animeflv.FetchPageWithHeaders(pageURL, referer, map[string]string{
-		"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-		"Accept-Language":           "es-419,es;q=0.9,en;q=0.8",
-		"Upgrade-Insecure-Requests": "1",
-		"Sec-Fetch-Dest":            "document",
-		"Sec-Fetch-Mode":            "navigate",
-		"Sec-Fetch-Site":            "same-origin",
-		"Cache-Control":             "max-age=0",
+	return sourceaccess.FetchHTML(sourceID, pageURL, sourceaccess.RequestOptions{
+		Referer: referer,
+		Headers: map[string]string{
+			"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+			"Accept-Language":           "es-419,es;q=0.9,en;q=0.8",
+			"Upgrade-Insecure-Requests": "1",
+			"Sec-Fetch-Dest":            "document",
+			"Sec-Fetch-Mode":            "navigate",
+			"Sec-Fetch-Site":            "same-origin",
+			"Cache-Control":             "max-age=0",
+		},
 	})
 }
 
@@ -339,4 +384,104 @@ func joinURL(dir, file string) string {
 		return dir + strings.TrimLeft(file, "/")
 	}
 	return dir + "/" + strings.TrimLeft(file, "/")
+}
+
+func readSearchCache(query string) ([]extensions.SearchResult, bool) {
+	key := strings.ToLower(strings.TrimSpace(query))
+	searchCacheMu.Lock()
+	defer searchCacheMu.Unlock()
+
+	entry, ok := searchCache[key]
+	if !ok || time.Now().After(entry.expires) {
+		delete(searchCache, key)
+		return nil, false
+	}
+	return cloneSearchResults(entry.results), true
+}
+
+func storeSearchCache(query string, results []extensions.SearchResult) {
+	key := strings.ToLower(strings.TrimSpace(query))
+	ttl := searchCacheTTL
+	if len(results) == 0 {
+		ttl = searchMissTTL
+	}
+	searchCacheMu.Lock()
+	searchCache[key] = cachedSearch{
+		results: cloneSearchResults(results),
+		expires: time.Now().Add(ttl),
+	}
+	searchCacheMu.Unlock()
+}
+
+func readChapterCache(mangaID string) ([]extensions.Chapter, bool) {
+	chapterCacheMu.Lock()
+	defer chapterCacheMu.Unlock()
+
+	entry, ok := chapterCache[mangaID]
+	if !ok || time.Now().After(entry.expires) {
+		delete(chapterCache, mangaID)
+		return nil, false
+	}
+	return cloneChapters(entry.chapters), true
+}
+
+func storeChapterCache(mangaID string, chapters []extensions.Chapter) {
+	ttl := chapterCacheTTL
+	if len(chapters) == 0 {
+		ttl = chapterMissTTL
+	}
+	chapterCacheMu.Lock()
+	chapterCache[mangaID] = cachedChapters{
+		chapters: cloneChapters(chapters),
+		expires:  time.Now().Add(ttl),
+	}
+	chapterCacheMu.Unlock()
+}
+
+func readPageCache(chapterURL string) ([]extensions.PageSource, bool) {
+	pageCacheMu.Lock()
+	defer pageCacheMu.Unlock()
+
+	entry, ok := pageCache[chapterURL]
+	if !ok || time.Now().After(entry.expires) {
+		delete(pageCache, chapterURL)
+		return nil, false
+	}
+	return clonePages(entry.pages), true
+}
+
+func storePageCache(chapterURL string, pages []extensions.PageSource) {
+	pageCacheMu.Lock()
+	pageCache[chapterURL] = cachedPages{
+		pages:   clonePages(pages),
+		expires: time.Now().Add(pageCacheTTL),
+	}
+	pageCacheMu.Unlock()
+}
+
+func cloneSearchResults(values []extensions.SearchResult) []extensions.SearchResult {
+	if len(values) == 0 {
+		return []extensions.SearchResult{}
+	}
+	out := make([]extensions.SearchResult, len(values))
+	copy(out, values)
+	return out
+}
+
+func cloneChapters(values []extensions.Chapter) []extensions.Chapter {
+	if len(values) == 0 {
+		return []extensions.Chapter{}
+	}
+	out := make([]extensions.Chapter, len(values))
+	copy(out, values)
+	return out
+}
+
+func clonePages(values []extensions.PageSource) []extensions.PageSource {
+	if len(values) == 0 {
+		return []extensions.PageSource{}
+	}
+	out := make([]extensions.PageSource, len(values))
+	copy(out, values)
+	return out
 }

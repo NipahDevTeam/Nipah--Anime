@@ -126,6 +126,15 @@ const translations = {
     'Reanudar en': 'Reanudar en',
     'âŸ³ Reanudar': 'âŸ³ Reanudar',
     'En pÃ¡gina': 'En pÃ¡gina',
+    'update_section': 'Actualizaciones',
+    'update_checking': 'Buscando actualizaciones...',
+    'update_current': 'Estás al día',
+    'update_available': 'Nueva versión disponible',
+    'update_install': 'Instalar ahora',
+    'update_open_release': 'Ver en GitHub',
+    'update_check_again': 'Buscar de nuevo',
+    'update_changelog': 'Novedades',
+    'update_error': 'No se pudo verificar actualizaciones',
   },
   en: {
     'Inicio': 'Home',
@@ -251,13 +260,61 @@ const translations = {
     'Reanudar en': 'Resume at',
     'âŸ³ Reanudar': 'âŸ³ Resume',
     'En pÃ¡gina': 'On page',
+    'update_section': 'Updates',
+    'update_checking': 'Checking for updates...',
+    'update_current': 'You are up to date',
+    'update_available': 'New version available',
+    'update_install': 'Install now',
+    'update_open_release': 'View on GitHub',
+    'update_check_again': 'Check again',
+    'update_changelog': "What's new",
+    'update_error': 'Could not check for updates',
   },
 }
+
+function getSystemLanguage() {
+  if (typeof navigator === 'undefined') return 'en'
+  const value = `${navigator.language || ''}`.toLowerCase()
+  return value.startsWith('es') ? 'es' : 'en'
+}
+
+function looksMojibake(value) {
+  return typeof value === 'string' && /Ã|Â|â€|â†|Å/.test(value)
+}
+
+function repairText(value) {
+  if (typeof value !== 'string' || !looksMojibake(value)) return value
+  let repaired = value
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      const bytes = Uint8Array.from([...repaired].map((char) => char.charCodeAt(0) & 0xff))
+      const decoded = new TextDecoder('utf-8').decode(bytes)
+      if (!decoded || decoded === repaired) break
+      repaired = decoded
+    } catch {
+      break
+    }
+  }
+  return repaired
+}
+
+function normalizeTranslations(input) {
+  return Object.fromEntries(
+    Object.entries(input).map(([lang, entries]) => [
+      lang,
+      Object.fromEntries(
+        Object.entries(entries).map(([key, value]) => [repairText(key), repairText(value)])
+      ),
+    ])
+  )
+}
+
+const normalizedTranslations = normalizeTranslations(translations)
 
 const I18nContext = createContext({ t: (s) => s, lang: 'es', setLang: () => {} })
 
 export function I18nProvider({ children }) {
-  const [lang, setLangState] = useState('es')
+  const [lang, setLangState] = useState(getSystemLanguage())
 
   useEffect(() => {
     wails.getSettings().then((settings) => {
@@ -276,7 +333,12 @@ export function I18nProvider({ children }) {
   }, [])
 
   const t = useCallback((key) => {
-    return translations[lang]?.[key] ?? translations.es?.[key] ?? key
+    const normalizedKey = repairText(key)
+    return repairText(
+      normalizedTranslations[lang]?.[normalizedKey]
+      ?? normalizedTranslations.es?.[normalizedKey]
+      ?? normalizedKey
+    )
   }, [lang])
 
   return (

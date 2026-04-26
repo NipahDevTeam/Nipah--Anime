@@ -2,6 +2,7 @@
 import { wails } from '../lib/wails'
 import { toastSuccess, toastError } from '../components/ui/Toast'
 import { useI18n } from '../lib/i18n'
+import UpdateChecker from '../components/ui/UpdateChecker'
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Reusable setting row components
@@ -71,6 +72,7 @@ export default function Settings() {
   const [saving, setSaving]       = useState(false)
   const [mpvOk, setMpvOk]         = useState(null)
   const [libPaths, setLibPaths]   = useState([])
+  const [animeImportDir, setAnimeImportDir] = useState('')
   const [authStatus, setAuthStatus] = useState({ anilist: { logged_in: false }, mal: { logged_in: false } })
   const [authLoading, setAuthLoading] = useState('')
   const [syncing, setSyncing]     = useState('')
@@ -88,11 +90,15 @@ export default function Settings() {
   }, [])
 
   useEffect(() => {
-    Promise.all([wails.getSettings(), wails.isMPVAvailable(), wails.getLibraryPaths(), wails.getAuthStatus(), wails.getRemoteListSyncStatus()])
-      .then(([s, ok, paths, auth, remoteStatus]) => {
-        setSettings(s)
+    Promise.all([wails.getSettings(), wails.isMPVAvailable(), wails.getLibraryPaths(), wails.getAnimeImportDir(), wails.getAuthStatus(), wails.getRemoteListSyncStatus()])
+      .then(([s, ok, paths, importDir, auth, remoteStatus]) => {
+        setSettings({
+          ...s,
+          player: 'mpv',
+        })
         setMpvOk(ok)
         setLibPaths(paths ?? [])
+        setAnimeImportDir(importDir ?? '')
         setAuthStatus(auth ?? { anilist: { logged_in: false }, mal: { logged_in: false } })
         setRemoteSyncStatus(remoteStatus ?? { pending_count: 0, failed_count: 0, by_provider: {}, errors: [] })
       })
@@ -109,6 +115,34 @@ export default function Settings() {
       toastError(`${isEnglish ? 'Could not remove it' : 'No se pudo eliminar'}: ${e?.message ?? e}`)
     }
   }, [isEnglish])
+
+  const handleChooseImportDir = useCallback(async () => {
+    try {
+      const path = await wails.pickFolder()
+      if (!path) return
+      await wails.setAnimeImportDir(path)
+      setAnimeImportDir(path)
+      setSettings((prev) => (prev ? { ...prev, anime_import_path: path } : prev))
+      setLibPaths(await wails.getLibraryPaths())
+      toastSuccess(isEnglish ? 'Anime import folder updated' : 'Carpeta de importación actualizada')
+    } catch (e) {
+      toastError(`${isEnglish ? 'Could not update the import folder' : 'No se pudo actualizar la carpeta de importación'}: ${e?.message ?? e}`)
+    }
+  }, [isEnglish])
+
+  const handleScanImportDir = useCallback(async () => {
+    if (!animeImportDir) return
+    try {
+      const result = await wails.scanLibrary(animeImportDir)
+      toastSuccess(
+        isEnglish
+          ? `Import folder scanned: ${result?.anime_found ?? 0} anime, ${result?.anime_episodes ?? 0} episodes`
+          : `Carpeta escaneada: ${result?.anime_found ?? 0} anime, ${result?.anime_episodes ?? 0} episodios`,
+      )
+    } catch (e) {
+      toastError(`${isEnglish ? 'Import scan failed' : 'Falló el escaneo de importación'}: ${e?.message ?? e}`)
+    }
+  }, [animeImportDir, isEnglish])
 
   const set = useCallback((key, value) => {
     setSettings(prev => ({ ...prev, [key]: String(value) }))
@@ -153,31 +187,31 @@ export default function Settings() {
     <div className="fade-in settings-page">
 
       {/* â”€â”€ Idioma â”€â”€ */}
-      <SectionHeader title={t("Idioma y regiÃ³n")} />
+      <SectionHeader title={t("Idioma y región")} />
       <div className="setting-group">
         <SettingRow
-          label={t("Idioma y regiÃ³n")}
-          description={isEnglish ? 'Language used throughout the app' : 'Idioma usado en la aplicaciÃ³n'}
+          label={t("Idioma y región")}
+          description={isEnglish ? 'Language used throughout the app' : 'Idioma usado en la aplicación'}
         >
           <SettingSelect
             value={settings.language ?? 'es'}
             onChange={v => set('language', v)}
             options={[
-              { value: 'es', label: 'EspaÃ±ol' },              { value: 'en', label: 'English' },
+              { value: 'es', label: 'Español' },              { value: 'en', label: 'English' },
             ]}
           />
         </SettingRow>
 
         <SettingRow
           label={isEnglish ? 'Preferred audio' : 'Audio preferido'}
-          description={isEnglish ? 'Default audio preference for online playback' : 'Sub-espaÃ±ol o doblaje latino por defecto'}
+          description={isEnglish ? 'Default audio preference for online playback' : 'Subtítulos o doblado por defecto'}
         >
           <SettingSelect
             value={settings.preferred_audio ?? 'sub'}
             onChange={v => set('preferred_audio', v)}
             options={[
-              { value: 'sub', label: isEnglish ? 'Subtitles' : 'Sub EspaÃ±ol' },
-              { value: 'dub', label: isEnglish ? 'Latin dub' : 'Doblaje Latino' },
+              { value: 'sub', label: isEnglish ? 'Subtitles' : 'Subtítulos' },
+              { value: 'dub', label: isEnglish ? 'Dubbed' : 'Doblado' },
             ]}
           />
         </SettingRow>
@@ -185,8 +219,8 @@ export default function Settings() {
 
       {/* â”€â”€ ReproducciÃ³n â”€â”€ */}
       <SectionHeader
-        title={t("ReproducciÃ³n")}
-        subtitle={isEnglish ? 'MPV and video quality settings' : 'ConfiguraciÃ³n de MPV y calidad de video'}
+        title={t("Reproducción")}
+        subtitle={isEnglish ? 'MPV and video quality settings' : 'Configuración de MPV y calidad de video'}
       />
       <div className="setting-group">
         <SettingRow
@@ -203,14 +237,14 @@ export default function Settings() {
           label={isEnglish ? 'MPV path' : 'Ruta de MPV'}
           description={
             mpvOk
-              ? (isEnglish ? 'MPV was detected automatically. Change it only if you use a custom install.' : 'MPV detectado automÃ¡ticamente. Solo cambia si tienes una instalaciÃ³n personalizada.')
-              : (isEnglish ? 'MPV was not found. Download it from mpv.io or enter the full executable path.' : 'MPV no encontrado. DescÃ¡rgalo desde mpv.io o especifica la ruta completa al ejecutable.')
+              ? (isEnglish ? 'MPV was detected automatically. Change it only if you use a custom install.' : 'MPV detectado automáticamente. Solo cambia si tienes una instalación personalizada.')
+              : (isEnglish ? 'MPV was not found. Download it from mpv.io or enter the full executable path.' : 'MPV no encontrado. Descárgalo desde mpv.io o especifica la ruta completa al ejecutable.')
           }
         >
           <SettingInput
             value={settings.mpv_path ?? ''}
             onChange={v => set('mpv_path', v)}
-            placeholder={isEnglish ? 'Leave empty for automatic detection' : 'Dejar vacÃ­o para detectar automÃ¡ticamente'}
+            placeholder={isEnglish ? 'Leave empty for automatic detection' : 'Dejar vacío para detectar automáticamente'}
           />
         </SettingRow>
 
@@ -218,21 +252,39 @@ export default function Settings() {
           <div className="setting-notice">
             {isEnglish ? (
               <>
-                <b>MPV is not installed or could not be found.</b> Without MPV, online mode will not work.
+                <b>MPV is not installed or could not be found.</b> The integrated player is currently a work in progress, so MPV remains required for online playback right now.
                 Download it from <a href="https://mpv.io" target="_blank" rel="noreferrer"
                   style={{ color: 'var(--accent)' }}>mpv.io</a> and install it normally.
                 On Windows, you can also specify the full path to the `.exe` above.
               </>
             ) : (
               <>
-                <b>MPV no estÃ¡ instalado o no se encontrÃ³.</b> Sin MPV, el modo online no funcionarÃ¡.
-                DescÃ¡rgalo desde <a href="https://mpv.io" target="_blank" rel="noreferrer"
-                  style={{ color: 'var(--accent)' }}>mpv.io</a> e instÃ¡lalo normalmente.
-                En Windows, tambiÃ©n puedes especificar la ruta completa al .exe arriba.
+                <b>MPV no está instalado o no se encontró.</b> El reproductor integrado está en trabajo en progreso, así que MPV sigue siendo necesario para la reproducción online por ahora.
+                Descárgalo desde <a href="https://mpv.io" target="_blank" rel="noreferrer"
+                  style={{ color: 'var(--accent)' }}>mpv.io</a> e instálalo normalmente.
+                En Windows, también puedes especificar la ruta completa al .exe arriba.
               </>
             )}
           </div>
         )}
+
+        <SettingRow
+          label={isEnglish ? 'Preferred player' : 'Reproductor preferido'}
+          description={isEnglish ? 'MPV is the active playback option. Integrated player is marked as WIP and temporarily unavailable.' : 'MPV es la opción activa de reproducción. El reproductor integrado queda marcado como WIP y temporalmente no disponible.'}
+        >
+          <SettingSelect
+            value={settings.player ?? 'mpv'}
+            onChange={v => set('player', v)}
+            options={[
+              { value: 'mpv', label: 'MPV' },
+            ]}
+          />
+        </SettingRow>
+        <div className="setting-notice">
+          {isEnglish
+            ? 'Integrated player is currently WIP and hidden from normal use until in-app playback is stable.'
+            : 'El reproductor integrado está actualmente en WIP y oculto del uso normal hasta estabilizar la reproducción dentro de la app.'}
+        </div>
 
         <SettingRow
           label={isEnglish ? 'Preferred quality' : 'Calidad preferida'}
@@ -249,14 +301,29 @@ export default function Settings() {
             ]}
           />
         </SettingRow>
+
+        <SettingRow
+          label="Anime4K"
+          description={isEnglish ? 'Optional MPV shader preset for sharper anime playback' : 'Preset opcional de shaders para ver anime con más nitidez en MPV'}
+        >
+          <SettingSelect
+            value={settings.anime4k_level ?? 'off'}
+            onChange={v => set('anime4k_level', v)}
+            options={[
+              { value: 'off', label: isEnglish ? 'Off' : 'Desactivado' },
+              { value: 'medium', label: isEnglish ? 'Medium' : 'Medio' },
+              { value: 'high', label: isEnglish ? 'High' : 'Alto' },
+            ]}
+          />
+        </SettingRow>
       </div>
 
       {/* â”€â”€ Manga â”€â”€ */}
       <SectionHeader title={t("Lectura de manga")} />
       <div className="setting-group">
         <SettingRow
-          label={isEnglish ? 'Reading direction' : 'DirecciÃ³n de lectura'}
-          description={isEnglish ? 'LTR for webtoons/manhwa, RTL for Japanese manga' : 'LTR para webtoons / manhwa, RTL para manga japonÃ©s'}
+          label={isEnglish ? 'Reading direction' : 'Dirección de lectura'}
+          description={isEnglish ? 'LTR for webtoons/manhwa, RTL for Japanese manga' : 'LTR para webtoons / manhwa, RTL para manga japonés'}
         >
           <SettingSelect
             value={settings.manga_reading_direction ?? 'ltr'}
@@ -270,7 +337,7 @@ export default function Settings() {
 
         <SettingRow
           label={isEnglish ? 'Data saver' : 'Ahorro de datos'}
-          description={isEnglish ? 'Use compressed images in the online reader (~40% less data)' : 'Usa imÃ¡genes comprimidas en el lector online (~40% menos datos)'}
+          description={isEnglish ? 'Use compressed images in the online reader (~40% less data)' : 'Usa imágenes comprimidas en el lector online (~40% menos datos)'}
         >
           <SettingToggle
             value={boolVal('data_saver')}
@@ -284,13 +351,30 @@ export default function Settings() {
       <div className="setting-group">
         <SettingRow
           label={isEnglish ? 'Scan on startup' : 'Escanear al iniciar'}
-          description={isEnglish ? 'Automatically detect new files when the app opens' : 'Detecta nuevos archivos automÃ¡ticamente al abrir la app'}
+          description={isEnglish ? 'Automatically detect new files when the app opens' : 'Detecta nuevos archivos automáticamente al abrir la app'}
         >
           <SettingToggle
             value={boolVal('auto_scan_on_startup')}
             onChange={v => set('auto_scan_on_startup', v)}
           />
         </SettingRow>
+
+        <SettingRow
+          label={isEnglish ? 'Anime import folder' : 'Carpeta de importación de anime'}
+          description={isEnglish ? 'Drop episodes here from outside the app. They are scanned into Local Anime, while Downloads remains history-only.' : 'Copia episodios aquí desde fuera de la app. Se escanean dentro de Anime local, mientras Descargas queda solo como historial.'}
+        >
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost" type="button" onClick={handleChooseImportDir}>
+              {isEnglish ? 'Choose folder' : 'Elegir carpeta'}
+            </button>
+            <button className="btn btn-ghost" type="button" onClick={handleScanImportDir} disabled={!animeImportDir}>
+              {isEnglish ? 'Scan now' : 'Escanear ahora'}
+            </button>
+          </div>
+        </SettingRow>
+        <div className="setting-notice" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+          {(isEnglish ? 'Current folder: ' : 'Carpeta actual: ') + (animeImportDir || (isEnglish ? 'No import folder configured yet.' : 'Aún no hay carpeta de importación configurada.'))}
+        </div>
       </div>
 
       {/* Library paths list */}
@@ -491,6 +575,10 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* ── Actualizaciones ── */}
+      <SectionHeader title={t('update_section')} />
+      <UpdateChecker t={t} isEnglish={isEnglish} />
+
       {/* â”€â”€ Save button â”€â”€ */}
       <div className="setting-group">
         <SettingRow
@@ -594,7 +682,7 @@ export default function Settings() {
           {saving ? t('Guardando...') : t('Guardar ajustes')}
         </button>
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          v{/* version */}0.1.0 Â· Nipah! Anime
+          Nipah! Anime
         </span>
       </div>
     </div>

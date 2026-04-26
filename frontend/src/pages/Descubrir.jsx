@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { wails } from '../lib/wails'
 import { useI18n } from '../lib/i18n'
 import { resolveAniListToJKAnime } from '../lib/onlineAnimeResolver'
 import OnlineAnimeDetail from '../components/ui/OnlineAnimeDetail'
+// VirtualMediaGrid removed — genre rows now use HScrollRow (horizontal scroll)
 
 const SEASON_ES = { WINTER: 'Invierno', SPRING: 'Primavera', SUMMER: 'Verano', FALL: 'Otono' }
 const SEASON_EN = { WINTER: 'Winter', SPRING: 'Spring', SUMMER: 'Summer', FALL: 'Fall' }
@@ -29,6 +31,25 @@ const GENRE_LABELS = {
   Supernatural: { es: 'Sobrenatural', en: 'Supernatural' },
   Thriller: { es: 'Suspenso', en: 'Thriller' },
 }
+
+const DISCOVER_GENRE_ROWS = [
+  { key: 'action',        genre: 'Action',        titleEs: 'Accion sin descanso',             titleEn: 'Action'           },
+  { key: 'adventure',     genre: 'Adventure',     titleEs: 'Aventuras que enganchan',          titleEn: 'Adventure'        },
+  { key: 'comedy',        genre: 'Comedy',        titleEs: 'Comedia para relajar',             titleEn: 'Comedy'           },
+  { key: 'drama',         genre: 'Drama',         titleEs: 'Dramas que atrapan',               titleEn: 'Drama'            },
+  { key: 'fantasy',       genre: 'Fantasy',       titleEs: 'Mundos de fantasia',               titleEn: 'Fantasy'          },
+  { key: 'romance',       genre: 'Romance',       titleEs: 'Romance',                          titleEn: 'Romance'          },
+  { key: 'scifi',         genre: 'Sci-Fi',        titleEs: 'Ciencia ficcion',                  titleEn: 'Sci-Fi'           },
+  { key: 'slice',         genre: 'Slice of Life', titleEs: 'Slice of Life',                    titleEn: 'Slice of Life'    },
+  { key: 'supernatural',  genre: 'Supernatural',  titleEs: 'Sobrenatural',                     titleEn: 'Supernatural'     },
+  { key: 'thriller',      genre: 'Thriller',      titleEs: 'Suspenso',                         titleEn: 'Thriller'         },
+  { key: 'mystery',       genre: 'Mystery',       titleEs: 'Misterio',                         titleEn: 'Mystery'          },
+  { key: 'psychological', genre: 'Psychological', titleEs: 'Psicologico',                      titleEn: 'Psychological'    },
+  { key: 'sports',        genre: 'Sports',        titleEs: 'Deporte y determinacion',          titleEn: 'Sports'           },
+  { key: 'horror',        genre: 'Horror',        titleEs: 'Terror',                           titleEn: 'Horror'           },
+  { key: 'mecha',         genre: 'Mecha',         titleEs: 'Mecha',                            titleEn: 'Mecha'            },
+  { key: 'music',         genre: 'Music',         titleEs: 'Musica y ritmo',                   titleEn: 'Music'            },
+]
 
 function stripHtml(html) {
   if (!html) return ''
@@ -112,10 +133,10 @@ function HeroCarousel({ slides, lang, onSelect, searching }) {
 
   const seasonLabel = (lang === 'en' ? SEASON_EN : SEASON_ES)[slide.season]
   const title = getBestTitle(slide, lang)
-  const synopsis = stripHtml(slide.description)
   const score = slide.averageScore > 0 ? (slide.averageScore / 10).toFixed(1) : null
   const genres = (slide.genres ?? []).slice(0, 4)
   const isSearching = searching.has(slide.id)
+  const preferredSourceLabel = lang === 'en' ? 'AnimeHeaven' : 'AnimeAV1'
 
   return (
     <div
@@ -153,13 +174,11 @@ function HeroCarousel({ slides, lang, onSelect, searching }) {
             </div>
           )}
 
-          {synopsis && <p className="hero-synopsis">{synopsis}</p>}
-
           <div className="hero-actions" onClick={(e) => e.stopPropagation()}>
             <button className="btn btn-primary hero-cta" onClick={() => onSelect(slide)} disabled={isSearching}>
               {isSearching
                 ? <><span className="btn-spinner" />Buscando...</>
-                : <>{lang === 'en' ? 'Open in JKAnime' : 'Ver en JKAnime'}</>}
+                : <>{lang === 'en' ? `Watch in ${preferredSourceLabel}` : `Ver en ${preferredSourceLabel}`}</>}
             </button>
             {slide.episodes > 0 && <span className="hero-ep-count">{slide.episodes} eps</span>}
           </div>
@@ -185,155 +204,125 @@ function HeroCarousel({ slides, lang, onSelect, searching }) {
       {isSearching && (
         <div className="hero-loading-badge">
           <span className="btn-spinner" style={{ width: 14, height: 14 }} />
-          {lang === 'en' ? 'Searching JKAnime...' : 'Buscando en JKAnime...'}
+          {lang === 'en' ? `Searching ${preferredSourceLabel}...` : `Buscando en ${preferredSourceLabel}...`}
         </div>
       )}
     </div>
   )
 }
 
-function AnimeGrid({ media, lang, onSelect, searching }) {
+/* ── Portrait card for horizontal scroll rows ─────────────────────────────── */
+function PortraitCard({ item, lang, onSelect, searching }) {
+  const title = getBestTitle(item, lang)
+  const score = item.averageScore > 0 ? (item.averageScore / 10).toFixed(1) : null
+  const isLoading = searching?.has(item.id)
+  const statusLabel = getMediaStatusLabel(item.status, lang)
+
   return (
-    <div className="media-grid">
-      {media.map((item) => {
-        const title = getBestTitle(item, lang)
-        const score = item.averageScore > 0 ? (item.averageScore / 10).toFixed(1) : null
-        const isLoading = searching.has(item.id)
-        const statusLabel = getMediaStatusLabel(item.status, lang)
+    <div
+      className={`pcard${isLoading ? ' pcard-busy' : ''}`}
+      onClick={() => !isLoading && onSelect(item)}
+      title={title}
+      style={{ cursor: isLoading ? 'wait' : 'pointer' }}
+    >
+      {item.coverImage?.large
+        ? <img src={item.coverImage.large} alt={title} className="pcard-img" draggable={false} />
+        : <div className="pcard-img-empty" />}
 
-        return (
-          <div
-            key={item.id}
-            className={`media-card${isLoading ? ' media-card-busy' : ''}`}
-            onClick={() => !isLoading && onSelect(item)}
-            style={{ cursor: isLoading ? 'wait' : 'pointer' }}
-          >
-            {item.coverImage?.large
-              ? <img src={item.coverImage.large} alt={title} className="media-card-cover" draggable={false} />
-              : <div className="media-card-cover-placeholder">{lang === 'en' ? 'no cover' : 'sin portada'}</div>}
+      <div className="pcard-vignette" />
+      {score && <div className="pcard-score">★ {score}</div>}
+      {statusLabel && <div className="pcard-status">{statusLabel}</div>}
 
-            {score && <div className="media-score-badge">* {score}</div>}
-            {statusLabel && <div className="media-status-badge">{statusLabel}</div>}
-            <div className="media-card-overlay" />
+      {isLoading && <div className="pcard-loading"><div className="card-spinner" /></div>}
 
-            {isLoading && (
-              <div className="media-card-loading-overlay"><div className="card-spinner" /></div>
-            )}
-
-            <div className="media-card-body">
-              <div className="media-card-title">{title}</div>
-              <div className="media-card-meta">
-                {score ? `* ${score}` : ''}
-                {item.seasonYear ? ` · ${item.seasonYear}` : ''}
-              </div>
-            </div>
-          </div>
-        )
-      })}
+      <div className="pcard-body">
+        <div className="pcard-title">{title}</div>
+        {item.seasonYear ? <div className="pcard-meta">{item.seasonYear}</div> : null}
+      </div>
     </div>
   )
 }
 
-function TrendingShowcase({ media, lang, onSelect, searching }) {
+/* ── Horizontal scroll track ─────────────────────────────────────────────── */
+function HScrollTrack({ media, lang, onSelect, searching }) {
+  if (!media?.length) return null
   return (
-    <div className="discover-highlight-grid">
-      {media.map((item) => {
-        const title = getBestTitle(item, lang)
-        const score = item.averageScore > 0 ? (item.averageScore / 10).toFixed(1) : null
-        const isLoading = searching.has(item.id)
-        const backdrop = item.bannerImage || item.coverImage?.extraLarge || item.coverImage?.large || ''
-        const poster = item.coverImage?.extraLarge || item.coverImage?.large || ''
-        const statusLabel = getMediaStatusLabel(item.status, lang)
-        const seasonLabel = (lang === 'en' ? SEASON_EN : SEASON_ES)[item.season] ?? item.season
-        const synopsis = stripHtml(item.description)
-        const genres = (item.genres ?? []).slice(0, 2)
-
-        return (
-          <article
-            key={item.id}
-            className={`discover-highlight-card${isLoading ? ' busy' : ''}`}
-            onClick={() => !isLoading && onSelect(item)}
-            style={{ cursor: isLoading ? 'wait' : 'pointer' }}
-          >
-            <div
-              className="discover-highlight-backdrop"
-              style={backdrop ? {
-                backgroundImage: `linear-gradient(180deg, rgba(7,7,10,0.16) 0%, rgba(7,7,10,0.32) 26%, rgba(7,7,10,0.94) 100%), url(${backdrop})`,
-              } : undefined}
-            />
-
-            <div className="discover-highlight-topline">
-              {statusLabel && <span className="discover-highlight-pill">{statusLabel}</span>}
-              {score && <span className="discover-highlight-pill accent">* {score}</span>}
-            </div>
-
-            {poster && (
-              <img
-                src={poster}
-                alt={title}
-                className="discover-highlight-poster"
-                draggable={false}
-              />
-            )}
-
-            <div className="discover-highlight-copy">
-              <div className="discover-highlight-meta">
-                {seasonLabel && <span>{seasonLabel}</span>}
-                {item.seasonYear ? <span>{item.seasonYear}</span> : null}
-                {item.episodes > 0 ? <span>{item.episodes} eps</span> : null}
-              </div>
-
-              <div className="discover-highlight-title">{title}</div>
-
-              {genres.length > 0 && (
-                <div className="discover-highlight-genres">
-                  {genres.map((genre) => (
-                    <span key={genre}>{GENRE_LABELS[genre]?.[lang] ?? GENRE_LABELS[genre]?.es ?? genre}</span>
-                  ))}
-                </div>
-              )}
-
-              {synopsis && (
-                <p className="discover-highlight-synopsis">{synopsis}</p>
-              )}
-
-              <div className="discover-highlight-link">
-                {lang === 'en' ? 'Open in JKAnime' : 'Abrir en JKAnime'}
-              </div>
-            </div>
-
-            {isLoading && (
-              <div className="discover-showcase-loading">
-                <div className="card-spinner" />
-              </div>
-            )}
-          </article>
-        )
-      })}
+    <div className="hrow-track">
+      {media.map((item) => (
+        <PortraitCard
+          key={item.id}
+          item={item}
+          lang={lang}
+          onSelect={onSelect}
+          searching={searching}
+        />
+      ))}
     </div>
   )
+}
+
+// Legacy placeholder — kept so existing call sites compile (unused visually)
+function TrendingShowcase({ media, lang, onSelect, searching }) {
+  return <HScrollTrack media={media} lang={lang} onSelect={onSelect} searching={searching} />
 }
 
 function DiscoverRow({ title, media, lang, onSelect, searching }) {
+  const trackRef = useRef(null)
   if (!media?.length) return null
+
+  const scrollRight = () => {
+    if (trackRef.current) {
+      trackRef.current.scrollBy({ left: 760, behavior: 'smooth' })
+    }
+  }
+
+  const scrollLeft = () => {
+    if (trackRef.current) {
+      trackRef.current.scrollBy({ left: -760, behavior: 'smooth' })
+    }
+  }
+
   return (
-    <div className="discover-subsection">
-      <div className="discover-subsection-header">
-        <div className="discover-subsection-title">{title}</div>
+    <div className="hrow">
+      <div className="hrow-header">
+        <div className="hrow-title">{title}</div>
       </div>
-      <AnimeGrid media={media} lang={lang} onSelect={onSelect} searching={searching} />
+      {/* hrow-body: left arrow + scrollable track + right arrow */}
+      <div className="hrow-body">
+        <button
+          className="hrow-start-arrow"
+          type="button"
+          onClick={scrollLeft}
+          aria-label={lang === 'en' ? 'Scroll left' : 'Desplazar izquierda'}
+        >
+          ‹
+        </button>
+        <div className="hrow-track" ref={trackRef}>
+          {media.map((item) => (
+            <PortraitCard
+              key={item.id}
+              item={item}
+              lang={lang}
+              onSelect={onSelect}
+              searching={searching}
+            />
+          ))}
+        </div>
+        <button
+          className="hrow-end-arrow"
+          type="button"
+          onClick={scrollRight}
+          aria-label={lang === 'en' ? 'Scroll right' : 'Desplazar derecha'}
+        >
+          ›
+        </button>
+      </div>
     </div>
   )
 }
 
-export default function Descubrir() {
+export function DiscoverFeed({ embedded = false, afterHeroSlot = null }) {
   const navigate = useNavigate()
-  const [slides, setSlides] = useState([])
-  const [trendingMedia, setTrendingMedia] = useState([])
-  const [popularYearMedia, setPopularYearMedia] = useState([])
-  const [newReleaseMedia, setNewReleaseMedia] = useState([])
-  const [recommendedMedia, setRecommendedMedia] = useState([])
-  const [loading, setLoading] = useState(true)
   const [flashMsg, setFlashMsg] = useState(null)
   const [selected, setSelected] = useState(null)
   const [searching, setSearching] = useState(new Set())
@@ -344,53 +333,84 @@ export default function Descubrir() {
     setTimeout(() => setFlashMsg(null), 4000)
   }, [])
 
-  useEffect(() => {
-    let cancelled = false
-    const currentYear = new Date().getFullYear()
-    setLoading(true)
+  const {
+    data: discoverData,
+    isLoading: loading,
+  } = useQuery({
+    queryKey: ['discover-anime', lang],
+    queryFn: async () => {
+      const currentYear = new Date().getFullYear()
+      const settled = await Promise.allSettled([
+        wails.getTrending(lang),
+        wails.discoverAnime('', '', currentYear, 'POPULARITY_DESC', '', 1),
+        wails.discoverAnime('', '', currentYear, 'START_DATE_DESC', '', 1),
+        wails.discoverAnime('', '', 0, 'POPULARITY_DESC', 'FINISHED', 1),
+        ...DISCOVER_GENRE_ROWS.map((row) => wails.discoverAnime(row.genre, '', 0, 'POPULARITY_DESC', '', 1)),
+      ])
 
-    Promise.all([
-      wails.getTrending(lang),
-      wails.discoverAnime('', '', currentYear, 'POPULARITY_DESC', '', 1),
-      wails.discoverAnime('', '', currentYear, 'START_DATE_DESC', '', 1),
-      wails.discoverAnime('', '', 0, 'POPULARITY_DESC', 'FINISHED', 1),
-    ]).then(([trendingRes, popularRes, newRes, recommendedRes]) => {
-      if (cancelled) return
+      const pick = (index) => (settled[index]?.status === 'fulfilled' ? settled[index].value : null)
+      const trendingRes = pick(0)
+      const popularRes = pick(1)
+      const newRes = pick(2)
+      const recommendedRes = pick(3)
+      const genreResults = DISCOVER_GENRE_ROWS.map((_, index) => pick(index + 4))
 
       const trending = uniqueMedia(trendingRes?.data?.Page?.media ?? [])
       const withBanner = trending.filter((item) => item.bannerImage)
+      const genreRows = DISCOVER_GENRE_ROWS.map((row, index) => ({
+        key: row.key,
+        genre: row.genre,
+        title: lang === 'en' ? row.titleEn : row.titleEs,
+        media: uniqueMedia(genreResults[index]?.data?.Page?.media ?? []).slice(0, 20),
+      })).filter((row) => row.media.length > 0)
 
-      setSlides((withBanner.length >= 3 ? withBanner : trending).slice(0, 8))
-      setTrendingMedia(trending.slice(0, 20))
-      setPopularYearMedia(uniqueMedia(popularRes?.data?.Page?.media ?? []).slice(0, 12))
-      setNewReleaseMedia(uniqueMedia(newRes?.data?.Page?.media ?? []).slice(0, 12))
-      setRecommendedMedia(shuffleMedia(uniqueMedia(recommendedRes?.data?.Page?.media ?? [])).slice(0, 12))
-    }).catch(() => {
-      if (!cancelled) {
-        flash(lang === 'en' ? 'Could not load trending anime.' : 'No se pudieron cargar tendencias.')
+      return {
+        slides: (withBanner.length >= 3 ? withBanner : trending).slice(0, 10),
+        trendingMedia: trending.slice(0, 20),
+        popularYearMedia: uniqueMedia(popularRes?.data?.Page?.media ?? []).slice(0, 20),
+        newReleaseMedia: uniqueMedia(newRes?.data?.Page?.media ?? []).slice(0, 20),
+        recommendedMedia: shuffleMedia(uniqueMedia(recommendedRes?.data?.Page?.media ?? [])).slice(0, 20),
+        genreRows,
       }
-    }).finally(() => {
-      if (!cancelled) setLoading(false)
-    })
+    },
+    staleTime: 10 * 60_000,
+    gcTime: 20 * 60_000,
+  })
 
-    return () => {
-      cancelled = true
-    }
-  }, [lang, flash])
+  useEffect(() => {
+    if (loading || discoverData) return
+    flash(lang === 'en' ? 'Could not load trending anime.' : 'No se pudieron cargar tendencias.')
+  }, [discoverData, flash, lang, loading])
+
+  const slides = discoverData?.slides ?? []
+  const trendingMedia = discoverData?.trendingMedia ?? []
+  const popularYearMedia = discoverData?.popularYearMedia ?? []
+  const newReleaseMedia = discoverData?.newReleaseMedia ?? []
+  const recommendedMedia = discoverData?.recommendedMedia ?? []
+  const genreRows = discoverData?.genreRows ?? []
+  const showcaseMedia = embedded ? trendingMedia.slice(0, 20) : trendingMedia.slice(0, 20)
+  const hasAnyDiscoverContent = slides.length > 0 ||
+    trendingMedia.length > 0 ||
+    popularYearMedia.length > 0 ||
+    newReleaseMedia.length > 0 ||
+    recommendedMedia.length > 0 ||
+    genreRows.length > 0
 
   const handleSelect = useCallback(async (media) => {
     if (searching.has(media.id)) return
     setSearching((prev) => new Set([...prev, media.id]))
 
     try {
-      const { hit, searchedTitle } = await resolveAniListToJKAnime(media, wails)
+      const preferredSource = lang === 'en' ? 'animeheaven-en' : 'animeav1-es'
+      const preferredSourceLabel = lang === 'en' ? 'AnimeHeaven' : 'AnimeAV1'
+      const { hit, searchedTitle } = await resolveAniListToJKAnime(media, wails, preferredSource)
       if (hit) {
         setSelected(hit)
       } else {
         flash(
           lang === 'en'
-            ? `"${searchedTitle}" was not found on JKAnime.`
-            : `"${searchedTitle}" no encontrado en JKAnime.`,
+            ? `"${searchedTitle}" was not found on ${preferredSourceLabel}.`
+            : `"${searchedTitle}" no encontrado en ${preferredSourceLabel}.`,
         )
       }
     } catch (error) {
@@ -424,63 +444,82 @@ export default function Descubrir() {
   }
 
   return (
-    <div className="discover-page fade-in">
+    <div className={`discover-page fade-in${embedded ? ' discover-page-embedded' : ''}`}>
       {flashMsg && <div className="discover-flash">{flashMsg}</div>}
 
       {slides.length > 0 && (
         <HeroCarousel slides={slides} lang={lang} onSelect={handleSelect} searching={searching} />
       )}
 
-      <div className="discover-tabs">
-        <button className="discover-tab active" onClick={() => {}}>
-          {lang === 'en' ? 'Trending' : 'Tendencias'}
-        </button>
-        <button className="discover-tab" onClick={() => navigate('/search')}>
-          {lang === 'en' ? 'Anime Online' : 'Anime Online'}
-        </button>
-      </div>
+      {afterHeroSlot}
+
+      {!embedded && (
+        <div className="discover-tabs">
+          <button className="discover-tab active" onClick={() => {}}>
+            {lang === 'en' ? 'Trending' : 'Tendencias'}
+          </button>
+          <button className="discover-tab" onClick={() => navigate('/search')}>
+            {lang === 'en' ? 'Anime Online' : 'Anime Online'}
+          </button>
+        </div>
+      )}
 
       <div className="discover-content">
-        <div className="discover-section-heading">
-          <div className="discover-section-title discover-section-title-stacked">
-            {lang === 'en' ? 'Trending right now' : 'En tendencia ahora'}
-          </div>
-        </div>
-
-        {trendingMedia.length > 0 && (
+        {hasAnyDiscoverContent && (
           <>
-            <TrendingShowcase media={trendingMedia.slice(0, 4)} lang={lang} onSelect={handleSelect} searching={searching} />
-            <DiscoverRow
-              title={lang === 'en' ? 'More to watch' : 'Mas para ver'}
-              media={trendingMedia.slice(4, 16)}
-              lang={lang}
-              onSelect={handleSelect}
-              searching={searching}
-            />
-            <DiscoverRow
-              title={lang === 'en' ? `Popular in ${new Date().getFullYear()}` : `Populares en ${new Date().getFullYear()}`}
-              media={popularYearMedia}
-              lang={lang}
-              onSelect={handleSelect}
-              searching={searching}
-            />
-            <DiscoverRow
-              title={lang === 'en' ? 'New Releases' : 'Nuevos Lanzamientos'}
-              media={newReleaseMedia}
-              lang={lang}
-              onSelect={handleSelect}
-              searching={searching}
-            />
-            <DiscoverRow
-              title={lang === 'en' ? 'Recommendations' : 'Recomendaciones'}
-              media={recommendedMedia}
-              lang={lang}
-              onSelect={handleSelect}
-              searching={searching}
-            />
+            {showcaseMedia.length > 0 && (
+              <DiscoverRow
+                title={lang === 'en' ? 'Trending now' : 'En tendencia'}
+                media={showcaseMedia}
+                lang={lang}
+                onSelect={handleSelect}
+                searching={searching}
+              />
+            )}
+            {popularYearMedia.length > 0 && (
+              <DiscoverRow
+                title={lang === 'en' ? `Popular in ${new Date().getFullYear()}` : `Populares en ${new Date().getFullYear()}`}
+                media={popularYearMedia}
+                lang={lang}
+                onSelect={handleSelect}
+                searching={searching}
+              />
+            )}
+            {newReleaseMedia.length > 0 && (
+              <DiscoverRow
+                title={lang === 'en' ? 'New Releases' : 'Nuevos lanzamientos'}
+                media={newReleaseMedia}
+                lang={lang}
+                onSelect={handleSelect}
+                searching={searching}
+              />
+            )}
+            {recommendedMedia.length > 0 && (
+              <DiscoverRow
+                title={lang === 'en' ? 'Recommendations' : 'Recomendaciones'}
+                media={recommendedMedia}
+                lang={lang}
+                onSelect={handleSelect}
+                searching={searching}
+              />
+            )}
+            {genreRows.map((row) => (
+              <DiscoverRow
+                key={row.key}
+                title={row.title}
+                media={row.media}
+                lang={lang}
+                onSelect={handleSelect}
+                searching={searching}
+              />
+            ))}
           </>
         )}
       </div>
     </div>
   )
+}
+
+export default function Descubrir() {
+  return <DiscoverFeed />
 }

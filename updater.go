@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	appVersion             = "2.1.0"
+	appVersion             = "2.5.4"
 	githubLatestReleaseAPI = "https://api.github.com/repos/NipahDevTeam/Nipah--Anime/releases/latest"
 )
 
@@ -83,6 +83,15 @@ func (a *App) CheckForAppUpdate() (*AppUpdateInfo, error) {
 	}
 
 	asset := pickInstallerAsset(release.Assets)
+	available := compareVersions(appVersion, latestVersion) < 0
+	if a != nil && a.db != nil {
+		suppressed := normalizeVersion(a.db.GetSetting("update_suppressed_version", ""))
+		if compareVersions(appVersion, latestVersion) >= 0 {
+			_ = a.db.SetSetting("update_suppressed_version", "")
+		} else if suppressed != "" && compareVersions(suppressed, latestVersion) == 0 {
+			available = false
+		}
+	}
 	info := &AppUpdateInfo{
 		CurrentVersion: appVersion,
 		LatestVersion:  latestVersion,
@@ -92,14 +101,14 @@ func (a *App) CheckForAppUpdate() (*AppUpdateInfo, error) {
 		PublishedAt:    release.PublishedAt,
 		DownloadURL:    asset.BrowserDownloadURL,
 		AssetName:      asset.Name,
-		Available:      compareVersions(appVersion, latestVersion) < 0,
+		Available:      available,
 		InstallReady:   asset.BrowserDownloadURL != "",
 	}
 
 	return info, nil
 }
 
-func (a *App) InstallLatestAppUpdate(downloadURL string, assetName string) error {
+func (a *App) InstallLatestAppUpdate(downloadURL string, assetName string, latestVersion string) error {
 	if goruntime.GOOS != "windows" {
 		return fmt.Errorf("automatic installer updates are currently only supported on Windows")
 	}
@@ -108,6 +117,9 @@ func (a *App) InstallLatestAppUpdate(downloadURL string, assetName string) error
 	}
 	if !isAllowedUpdateURL(downloadURL) {
 		return fmt.Errorf("unsupported update URL")
+	}
+	if a != nil && a.db != nil {
+		_ = a.db.SetSetting("update_suppressed_version", normalizeVersion(latestVersion))
 	}
 
 	tmpDir, err := os.MkdirTemp("", "nipah-update-*")
@@ -154,8 +166,10 @@ func (a *App) InstallLatestAppUpdate(downloadURL string, assetName string) error
 		"powershell.exe",
 		"-NoProfile",
 		"-NonInteractive",
+		"-WindowStyle",
+		"Hidden",
 		"-Command",
-		fmt.Sprintf("Start-Process -FilePath '%s' -Verb RunAs", escapePowerShellSingleQuoted(installerPath)),
+		fmt.Sprintf("Start-Sleep -Seconds 2; Start-Process -FilePath '%s' -Verb RunAs", escapePowerShellSingleQuoted(installerPath)),
 	)
 	cmd.Dir = tmpDir
 	if err := cmd.Start(); err != nil {
@@ -163,7 +177,7 @@ func (a *App) InstallLatestAppUpdate(downloadURL string, assetName string) error
 	}
 
 	go func() {
-		time.Sleep(1200 * time.Millisecond)
+		time.Sleep(150 * time.Millisecond)
 		if a.ctx != nil {
 			wailsruntime.Quit(a.ctx)
 		}
@@ -173,6 +187,9 @@ func (a *App) InstallLatestAppUpdate(downloadURL string, assetName string) error
 }
 
 func pickInstallerAsset(assets []githubReleaseAsset) githubReleaseAsset {
+	if goruntime.GOOS != "windows" {
+		return githubReleaseAsset{}
+	}
 	bestScore := -1
 	var best githubReleaseAsset
 	for _, asset := range assets {

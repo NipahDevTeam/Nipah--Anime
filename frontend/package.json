@@ -1,7 +1,7 @@
 {
   "name": "miruro-frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "2.5.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,16 +9,22 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.66.8",
+    "blurhash": "^2.0.5",
+    "clsx": "^2.1.1",
+    "hls.js": "^1.6.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",
-    "zustand": "^4.5.4",
-    "clsx": "^2.1.1"
+    "react-virtuoso": "^4.12.5",
+    "zustand": "^4.5.4"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "react-scan": "^0.5.3",
+    "rollup-plugin-visualizer": "^7.0.1",
     "vite": "^5.4.0"
   }
 }
