@@ -280,7 +280,8 @@ func (a *App) startup(ctx context.Context) {
 	a.registry.RegisterManga(weebcentral.New())
 	a.registry.RegisterManga(mangapill.New())
 	if mangafire.EnabledForV1() {
-		a.registry.RegisterManga(mangafire.New())
+		a.registry.RegisterManga(mangafire.NewEnglish())
+		a.registry.RegisterManga(mangafire.NewSpanish())
 	}
 	log.Info().Dur("phase", time.Since(phaseStarted)).Msg("startup phase: registry ready")
 	phaseStarted = time.Now()

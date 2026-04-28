@@ -26,7 +26,9 @@ import (
 )
 
 const (
-	sourceID            = "mangafire-en"
+	sourceIDEnglish     = "mangafire-en"
+	sourceIDSpanish     = "mangafire-es"
+	inventorySourceID   = sourceIDEnglish
 	baseURL             = "https://mangafire.to"
 	sitemapIndexURL     = baseURL + "/sitemap.xml"
 	searchCacheTTL      = 6 * time.Hour
@@ -36,22 +38,33 @@ const (
 	readerTimeout       = 18 * time.Second
 	readerBrowserUA     = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 	maxSearchCandidates = 12
-	maxDetailCandidates = 6
+	maxDetailCandidates = 4
 )
 
 var (
-	titleRe        = regexp.MustCompile(`(?s)<h1[^>]*itemprop="name"[^>]*>(.*?)</h1>`)
-	altTitlesRe    = regexp.MustCompile(`(?s)<h6>(.*?)</h6>`)
-	coverRe        = regexp.MustCompile(`(?s)<div class="poster">.*?<img src="([^"]+)"`)
-	descriptionRe  = regexp.MustCompile(`(?s)<div class="description">(.*?)</div>`)
-	chapterBlockRe = regexp.MustCompile(`(?s)<div class="tab-content" data-name="chapter">(.*?)<div class="tab-content" data-name="volume"`)
-	chapterItemRe  = regexp.MustCompile(`(?s)<li class="item"[^>]*data-number="([^"]+)"[^>]*>\s*<a href="([^"]+)"[^>]*title="([^"]*)"[^>]*>\s*<span>(.*?)</span>\s*<span>(.*?)</span>`)
-	tagRe          = regexp.MustCompile(`<[^>]+>`)
-	spaceRe        = regexp.MustCompile(`\s+`)
-	chapterTitleRe = regexp.MustCompile(`(?i)^chapter\s+\d+(?:\.\d+)?\s*:?\s*`)
+	titleRe            = regexp.MustCompile(`(?s)<h1[^>]*itemprop="name"[^>]*>(.*?)</h1>`)
+	altTitlesRe        = regexp.MustCompile(`(?s)<h6>(.*?)</h6>`)
+	coverRe            = regexp.MustCompile(`(?s)<div class="poster">.*?<img src="([^"]+)"`)
+	descriptionRe      = regexp.MustCompile(`(?s)<div class="description">(.*?)</div>`)
+	chapterBlockRe     = regexp.MustCompile(`(?s)<div class="tab-content" data-name="chapter">(.*?)<div class="tab-content" data-name="volume"`)
+	chapterItemRe      = regexp.MustCompile(`(?s)<li class="item"[^>]*data-number="([^"]+)"[^>]*>\s*<a href="([^"]+)"[^>]*title="([^"]*)"[^>]*>\s*<span>(.*?)</span>\s*<span>(.*?)</span>`)
+	chapterLangCountRe = regexp.MustCompile(`(?is)<a class="dropdown-item[^"]*" href="#" data-code="([^"]+)"[^>]*data-title="[^"]*">\s*<i class="flag [^"]+"></i>\s*[^<]+?\((\d+)\s+Chapters\)\s*</a>`)
+	tagRe              = regexp.MustCompile(`<[^>]+>`)
+	spaceRe            = regexp.MustCompile(`\s+`)
+	chapterTitleRe     = regexp.MustCompile(`(?i)^chapter\s+\d+(?:\.\d+)?\s*:?\s*`)
 )
 
-type Extension struct{}
+type sourceProfile struct {
+	sourceID      string
+	displayName   string
+	language      extensions.Language
+	chapterCodes  []string
+	languageLabel string
+}
+
+type Extension struct {
+	profile sourceProfile
+}
 
 type sitemapIndex struct {
 	Sitemaps []sitemapLoc `xml:"sitemap"`
@@ -102,6 +115,21 @@ type cachedPages struct {
 }
 
 var (
+	englishProfile = sourceProfile{
+		sourceID:      sourceIDEnglish,
+		displayName:   "MangaFire (EN)",
+		language:      extensions.LangEnglish,
+		chapterCodes:  []string{"en"},
+		languageLabel: "English",
+	}
+	spanishProfile = sourceProfile{
+		sourceID:      sourceIDSpanish,
+		displayName:   "MangaFire (ES)",
+		language:      extensions.LangSpanish,
+		chapterCodes:  []string{"es", "es-la"},
+		languageLabel: "Spanish",
+	}
+
 	inventoryMu      sync.Mutex
 	inventoryState   cachedInventory
 	inventoryLoading bool
@@ -119,6 +147,11 @@ var (
 )
 
 func init() {
+	registerSourceAccessProfile(englishProfile.sourceID)
+	registerSourceAccessProfile(spanishProfile.sourceID)
+}
+
+func registerSourceAccessProfile(sourceID string) {
 	sourceaccess.RegisterProfile(sourceaccess.SourceAccessProfile{
 		SourceID:             sourceID,
 		BaseURL:              baseURL,
@@ -129,7 +162,11 @@ func init() {
 	})
 }
 
-func New() *Extension { return &Extension{} }
+func New() *Extension { return NewEnglish() }
+
+func NewEnglish() *Extension { return &Extension{profile: englishProfile} }
+
+func NewSpanish() *Extension { return &Extension{profile: spanishProfile} }
 
 func EnabledForV1() bool { return true }
 
@@ -139,10 +176,10 @@ func WarmCacheAsync() {
 	}()
 }
 
-func (e *Extension) ID() string   { return sourceID }
-func (e *Extension) Name() string { return "MangaFire" }
+func (e *Extension) ID() string   { return e.profileData().sourceID }
+func (e *Extension) Name() string { return e.profileData().displayName }
 func (e *Extension) Languages() []extensions.Language {
-	return []extensions.Language{extensions.LangEnglish}
+	return []extensions.Language{e.profileData().language}
 }
 
 func (e *Extension) Search(query string, lang extensions.Language) ([]extensions.SearchResult, error) {
@@ -150,7 +187,7 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 	if query == "" {
 		return []extensions.SearchResult{}, nil
 	}
-	queryKey := normalizeSearch(query)
+	queryKey := buildSearchCacheKey(e.ID(), normalizeSearch(query))
 	if cached := cachedSearchResults(queryKey); cached != nil {
 		return cached, nil
 	}
@@ -194,13 +231,13 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 	for _, candidate := range detailCandidates {
 		candidate := candidate
 		p.Go(func() scoredResult {
-			meta, err := loadDetail(candidate.slug)
+			meta, err := loadDetail(e.ID(), candidate.slug)
 			if err != nil {
 				return scoredResult{
 					result: extensions.SearchResult{
 						ID:        candidate.slug,
 						Title:     candidate.searchName,
-						Languages: []extensions.Language{extensions.LangEnglish},
+						Languages: e.Languages(),
 					},
 					score: candidate.score,
 				}
@@ -216,7 +253,7 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 					Title:       meta.title,
 					CoverURL:    meta.coverURL,
 					Description: meta.description,
-					Languages:   []extensions.Language{extensions.LangEnglish},
+					Languages:   e.Languages(),
 				},
 				score: score,
 			}
@@ -228,7 +265,7 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 			result: extensions.SearchResult{
 				ID:        candidate.slug,
 				Title:     candidate.searchName,
-				Languages: []extensions.Language{extensions.LangEnglish},
+				Languages: e.Languages(),
 			},
 			score: candidate.score - 8,
 		})
@@ -260,7 +297,7 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 		return nil, fmt.Errorf("mangafire: invalid manga id")
 	}
 
-	body, err := sourceaccess.FetchHTML(sourceID, detailURL(slug), sourceaccess.RequestOptions{})
+	body, err := sourceaccess.FetchHTML(e.ID(), detailURL(slug), sourceaccess.RequestOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("mangafire chapters: %w", err)
 	}
@@ -284,7 +321,7 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 
 		number := parseNumber(match[1])
 		href := absoluteURL(match[2])
-		if href == "" || !strings.Contains(href, "/read/"+slug+"/en/") || seen[href] {
+		if href == "" || !chapterMatchesLanguage(href, slug, e.profileData().chapterCodes) || seen[href] {
 			continue
 		}
 		seen[href] = true
@@ -301,13 +338,25 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 			ID:         href,
 			Number:     number,
 			Title:      title,
-			Language:   extensions.LangEnglish,
+			Language:   e.profileData().language,
 			UploadedAt: cleanText(match[5]),
 		})
 	}
 
 	if len(chapters) == 0 {
-		return nil, fmt.Errorf("mangafire: no English chapters found")
+		syntheticChapters := synthesizeLanguageChapters(matches, slug, e.profileData(), parseChapterLanguageCounts(body))
+		if len(syntheticChapters) > 0 {
+			return syntheticChapters, nil
+		}
+
+		browserChapters, browserErr := loadChaptersFromBrowser(e.ID(), slug, e.profileData())
+		if browserErr == nil && len(browserChapters) > 0 {
+			return browserChapters, nil
+		}
+		if browserErr != nil {
+			return nil, fmt.Errorf("mangafire: no %s chapters found (browser fallback: %w)", strings.ToLower(e.profileData().languageLabel), browserErr)
+		}
+		return nil, fmt.Errorf("mangafire: no %s chapters found", strings.ToLower(e.profileData().languageLabel))
 	}
 
 	sort.Slice(chapters, func(i, j int) bool {
@@ -333,7 +382,7 @@ func (e *Extension) GetPages(chapterID string) ([]extensions.PageSource, error) 
 		return pages, err
 	}
 
-	pages, err := loadPagesFromBrowser(chapterURL)
+	pages, err := loadPagesFromBrowser(e.ID(), chapterURL)
 	if err != nil {
 		finishChapterPages(chapterURL, nil)
 		return nil, fmt.Errorf("mangafire pages: %w", err)
@@ -358,7 +407,7 @@ func storeSearchResults(queryKey string, results []extensions.SearchResult) {
 	searchMu.Lock()
 	searchState[queryKey] = cachedSearch{
 		results: append([]extensions.SearchResult(nil), results...),
-		expires: time.Now().Add(20 * time.Minute),
+		expires: time.Now().Add(searchCacheTTL),
 	}
 	searchMu.Unlock()
 }
@@ -441,7 +490,7 @@ func refreshInventoryNow() ([]string, error) {
 	for _, rawURL := range listURLs {
 		rawURL := rawURL
 		p2.Go(func() {
-			body, err := sourceaccess.FetchHTML(sourceID, rawURL, sourceaccess.RequestOptions{})
+			body, err := sourceaccess.FetchHTML(inventorySourceID, rawURL, sourceaccess.RequestOptions{})
 			if err != nil {
 				return
 			}
@@ -554,7 +603,7 @@ func storePersistedInventory(slugs []string, expiresAt time.Time) {
 }
 
 func fetchSitemapListURLs() ([]string, error) {
-	body, err := sourceaccess.FetchHTML(sourceID, sitemapIndexURL, sourceaccess.RequestOptions{})
+	body, err := sourceaccess.FetchHTML(inventorySourceID, sitemapIndexURL, sourceaccess.RequestOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -615,7 +664,7 @@ func rankInventory(slugs []string, query string) []searchCandidate {
 	return ranked
 }
 
-func loadDetail(slug string) (detailMetadata, error) {
+func loadDetail(sourceID, slug string) (detailMetadata, error) {
 	detailMu.Lock()
 	cached, ok := detailState[slug]
 	detailMu.Unlock()
@@ -666,7 +715,7 @@ func scoreDetail(queryNorm string, meta detailMetadata) int {
 	return score
 }
 
-func loadPagesFromBrowser(chapterURL string) ([]extensions.PageSource, error) {
+func loadPagesFromBrowser(sourceID, chapterURL string) ([]extensions.PageSource, error) {
 	browserPath, found := launcher.LookPath()
 	if !found {
 		return nil, fmt.Errorf("no Chrome/Edge browser found")
@@ -722,6 +771,170 @@ func loadPagesFromBrowser(chapterURL string) ([]extensions.PageSource, error) {
 		})
 	}
 	return pages, nil
+}
+
+func loadChaptersFromBrowser(sourceID, slug string, profile sourceProfile) ([]extensions.Chapter, error) {
+	browserPath, found := launcher.LookPath()
+	if !found {
+		return nil, fmt.Errorf("no Chrome/Edge browser found")
+	}
+
+	l := launcher.New().
+		Bin(browserPath).
+		Leakless(false).
+		Headless(true).
+		Set("disable-gpu").
+		Set("no-first-run").
+		Set("no-default-browser-check").
+		Set("user-agent", readerBrowserUA)
+
+	controlURL, err := l.Launch()
+	if err != nil {
+		return nil, fmt.Errorf("browser launch failed: %w", err)
+	}
+
+	browser := rod.New().ControlURL(controlURL)
+	if err := browser.Connect(); err != nil {
+		return nil, fmt.Errorf("browser connect failed: %w", err)
+	}
+	defer browser.Close()
+
+	page, err := sourceaccess.OpenOptimizedPage(browser, detailURL(slug))
+	if err != nil {
+		return nil, fmt.Errorf("page open failed: %w", err)
+	}
+	defer page.Close()
+
+	_ = page.WaitStable(1500 * time.Millisecond)
+
+	for _, code := range profile.chapterCodes {
+		if err := switchChapterLanguage(page, code); err != nil {
+			continue
+		}
+		chapters := waitForBrowserChapters(page, slug, profile)
+		if len(chapters) > 0 {
+			return chapters, nil
+		}
+	}
+
+	return nil, fmt.Errorf("language switch did not expose %s chapters", strings.ToLower(profile.languageLabel))
+}
+
+func switchChapterLanguage(page *rod.Page, code string) error {
+	targetCode := strings.ToUpper(strings.TrimSpace(code))
+	if targetCode == "" {
+		return fmt.Errorf("missing language code")
+	}
+
+	button, err := page.Element(`div.tab-content[data-name="chapter"] .list-menu .dropdown button[data-toggle="dropdown"]`)
+	if err == nil && button != nil {
+		_ = button.ScrollIntoView()
+		_ = button.Click(proto.InputMouseButtonLeft, 1)
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	selector := fmt.Sprintf(`div.tab-content[data-name="chapter"] .dropdown-menu a[data-code="%s"]`, targetCode)
+	if _, err := page.Eval(`(selector) => {
+		const target = document.querySelector(selector);
+		if (!target) return false;
+		target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+		return true;
+	}`, selector); err != nil {
+		return err
+	}
+
+	deadline := time.Now().Add(6 * time.Second)
+	activeSelector := selector + `.active`
+	for time.Now().Before(deadline) {
+		if _, err := page.Element(activeSelector); err == nil {
+			time.Sleep(400 * time.Millisecond)
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("language %s did not become active", targetCode)
+}
+
+func waitForBrowserChapters(page *rod.Page, slug string, profile sourceProfile) []extensions.Chapter {
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		chapters, _ := extractBrowserChapters(page, slug, profile)
+		if len(chapters) > 0 {
+			return chapters
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	return nil
+}
+
+func extractBrowserChapters(page *rod.Page, slug string, profile sourceProfile) ([]extensions.Chapter, error) {
+	items, err := page.Elements(`div.tab-content[data-name="chapter"] .list-body li.item`)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+
+	chapters := make([]extensions.Chapter, 0, len(items))
+	seen := map[string]bool{}
+	for _, item := range items {
+		number := parseNumber(firstNonEmptyAttr(item, "data-number"))
+		link, err := item.Element("a")
+		if err != nil || link == nil {
+			continue
+		}
+
+		href := absoluteURL(firstNonEmptyAttr(link, "href"))
+		if href == "" || !chapterMatchesLanguage(href, slug, profile.chapterCodes) || seen[href] {
+			continue
+		}
+		seen[href] = true
+
+		title := ""
+		spans, _ := link.Elements("span")
+		if len(spans) > 0 {
+			if text, err := spans[0].Text(); err == nil {
+				title = cleanChapterTitle(text)
+			}
+		}
+		if title == "" {
+			if text, err := link.Text(); err == nil {
+				title = cleanChapterTitle(text)
+			}
+		}
+		if title == "" {
+			if rawTitle := firstNonEmptyAttr(link, "title"); rawTitle != "" {
+				title = cleanChapterTitle(rawTitle)
+			}
+		}
+		if title == "" {
+			title = fmt.Sprintf("Chapter %s", strings.TrimSpace(firstNonEmptyAttr(item, "data-number")))
+		}
+
+		uploadedAt := ""
+		if len(spans) > 1 {
+			if text, err := spans[1].Text(); err == nil {
+				uploadedAt = cleanText(text)
+			}
+		}
+
+		chapters = append(chapters, extensions.Chapter{
+			ID:         href,
+			Number:     number,
+			Title:      title,
+			Language:   profile.language,
+			UploadedAt: uploadedAt,
+		})
+	}
+
+	sort.Slice(chapters, func(i, j int) bool {
+		if chapters[i].Number == chapters[j].Number {
+			return chapters[i].UploadedAt < chapters[j].UploadedAt
+		}
+		return chapters[i].Number < chapters[j].Number
+	})
+	return chapters, nil
 }
 
 func waitForPageSlots(page *rod.Page) (rod.Elements, error) {
@@ -814,6 +1027,17 @@ func clonePages(pages []extensions.PageSource) []extensions.PageSource {
 	return append([]extensions.PageSource(nil), pages...)
 }
 
+func (e *Extension) profileData() sourceProfile {
+	if e == nil || strings.TrimSpace(e.profile.sourceID) == "" {
+		return englishProfile
+	}
+	return e.profile
+}
+
+func buildSearchCacheKey(sourceID, queryKey string) string {
+	return strings.TrimSpace(sourceID) + "::" + strings.TrimSpace(queryKey)
+}
+
 func detailURL(slug string) string {
 	return baseURL + "/manga/" + slug
 }
@@ -879,6 +1103,126 @@ func absoluteURLWithBase(raw, base string) string {
 		return base[:idx+1] + strings.TrimPrefix(raw, "./")
 	}
 	return absoluteURL(raw)
+}
+
+func chapterMatchesLanguage(href, slug string, codes []string) bool {
+	href = strings.ToLower(strings.TrimSpace(href))
+	normalizedSlug := strings.ToLower(normalizeSlug(slug))
+	if href == "" || normalizedSlug == "" {
+		return false
+	}
+
+	marker := "/read/" + normalizedSlug + "/"
+	idx := strings.Index(href, marker)
+	if idx < 0 {
+		return false
+	}
+
+	remainder := href[idx+len(marker):]
+	for _, code := range codes {
+		code = strings.ToLower(strings.TrimSpace(code))
+		if code != "" && strings.HasPrefix(remainder, code+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func parseChapterLanguageCounts(body string) map[string]int {
+	out := map[string]int{}
+	for _, match := range chapterLangCountRe.FindAllStringSubmatch(body, -1) {
+		if len(match) < 3 {
+			continue
+		}
+		code := strings.ToLower(strings.TrimSpace(match[1]))
+		count, err := strconv.Atoi(strings.TrimSpace(match[2]))
+		if code == "" || err != nil || count <= 0 {
+			continue
+		}
+		out[code] = count
+	}
+	return out
+}
+
+func synthesizeLanguageChapters(matches [][]string, slug string, profile sourceProfile, counts map[string]int) []extensions.Chapter {
+	targetCode := ""
+	targetCount := 0
+	for _, code := range profile.chapterCodes {
+		normalized := strings.ToLower(strings.TrimSpace(code))
+		if counts[normalized] > targetCount {
+			targetCode = normalized
+			targetCount = counts[normalized]
+		}
+	}
+	if targetCode == "" || targetCount <= 0 {
+		return nil
+	}
+
+	chapters := make([]extensions.Chapter, 0, minInt(targetCount, len(matches)))
+	seen := map[string]bool{}
+	for _, match := range matches {
+		if len(chapters) >= targetCount || len(match) < 6 {
+			break
+		}
+
+		href := absoluteURL(match[2])
+		if href == "" || !chapterMatchesLanguage(href, slug, []string{"en"}) {
+			continue
+		}
+		syntheticHref := replaceChapterLanguage(href, slug, "en", targetCode)
+		if syntheticHref == "" || seen[syntheticHref] {
+			continue
+		}
+		seen[syntheticHref] = true
+
+		title := cleanChapterTitle(match[4])
+		if title == "" {
+			title = cleanText(match[3])
+		}
+		if title == "" {
+			title = fmt.Sprintf("Chapter %s", strings.TrimSpace(match[1]))
+		}
+
+		chapters = append(chapters, extensions.Chapter{
+			ID:         syntheticHref,
+			Number:     parseNumber(match[1]),
+			Title:      title,
+			Language:   profile.language,
+			UploadedAt: cleanText(match[5]),
+		})
+	}
+
+	sort.Slice(chapters, func(i, j int) bool {
+		if chapters[i].Number == chapters[j].Number {
+			return chapters[i].UploadedAt < chapters[j].UploadedAt
+		}
+		return chapters[i].Number < chapters[j].Number
+	})
+	return chapters
+}
+
+func replaceChapterLanguage(href, slug, fromCode, toCode string) string {
+	href = strings.TrimSpace(href)
+	slug = strings.ToLower(normalizeSlug(slug))
+	fromCode = strings.ToLower(strings.TrimSpace(fromCode))
+	toCode = strings.ToLower(strings.TrimSpace(toCode))
+	if href == "" || slug == "" || fromCode == "" || toCode == "" {
+		return ""
+	}
+
+	marker := "/read/" + slug + "/" + fromCode + "/"
+	idx := strings.Index(strings.ToLower(href), marker)
+	if idx < 0 {
+		return ""
+	}
+	return href[:idx] + "/read/" + slug + "/" + toCode + "/" + href[idx+len(marker):]
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func slugBase(slug string) string {

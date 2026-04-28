@@ -252,14 +252,14 @@ export default function Settings() {
           <div className="setting-notice">
             {isEnglish ? (
               <>
-                <b>MPV is not installed or could not be found.</b> The integrated player is currently a work in progress, so MPV remains required for online playback right now.
+                <b>MPV is not installed or could not be found.</b> In-app playback can still open supported streams, but MPV is recommended as the fallback path for tougher providers and Anime4K.
                 Download it from <a href="https://mpv.io" target="_blank" rel="noreferrer"
                   style={{ color: 'var(--accent)' }}>mpv.io</a> and install it normally.
                 On Windows, you can also specify the full path to the `.exe` above.
               </>
             ) : (
               <>
-                <b>MPV no está instalado o no se encontró.</b> El reproductor integrado está en trabajo en progreso, así que MPV sigue siendo necesario para la reproducción online por ahora.
+                <b>MPV no está instalado o no se encontró.</b> La reproducción dentro de la app puede abrir streams compatibles, pero MPV sigue siendo la ruta recomendada para fuentes más pesadas y para Anime4K.
                 Descárgalo desde <a href="https://mpv.io" target="_blank" rel="noreferrer"
                   style={{ color: 'var(--accent)' }}>mpv.io</a> e instálalo normalmente.
                 En Windows, también puedes especificar la ruta completa al .exe arriba.
@@ -270,20 +270,21 @@ export default function Settings() {
 
         <SettingRow
           label={isEnglish ? 'Preferred player' : 'Reproductor preferido'}
-          description={isEnglish ? 'MPV is the active playback option. Integrated player is marked as WIP and temporarily unavailable.' : 'MPV es la opción activa de reproducción. El reproductor integrado queda marcado como WIP y temporalmente no disponible.'}
+          description={isEnglish ? 'Choose between in-app playback and external MPV. MPV remains the compatibility fallback and the only mode with Anime4K shaders.' : 'Elige entre reproducción dentro de la app y MPV externo. MPV sigue siendo la opción de compatibilidad y la única con shaders Anime4K.'}
         >
           <SettingSelect
-            value={settings.player ?? 'mpv'}
+                    value={settings.player ?? 'mpv'}
             onChange={v => set('player', v)}
             options={[
+              { value: 'integrated', label: isEnglish ? 'In-app' : 'Dentro de la app' },
               { value: 'mpv', label: 'MPV' },
             ]}
           />
         </SettingRow>
         <div className="setting-notice">
           {isEnglish
-            ? 'Integrated player is currently WIP and hidden from normal use until in-app playback is stable.'
-            : 'El reproductor integrado está actualmente en WIP y oculto del uso normal hasta estabilizar la reproducción dentro de la app.'}
+            ? 'In-app playback now handles supported streams directly inside Nipah!. If a provider fights back, you can still switch to MPV instantly.'
+            : 'La reproducción dentro de la app ahora maneja streams compatibles directamente en Nipah!. Si una fuente se pone pesada, puedes cambiar a MPV al instante.'}
         </div>
 
         <SettingRow
@@ -304,7 +305,7 @@ export default function Settings() {
 
         <SettingRow
           label="Anime4K"
-          description={isEnglish ? 'Optional MPV shader preset for sharper anime playback' : 'Preset opcional de shaders para ver anime con más nitidez en MPV'}
+          description={isEnglish ? 'Optional MPV shader preset for sharper anime playback. This does not apply to the in-app player.' : 'Preset opcional de shaders para ver anime con más nitidez en MPV. No aplica al reproductor dentro de la app.'}
         >
           <SettingSelect
             value={settings.anime4k_level ?? 'off'}

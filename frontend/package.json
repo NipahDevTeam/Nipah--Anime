@@ -1,7 +1,7 @@
 {
   "name": "miruro-frontend",
   "private": true,
-  "version": "2.5.7",
+  "version": "2.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

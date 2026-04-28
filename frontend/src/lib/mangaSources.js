@@ -49,10 +49,17 @@ export const MANGA_SOURCE_OPTIONS = [
   },
   {
     value: 'mangafire-en',
-    label: 'MangaFire',
+    label: 'MangaFire (EN)',
     badge: 'badge-muted',
     note: 'English - Beta',
     languages: ['en'],
+  },
+  {
+    value: 'mangafire-es',
+    label: 'MangaFire (ES)',
+    badge: 'badge-muted',
+    note: 'Espanol - Beta',
+    languages: ['es'],
   },
 ]
 
@@ -75,6 +82,7 @@ const MANGA_SOURCE_ALIASES = {
   'mangapill-en': 'mangapill-en',
   mangafire: 'mangafire-en',
   'mangafire-en': 'mangafire-en',
+  'mangafire-es': 'mangafire-es',
 }
 
 export const MANGA_SOURCE_IDS = new Set(Object.keys(MANGA_SOURCE_ALIASES))

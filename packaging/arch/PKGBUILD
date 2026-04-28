@@ -1,5 +1,5 @@
 pkgname=nipah-anime
-pkgver=2.5.7
+pkgver=2.6.0
 pkgrel=1
 pkgdesc="Anime streaming and manga reader desktop client with AniList sync"
 arch=('x86_64')

@@ -51,7 +51,7 @@ var mangaSeasonBasePattern = regexp.MustCompile(`(?i)\b(?:season|temporada)\s+\d
 var mangaTitleDecorationPattern = regexp.MustCompile(`(?i)\b(?:part|parte|cour|volume|vol(?:ume)?|edition|special|novel|light novel|web novel|oneshot|one shot)\b`)
 
 var mangaSourceIDsByLang = map[string][]string{
-	"es": {"m440-es", "senshimanga-es", "mangaoni-es"},
+	"es": {"m440-es", "senshimanga-es", "mangaoni-es", "mangafire-es"},
 	"en": {"weebcentral-en", "templetoons-en", "mangapill-en", "mangafire-en"},
 }
 
@@ -442,7 +442,7 @@ func maxResolvedSearchResultsForSource(sourceID string, count int) int {
 		if limit > 0 {
 			return 0
 		}
-	case "templetoons-en", "mangapill-en", "mangafire-en", "senshimanga-es", "mangaoni-es":
+	case "templetoons-en", "mangapill-en", "mangafire-en", "mangafire-es", "senshimanga-es", "mangaoni-es":
 		if limit > 2 {
 			return 2
 		}
@@ -1918,7 +1918,9 @@ func (a *App) mangaSourceLabel(sourceID string) string {
 	case "mangapill-en":
 		return "MangaPill"
 	case "mangafire-en":
-		return "MangaFire"
+		return "MangaFire (EN)"
+	case "mangafire-es":
+		return "MangaFire (ES)"
 	default:
 		return sourceID
 	}

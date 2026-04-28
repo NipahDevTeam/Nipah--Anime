@@ -20,6 +20,15 @@ export default function IntegratedVideoPlayer({
   onPlaybackUpdate,
   onPlaybackEnd,
   onUseExternalPlayer,
+  onPrev = null,
+  onNext = null,
+  prevLabel = 'Previous',
+  nextLabel = 'Next',
+  audioLabel = 'Audio',
+  activeAudio = 'sub',
+  audioOptions = [],
+  audioSwitching = false,
+  onAudioChange = null,
   onClose,
 }) {
   const videoRef = useRef(null)
@@ -297,6 +306,42 @@ export default function IntegratedVideoPlayer({
           </div>
           <button className="btn btn-ghost" onClick={onClose} type="button">×</button>
         </div>
+
+        {(onPrev || onNext || (onAudioChange && audioOptions.length > 0)) ? (
+          <div className="integrated-player-toolbar">
+            <div className="integrated-player-toolbar-group">
+              {onPrev ? (
+                <button className="btn btn-ghost integrated-player-nav-btn" onClick={() => onPrev?.()} type="button">
+                  {prevLabel}
+                </button>
+              ) : null}
+              {onNext ? (
+                <button className="btn btn-ghost integrated-player-nav-btn" onClick={() => onNext?.()} type="button">
+                  {nextLabel}
+                </button>
+              ) : null}
+            </div>
+
+            {onAudioChange && audioOptions.length > 0 ? (
+              <div className="integrated-player-toolbar-group integrated-player-audio-group">
+                <span className="integrated-player-audio-label">{audioLabel}</span>
+                <div className="episode-playback-switch integrated-player-audio-switch">
+                  {audioOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      className={`episode-playback-pill${activeAudio === option.value ? ' active' : ''}`}
+                      type="button"
+                      disabled={audioSwitching}
+                      onClick={() => onAudioChange(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="integrated-player-stage">
           <video ref={videoRef} className="integrated-player-video" controls playsInline />

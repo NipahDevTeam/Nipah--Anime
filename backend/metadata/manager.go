@@ -59,30 +59,39 @@ func NewManager() *Manager {
 
 // AnimeMetadata is the enriched result we store in the DB after matching.
 type AnimeMetadata struct {
-	AniListID         int
-	MalID             int
-	TitleRomaji       string
-	TitleEnglish      string
-	TitleNative       string
-	TitleSpanish      string // from synonyms or community translation
-	Synonyms          []string
-	CoverLarge        string
-	CoverMedium       string
-	BannerImage       string
-	Description       string // English fallback
-	Year              int
-	Episodes          int
-	Status            string
-	Score             float64
-	Genres            []string
-	StreamingEpisodes []StreamingEpisode
+	AniListID         int                `json:"anilist_id"`
+	MalID             int                `json:"mal_id"`
+	TitleRomaji       string             `json:"title_romaji"`
+	TitleEnglish      string             `json:"title_english"`
+	TitleNative       string             `json:"title_native"`
+	TitleSpanish      string             `json:"title_spanish"` // from synonyms or community translation
+	Synonyms          []string           `json:"synonyms"`
+	CoverLarge        string             `json:"cover_large"`
+	CoverMedium       string             `json:"cover_medium"`
+	BannerImage       string             `json:"banner_image"`
+	Description       string             `json:"description"` // English fallback
+	Year              int                `json:"year"`
+	Episodes          int                `json:"episodes"`
+	Status            string             `json:"status"`
+	Score             float64            `json:"score"`
+	Genres            []string           `json:"genres"`
+	StreamingEpisodes []StreamingEpisode `json:"streamingEpisodes"`
+	Characters        []AnimeCharacter   `json:"characters,omitempty"`
 }
 
 type StreamingEpisode struct {
-	Title     string
-	Thumbnail string
-	URL       string
-	Site      string
+	Title     string `json:"title"`
+	Thumbnail string `json:"thumbnail"`
+	URL       string `json:"url"`
+	Site      string `json:"site"`
+}
+
+type AnimeCharacter struct {
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	NameNative string `json:"name_native"`
+	Role       string `json:"role"`
+	Image      string `json:"image"`
 }
 
 // MangaMetadata is the enriched result for manga from MangaDex.
@@ -267,6 +276,16 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 			startDate { year }
 			genres
 			streamingEpisodes { title thumbnail url site }
+			characters(perPage: 6, sort: [ROLE, RELEVANCE]) {
+				edges {
+					role
+					node {
+						id
+						name { full native }
+						image { large }
+					}
+				}
+			}
 		}
 	}`
 
@@ -310,6 +329,21 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 					URL       string `json:"url"`
 					Site      string `json:"site"`
 				} `json:"streamingEpisodes"`
+				Characters struct {
+					Edges []struct {
+						Role string `json:"role"`
+						Node struct {
+							ID   int `json:"id"`
+							Name struct {
+								Full   string `json:"full"`
+								Native string `json:"native"`
+							} `json:"name"`
+							Image struct {
+								Large string `json:"large"`
+							} `json:"image"`
+						} `json:"node"`
+					} `json:"edges"`
+				} `json:"characters"`
 			} `json:"Media"`
 		} `json:"data"`
 	}
@@ -341,6 +375,19 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 			for _, item := range med.StreamingEpisodes {
 				out = append(out, StreamingEpisode{
 					Title: item.Title, Thumbnail: item.Thumbnail, URL: item.URL, Site: item.Site,
+				})
+			}
+			return out
+		}(),
+		Characters: func() []AnimeCharacter {
+			out := make([]AnimeCharacter, 0, len(med.Characters.Edges))
+			for _, item := range med.Characters.Edges {
+				out = append(out, AnimeCharacter{
+					ID:         item.Node.ID,
+					Name:       item.Node.Name.Full,
+					NameNative: item.Node.Name.Native,
+					Role:       item.Role,
+					Image:      item.Node.Image.Large,
 				})
 			}
 			return out

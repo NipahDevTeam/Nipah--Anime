@@ -98,7 +98,7 @@ export const wails = {
     if (isWailsRuntimeUnavailable()) {
       const systemLanguage = getSystemLanguage()
       return {
-        language: systemLanguage, preferred_sub_lang: systemLanguage, player: 'mpv',
+        language: systemLanguage, preferred_sub_lang: systemLanguage, player: 'integrated',
         mpv_path: '', theme: 'dark', manga_reading_direction: 'ltr',
         data_saver: 'false', preferred_quality: '1080p', preferred_audio: 'sub', anime4k_level: 'off',
       }

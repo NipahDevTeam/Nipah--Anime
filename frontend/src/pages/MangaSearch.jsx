@@ -74,6 +74,7 @@ function normalizeCanonicalItem(item, lang) {
     resolved_format: item.format || item.resolved_format || '',
     country_of_origin: item.country_of_origin || item.resolved_country_of_origin || item.countryOfOrigin || '',
     genres: item.genres || [],
+    characters: Array.isArray(item.characters) ? item.characters : [],
     average_score: Number(item.average_score || item.averageScore || 0),
     popularity: Number(item.popularity || 0),
     in_manga_list: Boolean(item.in_manga_list),
@@ -253,13 +254,18 @@ function getSearchCandidatesForItem(item) {
   return getMangaFallbackSearchCandidates(item)
 }
 
-async function resolveCanonicalSourceSearchFallback(item, sourceID, lang) {
+async function resolveCanonicalSourceSearchFallback(item, sourceID, lang, options = {}) {
   const needles = getSearchCandidatesForItem(item).slice(0, 6)
   if (!item || !sourceID || needles.length === 0) return null
 
   const pooledHits = []
   const seenHitKeys = new Set()
   const preferredYear = Number(item?.resolved_year || item?.year || 0)
+  const excludedMangaIDs = new Set(
+    (options?.excludeMangaIDs ?? [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  )
 
   for (const candidate of needles) {
     let rawHits = []
@@ -271,6 +277,8 @@ async function resolveCanonicalSourceSearchFallback(item, sourceID, lang) {
 
     for (const rawHit of rawHits) {
       const normalized = normalizeDirectItem(rawHit, sourceID, lang)
+      const sourceMangaID = String(normalized.direct_manga_id || normalized.id || '').trim()
+      if (excludedMangaIDs.has(sourceMangaID)) continue
       const hitKey = `${normalized.direct_source_id || sourceID}:${normalized.direct_manga_id || normalized.id || ''}`
       if (!hitKey || seenHitKeys.has(hitKey)) continue
       seenHitKeys.add(hitKey)
@@ -312,31 +320,6 @@ function isUsableMangaSourceResult(result) {
   return Boolean(result?.partial || result?.hydrating || chapters.length > 0)
 }
 
-function waitForFirstUsableMangaResult(promises) {
-  return new Promise((resolve) => {
-    if (!promises.length) {
-      resolve(null)
-      return
-    }
-    let pending = promises.length
-    for (const promise of promises) {
-      Promise.resolve(promise)
-        .then((value) => {
-          if (isUsableMangaSourceResult(value)) {
-            resolve(value)
-            return
-          }
-          pending -= 1
-          if (pending <= 0) resolve(null)
-        })
-        .catch(() => {
-          pending -= 1
-          if (pending <= 0) resolve(null)
-        })
-    }
-  })
-}
-
 export default function MangaSearch() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -374,9 +357,9 @@ export default function MangaSearch() {
       ? 'AniList is having upstream API problems right now. The page switched to direct source mode so you can keep searching.'
       : 'AniList esta teniendo problemas con su API en este momento. La pagina cambio al modo directo de fuente para que puedas seguir buscando.',
     loadMore: isEnglish ? 'Load more' : 'Cargar mas',
-    manualFallback: isEnglish ? 'Search directly in source' : 'Buscar directo en fuente',
-    manualModeTitle: isEnglish ? 'Manual source fallback' : 'Modo directo de fuente',
-    manualModeDesc: isEnglish ? 'Use this only when AniList matching misses a title.' : 'Usa esto solo cuando AniList no encuentre el titulo.',
+    manualFallback: isEnglish ? 'Search in source' : 'Buscar en fuente',
+    manualModeTitle: isEnglish ? 'Search in a source' : 'Buscar en una fuente',
+    manualModeDesc: isEnglish ? 'Pick a source above and search directly without leaving this page.' : 'Elige una fuente arriba y busca directo sin salir de esta pagina.',
     backToCatalog: isEnglish ? 'Back to catalog' : 'Volver al catalogo',
     backToResults: isEnglish ? '<- Results' : '<- Resultados',
     myList: isEnglish ? 'My List' : 'Mi Lista',
@@ -402,7 +385,18 @@ export default function MangaSearch() {
     noChapters: isEnglish ? 'No chapters' : 'Sin capitulos',
     noChaptersDesc: isEnglish ? 'This source resolved, but it does not currently expose chapters for this title.' : 'La fuente se resolvio, pero no expone capitulos para este titulo ahora mismo.',
     chaptersHydrating: isEnglish ? 'Showing chapters while the full list finishes loading...' : 'Mostrando capitulos mientras termina de cargar la lista completa...',
-    sourceSearchPlaceholder: (label) => isEnglish ? `Search directly on ${label}...` : `Buscar directo en ${label}...`,
+    unreadChapters: isEnglish ? 'Unread chapters' : 'Capitulos pendientes',
+    allChapters: isEnglish ? 'All chapters' : 'Todos los capitulos',
+    chapterFilterHint: isEnglish ? 'Focus on what is left to read or keep the full list visible.' : 'Muestra solo lo pendiente o deja visible el listado completo.',
+    chapterFilterEmpty: isEnglish ? 'Everything here is already caught up.' : 'Aqui ya no te queda nada pendiente.',
+    chapterFilterEmptyDesc: isEnglish ? 'Switch back to all chapters if you want to revisit earlier entries.' : 'Vuelve a todos los capitulos si quieres revisar entradas anteriores.',
+    chapterSidebarTitle: isEnglish ? 'Cast' : 'Personajes',
+    chapterSidebarCopy: isEnglish ? 'AniList character metadata for a quick refresher before you jump in.' : 'Metadatos de personajes desde AniList para ubicarse rapido antes de entrar.',
+    chapterSidebarLoading: isEnglish ? 'Loading character metadata...' : 'Cargando personajes...',
+    chapterSidebarEmpty: isEnglish ? 'No character metadata available for this title yet.' : 'Todavia no hay metadatos de personajes para este titulo.',
+    supportingRole: isEnglish ? 'Supporting' : 'Secundario',
+    mainRole: isEnglish ? 'Main' : 'Principal',
+    sourceSearchPlaceholder: (label) => isEnglish ? `Search on ${label}...` : `Buscar en ${label}...`,
     offline: isEnglish ? 'You appear to be offline. Check your internet connection and try again.' : 'Sin conexion. Verifica tu internet e intenta de nuevo.',
     searchError: (msg) => isEnglish ? `Search error: ${msg}` : `Error al buscar: ${msg}`,
     catalogError: isEnglish ? 'Could not load Manga Online.' : 'No se pudo cargar Manga Online.',
@@ -422,6 +416,7 @@ export default function MangaSearch() {
   const [selected, setSelected] = useState(null)
   const [detailReturnMode, setDetailReturnMode] = useState('catalog')
   const [chapters, setChapters] = useState([])
+  const [chapterFilter, setChapterFilter] = useState('all')
   const [reading, setReading] = useState(null)
   const [lang, setLang] = useState(() => (appLang === 'en' ? 'en' : 'es'))
   const [sourceOptions, setSourceOptions] = useState(MANGA_SOURCE_OPTIONS)
@@ -615,6 +610,19 @@ export default function MangaSearch() {
     enabled: Boolean(selected?.mode === 'canonical' && selected?.anilist_id > 0),
   })
 
+  const selectedMangaDetailQuery = useQuery({
+    queryKey: ['manga-detail-anilist', selected?.anilist_id ?? 0, lang],
+    queryFn: async () => {
+      if (!selected?.anilist_id) return null
+      return normalizeCanonicalItem(await wails.getAniListMangaByID(selected.anilist_id), lang)
+    },
+    staleTime: 30 * 60_000,
+    gcTime: 60 * 60_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    enabled: Boolean(selected?.anilist_id > 0),
+  })
+
   useEffect(() => { chaptersRef.current = chapters }, [chapters])
 
   useEffect(() => {
@@ -638,6 +646,10 @@ export default function MangaSearch() {
     if (!selected || selected.mode !== 'canonical') return
     setActiveSourceID(normalizeMangaSourceID(selected.sessionPreferredSourceID || getDefaultMangaSource(lang)))
   }, [lang, selected?.sessionKey, selected?.mode, selected?.sessionPreferredSourceID])
+
+  useEffect(() => {
+    setChapterFilter('all')
+  }, [selected?.sessionKey])
 
   const selectedSessionKey = selected?.sessionKey || ''
   const currentSourceStates = useMemo(() => (
@@ -694,27 +706,35 @@ export default function MangaSearch() {
         return { selection_key: selectedSessionKey, ...resolved }
       })()
 
-      const fallbackPromise = resolveCanonicalSourceSearchFallback(selected, activeSourceID, lang)
+      const canonicalResolved = await canonicalPromise.catch((error) => ({ error }))
+      if (canonicalResolved && !canonicalResolved.error && isUsableMangaSourceResult(canonicalResolved)) {
+        return canonicalResolved
+      }
+
+      const excludedMangaIDs = canonicalResolved?.source?.source_manga_id
+        && !canonicalResolved?.partial
+        && !canonicalResolved?.hydrating
+        && Array.isArray(canonicalResolved?.chapters)
+        && canonicalResolved.chapters.length === 0
+        ? [canonicalResolved.source.source_manga_id]
+        : []
+
+      const fallbackResolved = await resolveCanonicalSourceSearchFallback(selected, activeSourceID, lang, { excludeMangaIDs: excludedMangaIDs })
         .then((resolved) => (resolved ? { selection_key: selectedSessionKey, ...resolved } : null))
         .catch(() => null)
 
-      const firstUsable = await waitForFirstUsableMangaResult([canonicalPromise, fallbackPromise])
-      if (firstUsable) return firstUsable
-
-      const settled = await Promise.allSettled([canonicalPromise, fallbackPromise])
-      const resolvedValues = settled
-        .filter((entry) => entry.status === 'fulfilled')
-        .map((entry) => entry.value)
-        .filter(Boolean)
-
-      const usableResolved = resolvedValues.find((value) => isUsableMangaSourceResult(value))
-      if (usableResolved) return usableResolved
-
-      const readyResolved = resolvedValues.find((value) => value?.source?.source_manga_id)
-      if (readyResolved) return readyResolved
-
-      const firstError = settled.find((entry) => entry.status === 'rejected')
-      if (firstError?.reason) throw firstError.reason
+      if (fallbackResolved && isUsableMangaSourceResult(fallbackResolved)) {
+        return fallbackResolved
+      }
+      if (canonicalResolved && !canonicalResolved.error && canonicalResolved?.source?.source_manga_id) {
+        return canonicalResolved
+      }
+      if (fallbackResolved?.source?.source_manga_id) {
+        return fallbackResolved
+      }
+      if (canonicalResolved?.error) {
+        throw canonicalResolved.error
+      }
       throw new Error('failed to resolve manga source')
     },
     staleTime: 0,
@@ -856,12 +876,13 @@ export default function MangaSearch() {
     const sourceMangaID = sourceContext.mangaID
     const resolvedChapterList = chapterList ?? chaptersRef.current
     const chapterNumber = Number(chapter.number) || 0
-    if (chapterNumber > 0) {
-      markMangaReaderChaptersCompletedThrough(srcID, sourceMangaID, resolvedChapterList, chapterNumber)
-      setChapters((prev) => enrichChaptersWithProgress(prev, srcID, sourceMangaID, Math.max(Number(selected?.chapters_read) || 0, chapterNumber)))
-      if (selected?.anilist_id > 0 && chapterNumber > (Number(selected?.chapters_read) || 0)) {
-        wails.updateMangaListProgress(selected.anilist_id, chapterNumber).catch(() => {})
-        setSelected((prev) => prev ? ({ ...prev, chapters_read: Math.max(Number(prev.chapters_read) || 0, chapterNumber) }) : prev)
+    const completedThrough = Math.max(chapterNumber - 1, 0)
+    if (completedThrough > 0) {
+      markMangaReaderChaptersCompletedThrough(srcID, sourceMangaID, resolvedChapterList, completedThrough)
+      setChapters((prev) => enrichChaptersWithProgress(prev, srcID, sourceMangaID, Math.max(Number(selected?.chapters_read) || 0, completedThrough)))
+      if (selected?.anilist_id > 0 && completedThrough > (Number(selected?.chapters_read) || 0)) {
+        wails.updateMangaListProgress(selected.anilist_id, completedThrough).catch(() => {})
+        setSelected((prev) => prev ? ({ ...prev, chapters_read: Math.max(Number(prev.chapters_read) || 0, completedThrough) }) : prev)
       }
     }
     wails.recordMangaRead(srcID, sourceMangaID, selected.canonical_title || selected.title, selected.resolved_cover_url || selected.cover_url || '', chapter.id, chapter.number ?? 0, chapter.title ?? `${isEnglish ? 'Chapter' : 'Capitulo'} ${chapter.number}`).catch(() => {})
@@ -931,6 +952,9 @@ export default function MangaSearch() {
     const requestID = searchLoadRef.current + 1
     searchLoadRef.current = requestID
     clearSelectedSession()
+    setManualMode(true)
+    setManualSource(sourceID)
+    setManualSearchCandidates(normalizeCandidateList([term]))
     setLoading(true); setSearched(false); setSelected(null); setChapters([])
     try {
       const found = dedupeSearchResults(
@@ -963,10 +987,10 @@ export default function MangaSearch() {
         setManualMode(true)
         setManualSearchCandidates(normalizeCandidateList([query]))
       }
-      return runDirectSearch(manualSearchCandidates.length > 0 ? manualSearchCandidates : query)
+      return runDirectSearch(manualSearchCandidates.length > 0 ? manualSearchCandidates : query, manualSource)
     }
     return runGlobalSearch(query)
-  }, [catalogAniListUnavailable, manualMode, manualSearchCandidates, query, runDirectSearch, runGlobalSearch])
+  }, [catalogAniListUnavailable, manualMode, manualSearchCandidates, manualSource, query, runDirectSearch, runGlobalSearch])
 
   const handleQueryChange = useCallback((event) => {
     const nextQuery = event.target.value
@@ -981,6 +1005,14 @@ export default function MangaSearch() {
   }, [cancelPendingSearchLoads])
 
   const handleKey = useCallback((event) => { if (event.key === 'Enter') handleSearch() }, [handleSearch])
+  const handleSearchSourceChange = useCallback((nextSourceID) => {
+    const normalizedSourceID = normalizeMangaSourceID(nextSourceID)
+    if (!normalizedSourceID || normalizedSourceID === manualSource) return
+    setManualSource(normalizedSourceID)
+    if (manualMode && query.trim() && (searched || loading)) {
+      void runDirectSearch(query, normalizedSourceID)
+    }
+  }, [loading, manualMode, manualSource, query, runDirectSearch, searched])
   const openSelectedItem = useCallback((item, options = {}) => {
     if (!item) return null
     if (!options?.preserveNavigationLoad) {
@@ -1019,8 +1051,15 @@ export default function MangaSearch() {
   }, [cancelPendingMangaLoads, clearSelectedSession, lang, manualMode])
 
   const openCanonicalItem = useCallback((item, options = {}) => {
-    return openSelectedItem(item, { ...options, manualMode: false, pendingAutoReadChapterID: '', returnMode: options.returnMode ?? 'catalog' })
-  }, [openSelectedItem])
+    if (!item) return null
+    return openSelectedItem(
+      {
+        ...item,
+        default_source_id: normalizeMangaSourceID(options.preferredSourceID || manualSource || item.default_source_id || getDefaultMangaSource(lang)),
+      },
+      { ...options, manualMode: false, pendingAutoReadChapterID: '', returnMode: options.returnMode ?? 'catalog' },
+    )
+  }, [lang, manualSource, openSelectedItem])
   const selectActiveSource = useCallback((nextSourceID) => {
     const normalizedSourceID = normalizeMangaSourceID(nextSourceID)
     if (!normalizedSourceID || normalizedSourceID === activeSourceID) return
@@ -1166,7 +1205,7 @@ export default function MangaSearch() {
             : (isEnglish ? 'AniList catalog search' : 'Busqueda en catalogo AniList'),
           isEnglish ? `${results.length} results ready` : `${results.length} resultados listos`,
           manualMode
-            ? (isEnglish ? 'Manual source fallback' : 'Fallback manual por fuente')
+            ? (isEnglish ? 'Direct source search' : 'Busqueda directa por fuente')
             : (isEnglish ? 'Canonical matching enabled' : 'Emparejamiento canonico activo'),
         ]
       : [
@@ -1183,11 +1222,16 @@ export default function MangaSearch() {
     if (!sourceContext?.sourceID || !sourceContext?.mangaID) return ''
     return getMostRecentIncompleteChapterID(sourceContext.sourceID, sourceContext.mangaID, chapters)
   })()
-  const selectedCoverURL = selected?.resolved_cover_url || selected?.cover_url || ''
-  const selectedBannerURL = selected?.resolved_banner_url || selected?.banner_url || selectedCoverURL
-  const selectedDescription = selected?.resolved_description || selected?.description || ''
+  const selectedDetail = selectedMangaDetailQuery.data
+  const selectedCoverURL = selectedDetail?.resolved_cover_url || selected?.resolved_cover_url || selected?.cover_url || ''
+  const selectedBannerURL = selectedDetail?.resolved_banner_url || selected?.resolved_banner_url || selected?.banner_url || selectedCoverURL
+  const selectedDescription = selectedDetail?.resolved_description || selected?.resolved_description || selected?.description || ''
   const selectedCover = selectedCoverURL ? proxyImage(selectedCoverURL, { sourceID: activeSourceID }) : ''
   const selectedBanner = selectedBannerURL ? proxyImage(selectedBannerURL, { sourceID: activeSourceID }) : selectedCover
+  const selectedCharacters = selectedMangaDetailQuery.data?.characters ?? selected?.characters ?? []
+  const visibleChapters = chapterFilter === 'unread'
+    ? chapters.filter((chapter) => !chapter.completed)
+    : chapters
 
   if (reading) {
     return (
@@ -1218,27 +1262,25 @@ export default function MangaSearch() {
           <div className="online-directory-titleblock"><span className="online-directory-kicker">{ui.mangaOnline}</span></div>
           <div className="online-directory-controls">
             <div className="online-directory-searchbar">
-              <input ref={inputRef} className="online-directory-searchinput" placeholder={manualMode ? ui.sourceSearchPlaceholder(getMangaSourceMeta(manualSource).label) : ui.searchPlaceholder} value={query} onChange={handleQueryChange} onKeyDown={handleKey} autoFocus />
+              <input ref={inputRef} className="online-directory-searchinput" placeholder={ui.sourceSearchPlaceholder(getMangaSourceMeta(manualSource).label)} value={query} onChange={handleQueryChange} onKeyDown={handleKey} autoFocus />
               <button className="btn btn-primary online-directory-searchbtn" onClick={handleSearch} disabled={loading || !query.trim()}>{loading ? ui.searching : ui.searchButton}</button>
             </div>
             <div className="online-directory-meta">
               <div className="online-directory-upper">
                 <div className="online-directory-badges">
-                  {manualMode ? <span className="badge badge-muted">{ui.manualModeDesc}</span> : <>
-                    {ui.discoverSubtitle ? <span className="badge badge-muted">{ui.discoverSubtitle}</span> : null}
+                  <>
+                    {manualMode ? <span className="badge badge-muted">{ui.manualModeDesc}</span> : (ui.discoverSubtitle ? <span className="badge badge-muted">{ui.discoverSubtitle}</span> : null)}
                     <div className="online-directory-filter-group"><span className="online-directory-sortlabel">Lang</span><select className="setting-select" value={lang} onChange={(event) => setLang(event.target.value)}>{LANG_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
-                  </>}
+                  </>
                 </div>
                 <div className="online-directory-actions">
-                  {manualMode ? (
-                    <div className="online-directory-filter-group"><span className="online-directory-sortlabel">Source</span><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{languageSources.map((item) => <button key={item.value} type="button" className={`online-source-toggle${manualSource === item.value ? ' active' : ''}`} onClick={() => setManualSource(item.value)}>{item.label}</button>)}</div></div>
-                  ) : (
+                  <div className="online-directory-filter-group"><span className="online-directory-sortlabel">Source</span><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{languageSources.map((item) => <button key={item.value} type="button" className={`online-source-toggle${manualSource === item.value ? ' active' : ''}`} onClick={() => handleSearchSourceChange(item.value)}>{item.label}</button>)}</div></div>
+                  {!manualMode ? (
                     <>
                       <div className="online-directory-filter-group"><span className="online-directory-sortlabel">{ui.order}</span><CustomSelect value={catalogSort} onChange={handleCatalogSort} options={sortOptions} placeholder={ui.order} /></div>
                       <div className="online-directory-filter-group"><span className="online-directory-sortlabel">{ui.year}</span><CustomSelect value={catalogYear} onChange={handleYearChange} options={yearOptions} placeholder={ui.year} /></div>
-                      <button type="button" className="btn btn-ghost online-directory-clearbtn" onClick={() => enterManualMode(query)}>{ui.manualFallback}</button>
                     </>
-                  )}
+                  ) : null}
                 </div>
               </div>
               {manualMode ? (
@@ -1277,49 +1319,229 @@ export default function MangaSearch() {
                     <div className="episode-section-kicker">{ui.sourceTabsTitle}</div>
                     <p className="episode-section-copy" style={{ marginBottom: 10 }}>{ui.sourceHint}</p>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{sourceCards.map((item) => <SourceCard key={item.source_id} item={item} active={item.source_id === activeSourceID} busy={activeSourceQuery.isFetching && item.source_id === activeSourceID} onClick={() => selectActiveSource(item.source_id)} ui={ui} />)}</div>
-                    <div style={{ marginTop: 12 }}><button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => enterManualMode(selected.canonical_title || selected.title, getSearchCandidatesForItemMemo(selected))}>{ui.manualFallback}</button></div>
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="episode-list-section">
-              <div className="episode-section-head"><div><div className="episode-section-kicker">{ui.mangaOnline}</div><span className="section-title">{ui.chapters}{chapters.length > 0 ? <span className="badge badge-muted" style={{ marginLeft: 8 }}>{chapters.length}</span> : null}</span></div><p className="episode-section-copy">{chapterSectionCopy}</p></div>
-              {sourceIsLoading ? <><div className="manga-skeleton-caption">{selected.mode === 'canonical' ? ui.resolvingSource : ui.loadingChapters}</div><ChapterSkeletonGrid count={10} /></> : null}
-              {!sourceIsLoading && (activeSourceMatch?.status === 'not_found' || activeSourceMatch?.status === 'unresolved' || activeSourceMatch?.status === 'error') ? <div className="empty-state" style={{ padding: '40px 0' }}><div className="empty-state-title">{ui.sourceRetry}</div><p className="empty-state-desc">{activeSourceMatch?.status === 'unresolved' ? ui.sourceUnresolved : activeSourceMatch?.status === 'error' ? `${ui.sourceError} ${activeSourceQuery.error?.message ?? ''}`.trim() : ui.sourceNotFound}</p><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}><button className="btn btn-primary" onClick={() => activeSourceQuery.refetch()}>{ui.sourceRetry}</button><button className="btn btn-ghost" onClick={() => enterManualMode(selected.canonical_title || selected.title, getSearchCandidatesForItemMemo(selected))}>{ui.manualFallback}</button></div></div> : null}
-              {!sourceIsLoading && !sourceIsHydrating && activeSourceMatch?.status === 'ready' && chapters.length === 0 ? <div className="empty-state" style={{ padding: '40px 0' }}><div className="empty-state-title">{ui.noChapters}</div><p className="empty-state-desc">{ui.noChaptersDesc}</p></div> : null}
-              {canShowChapters ? <div className="manga-chapter-grid">{chapters.map((chapter) => {
-                const isResume = chapter.id === resumeChapterID
-                const isLocked = Boolean(chapter.locked)
-                const hasProgress = chapter.progress_page > 0 && !chapter.completed
-                const progressPercent = hasProgress && chapter.total_pages > 0 ? Math.round((chapter.progress_page / chapter.total_pages) * 100) : 0
-                const chapterDate = chapter.uploaded_at ? new Date(chapter.uploaded_at) : null
-                const hasValidDate = chapterDate && !Number.isNaN(chapterDate.getTime())
-                return <div key={chapter.id} className={`manga-chapter-card${chapter.completed ? ' manga-chapter-completed' : ''}${isResume ? ' manga-chapter-resume' : ''}${isLocked ? ' manga-chapter-locked' : ''}`} onClick={() => { if (!isLocked) openReader(chapter) }}>
-                  <div className="manga-chapter-num"><span className="manga-chapter-num-label">{chapter.number || '?'}</span></div>
-                  <div className="manga-chapter-body">
-                    <div className="manga-chapter-meta">{hasValidDate ? <span>{chapterDate.toLocaleDateString(isEnglish ? 'en-US' : 'es-CL')}</span> : null}{isLocked ? <span>{chapter.price > 0 ? ui.coinLabel(chapter.price) : ui.locked}</span> : null}{hasProgress ? <span>{progressPercent}%</span> : null}{chapter.completed ? <span>OK {ui.completed}</span> : null}</div>
-                    <div className="manga-chapter-title">{chapter.title}</div>
-                    {hasProgress ? <div className="manga-chapter-progress"><div className="manga-chapter-progress-fill" style={{ width: `${progressPercent}%` }} /></div> : null}
-                  </div>
-                  <div className="manga-chapter-actions"><button className={`btn ${isLocked ? 'btn-ghost' : chapter.completed ? 'btn-ghost manga-btn-completed' : isResume ? 'btn-primary manga-btn-continue' : 'btn-primary'} episode-play-btn`} onClick={(event) => { event.stopPropagation(); if (!isLocked) openReader(chapter) }} disabled={isLocked}>{isLocked ? ui.locked : chapter.completed ? `OK ${ui.read}` : isResume ? `> ${ui.continue}` : ui.readNow}</button></div>
+              <div className="episode-section-head">
+                <div>
+                  <div className="episode-section-kicker">{ui.mangaOnline}</div>
+                  <span className="section-title">
+                    {ui.chapters}
+                    {chapters.length > 0 ? (
+                      <span className="badge badge-muted" style={{ marginLeft: 8 }}>
+                        {visibleChapters.length}/{chapters.length}
+                      </span>
+                    ) : null}
+                  </span>
                 </div>
-              })}</div> : null}
+                <p className="episode-section-copy">{chapterSectionCopy}</p>
+              </div>
+              {canShowChapters ? (
+                <div className="manga-chapter-toolbar">
+                  <div className="manga-chapter-toolbar-copy">
+                    <span className="manga-chapter-toolbar-title">{ui.chapters}</span>
+                    <span className="manga-chapter-toolbar-note">{ui.chapterFilterHint}</span>
+                  </div>
+                  <div className="manga-filter-toggle" role="tablist" aria-label={ui.chapters}>
+                    <button type="button" className={`manga-filter-toggle-btn${chapterFilter === 'unread' ? ' active' : ''}`} onClick={() => setChapterFilter('unread')}>{ui.unreadChapters}</button>
+                    <button type="button" className={`manga-filter-toggle-btn${chapterFilter === 'all' ? ' active' : ''}`} onClick={() => setChapterFilter('all')}>{ui.allChapters}</button>
+                  </div>
+                </div>
+              ) : null}
+              {sourceIsLoading ? (
+                <>
+                  <div className="manga-skeleton-caption">
+                    {selected.mode === 'canonical' ? ui.resolvingSource : ui.loadingChapters}
+                  </div>
+                  <ChapterSkeletonGrid count={10} />
+                </>
+              ) : null}
+              {!sourceIsLoading && (activeSourceMatch?.status === 'not_found' || activeSourceMatch?.status === 'unresolved' || activeSourceMatch?.status === 'error') ? (
+                <div className="empty-state" style={{ padding: '40px 0' }}>
+                  <div className="empty-state-title">{ui.sourceRetry}</div>
+                  <p className="empty-state-desc">
+                    {activeSourceMatch?.status === 'unresolved'
+                      ? ui.sourceUnresolved
+                      : activeSourceMatch?.status === 'error'
+                        ? `${ui.sourceError} ${activeSourceQuery.error?.message ?? ''}`.trim()
+                        : ui.sourceNotFound}
+                  </p>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <button className="btn btn-primary" onClick={() => activeSourceQuery.refetch()}>
+                      {ui.sourceRetry}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {!sourceIsLoading && !sourceIsHydrating && activeSourceMatch?.status === 'ready' && chapters.length === 0 ? (
+                <div className="empty-state" style={{ padding: '40px 0' }}>
+                  <div className="empty-state-title">{ui.noChapters}</div>
+                  <p className="empty-state-desc">{ui.noChaptersDesc}</p>
+                </div>
+              ) : null}
+              {canShowChapters ? (
+                <div className="manga-online-detail-layout">
+                  <div className="manga-online-detail-main">
+                    {visibleChapters.length > 0 ? (
+                      <div className="manga-chapter-grid">
+                        {visibleChapters.map((chapter) => {
+                          const isResume = chapter.id === resumeChapterID
+                          const isLocked = Boolean(chapter.locked)
+                          const hasProgress = chapter.progress_page > 0 && !chapter.completed
+                          const progressPercent = hasProgress && chapter.total_pages > 0 ? Math.round((chapter.progress_page / chapter.total_pages) * 100) : 0
+                          const chapterDate = chapter.uploaded_at ? new Date(chapter.uploaded_at) : null
+                          const hasValidDate = chapterDate && !Number.isNaN(chapterDate.getTime())
+
+                          return (
+                            <div key={chapter.id} className={`manga-chapter-card${chapter.completed ? ' manga-chapter-completed' : ''}${isResume ? ' manga-chapter-resume' : ''}${isLocked ? ' manga-chapter-locked' : ''}`} onClick={() => { if (!isLocked) openReader(chapter) }}>
+                              <div className="manga-chapter-num"><span className="manga-chapter-num-label">{chapter.number || '?'}</span></div>
+                              <div className="manga-chapter-body">
+                                <div className="manga-chapter-meta">
+                                  {hasValidDate ? <span>{chapterDate.toLocaleDateString(isEnglish ? 'en-US' : 'es-CL')}</span> : null}
+                                  {isLocked ? <span>{chapter.price > 0 ? ui.coinLabel(chapter.price) : ui.locked}</span> : null}
+                                  {hasProgress ? <span>{progressPercent}%</span> : null}
+                                  {chapter.completed ? <span>OK {ui.completed}</span> : null}
+                                </div>
+                                <div className="manga-chapter-title">{chapter.title}</div>
+                                {hasProgress ? <div className="manga-chapter-progress"><div className="manga-chapter-progress-fill" style={{ width: `${progressPercent}%` }} /></div> : null}
+                              </div>
+                              <div className="manga-chapter-actions">
+                                <button className={`btn ${isLocked ? 'btn-ghost' : chapter.completed ? 'btn-ghost manga-btn-completed' : isResume ? 'btn-primary manga-btn-continue' : 'btn-primary'} episode-play-btn`} onClick={(event) => { event.stopPropagation(); if (!isLocked) openReader(chapter) }} disabled={isLocked}>
+                                  {isLocked ? ui.locked : chapter.completed ? `OK ${ui.read}` : isResume ? `> ${ui.continue}` : ui.readNow}
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="empty-state manga-filter-empty-state">
+                        <div className="empty-state-title">{ui.chapterFilterEmpty}</div>
+                        <p className="empty-state-desc">{ui.chapterFilterEmptyDesc}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <aside className="manga-online-detail-aside">
+                    <div className="manga-character-panel">
+                      <div className="manga-character-panel-head">
+                        <div className="episode-section-kicker">{ui.chapterSidebarTitle}</div>
+                        <p className="episode-section-copy">{ui.chapterSidebarCopy}</p>
+                      </div>
+
+                      {selectedMangaDetailQuery.isLoading ? (
+                        <div className="manga-character-empty">{ui.chapterSidebarLoading}</div>
+                      ) : selectedCharacters.length > 0 ? (
+                        <div className="manga-character-list">
+                          {selectedCharacters.map((character) => (
+                            <article key={`${character.id || character.name}-${character.role || ''}`} className="manga-character-card">
+                              {character.image ? <img src={proxyImage(character.image)} alt={character.name} className="manga-character-avatar" /> : <div className="manga-character-avatar manga-character-avatar-placeholder">{character.name?.slice(0, 1) || '?'}</div>}
+                              <div className="manga-character-body">
+                                <div className="manga-character-role">{character.role === 'MAIN' ? ui.mainRole : character.role === 'SUPPORTING' ? ui.supportingRole : character.role || ui.supportingRole}</div>
+                                <div className="manga-character-name">{character.name}</div>
+                                {character.name_native ? <div className="manga-character-native">{character.name_native}</div> : null}
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="manga-character-empty">{ui.chapterSidebarEmpty}</div>
+                      )}
+                    </div>
+                  </aside>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : loading ? (
-          <section className="online-directory-results"><SectionHeader title={ui.results} subtitle={manualMode ? ui.sourceSearching(getMangaSourceMeta(manualSource).label) : ui.searching} /><OnlinePosterSkeletonGrid count={8} /></section>
+          <section className="online-directory-results">
+            <SectionHeader title={ui.results} subtitle={manualMode ? ui.sourceSearching(getMangaSourceMeta(manualSource).label) : ui.searching} />
+            <OnlinePosterSkeletonGrid count={8} />
+          </section>
         ) : searched ? (
-          results.length > 0 ? <section className="online-directory-results"><SectionHeader title={ui.results} subtitle={ui.resultsReady(results.length)} /><VirtualMediaGrid items={results} listClassName="virtuoso-online-grid" itemClassName="virtuoso-online-grid-item" itemContent={(item) => <OnlinePosterCard key={`${item.mode}-${item.id}-${item.direct_source_id || ''}`} cover={item.resolved_cover_url || item.cover_url} title={getCatalogTitle(item)} meta={getCatalogMeta(item, isEnglish).map((value) => <span key={`${item.id}-${value}`}>{value}</span>)} noCoverLabel={ui.noCover} badge={manualMode ? <span className="online-directory-status">{getMangaSourceMeta(item.direct_source_id || manualSource).label}</span> : null} onClick={() => { if (item.mode === 'direct') { openSelectedItem(item, { manualMode: true, manualSource: item.direct_source_id || manualSource, returnMode: manualMode ? 'manual' : 'results' }) } else openCanonicalItem(item, { returnMode: manualMode ? 'manual' : 'results' }) }} />} /></section> :
-            <div className="empty-state"><div className="empty-state-title">{ui.noResults}</div><p className="empty-state-desc">{ui.noResultsDesc(query)}</p>{!manualMode ? <button className="btn btn-ghost" onClick={() => enterManualMode(query, normalizeCandidateList([query]))}>{ui.manualFallback}</button> : null}</div>
+          results.length > 0 ? (
+            <section className="online-directory-results">
+              <SectionHeader title={ui.results} subtitle={ui.resultsReady(results.length)} />
+              <VirtualMediaGrid
+                items={results}
+                listClassName="virtuoso-online-grid"
+                itemClassName="virtuoso-online-grid-item"
+                itemContent={(item) => (
+                  <OnlinePosterCard
+                    key={`${item.mode}-${item.id}-${item.direct_source_id || ''}`}
+                    cover={item.resolved_cover_url || item.cover_url}
+                    title={getCatalogTitle(item)}
+                    meta={getCatalogMeta(item, isEnglish).map((value) => <span key={`${item.id}-${value}`}>{value}</span>)}
+                    noCoverLabel={ui.noCover}
+                    badge={manualMode ? <span className="online-directory-status">{getMangaSourceMeta(item.direct_source_id || manualSource).label}</span> : null}
+                    onClick={() => {
+                      if (item.mode === 'direct') {
+                        openSelectedItem(item, { manualMode: true, manualSource: item.direct_source_id || manualSource, returnMode: manualMode ? 'manual' : 'results' })
+                      } else {
+                        openCanonicalItem(item, { returnMode: manualMode ? 'manual' : 'results' })
+                      }
+                    }}
+                  />
+                )}
+              />
+            </section>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-state-title">{ui.noResults}</div>
+              <p className="empty-state-desc">{ui.noResultsDesc(query)}</p>
+            </div>
+          )
         ) : manualMode ? (
-          <div className="empty-state"><div className="empty-state-title">{catalogAniListUnavailable ? ui.catalogUnavailableTitle : ui.manualModeTitle}</div><p className="empty-state-desc">{catalogAniListUnavailable ? ui.catalogUnavailableDesc : ui.manualModeDesc}</p></div>
+          <div className="empty-state">
+            <div className="empty-state-title">{catalogAniListUnavailable ? ui.catalogUnavailableTitle : ui.manualModeTitle}</div>
+            <p className="empty-state-desc">{catalogAniListUnavailable ? ui.catalogUnavailableDesc : ui.manualModeDesc}</p>
+          </div>
         ) : (
           <section className="online-directory-results">
             <SectionHeader title={ui.featured} subtitle={catalogSummary} />
-            {catalogLoading && displayedCatalog.length === 0 ? <OnlinePosterSkeletonGrid count={12} /> : !catalogLoading && displayedCatalog.length === 0 ? <div className="empty-state"><div className="empty-state-title">{catalogAniListUnavailable ? ui.catalogUnavailableTitle : ui.noCatalog}</div><p className="empty-state-desc">{catalogAniListUnavailable ? ui.catalogUnavailableDesc : ui.noCatalogDesc}</p></div> : <VirtualMediaGrid items={displayedCatalog} listClassName="virtuoso-online-grid" itemClassName="virtuoso-online-grid-item" itemContent={(item) => <OnlinePosterCard key={`catalog-${item.id}`} cover={item.resolved_cover_url || item.cover_url} title={getCatalogTitle(item)} meta={getCatalogMeta(item, isEnglish).map((value) => <span key={`${item.id}-${value}`}>{value}</span>)} badge={item.status ? <span className="online-directory-status">{String(item.status).replaceAll('_', ' ')}</span> : null} noCoverLabel={ui.noCover} onClick={() => openCanonicalItem(item)} />} />}
-            {!catalogLoading && isCatalogBrowseMode && catalogHasNext ? <div className="online-directory-loadmore"><button type="button" className="btn btn-ghost online-directory-loadmore-btn" onClick={handleLoadMore} disabled={catalogFetchingMore}>{catalogFetchingMore ? ui.searching : ui.loadMore}</button></div> : null}
-            {catalogLoading && displayedCatalog.length > 0 ? <div className="online-directory-loadmore"><div className="skeleton-inline-row"><span className="skeleton-inline-chip" /><span className="skeleton-inline-chip short" /></div></div> : null}
+            {catalogLoading && displayedCatalog.length === 0 ? (
+              <OnlinePosterSkeletonGrid count={12} />
+            ) : !catalogLoading && displayedCatalog.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-title">{catalogAniListUnavailable ? ui.catalogUnavailableTitle : ui.noCatalog}</div>
+                <p className="empty-state-desc">{catalogAniListUnavailable ? ui.catalogUnavailableDesc : ui.noCatalogDesc}</p>
+              </div>
+            ) : (
+              <VirtualMediaGrid
+                items={displayedCatalog}
+                listClassName="virtuoso-online-grid"
+                itemClassName="virtuoso-online-grid-item"
+                itemContent={(item) => (
+                  <OnlinePosterCard
+                    key={`catalog-${item.id}`}
+                    cover={item.resolved_cover_url || item.cover_url}
+                    title={getCatalogTitle(item)}
+                    meta={getCatalogMeta(item, isEnglish).map((value) => <span key={`${item.id}-${value}`}>{value}</span>)}
+                    badge={item.status ? <span className="online-directory-status">{String(item.status).replaceAll('_', ' ')}</span> : null}
+                    noCoverLabel={ui.noCover}
+                    onClick={() => openCanonicalItem(item)}
+                  />
+                )}
+              />
+            )}
+            {!catalogLoading && isCatalogBrowseMode && catalogHasNext ? (
+              <div className="online-directory-loadmore">
+                <button type="button" className="btn btn-ghost online-directory-loadmore-btn" onClick={handleLoadMore} disabled={catalogFetchingMore}>
+                  {catalogFetchingMore ? ui.searching : ui.loadMore}
+                </button>
+              </div>
+            ) : null}
+            {catalogLoading && displayedCatalog.length > 0 ? (
+              <div className="online-directory-loadmore">
+                <div className="skeleton-inline-row">
+                  <span className="skeleton-inline-chip" />
+                  <span className="skeleton-inline-chip short" />
+                </div>
+              </div>
+            ) : null}
           </section>
         )}
       </section>

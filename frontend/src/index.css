@@ -4416,12 +4416,85 @@ h1, h2, h3, h4 {
   gap: 8px;
 }
 
+.manga-chapter-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px 0;
+}
+
+.manga-chapter-toolbar-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.manga-chapter-toolbar-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.manga-chapter-toolbar-note {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.manga-filter-toggle {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.manga-filter-toggle-btn {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast);
+}
+
+.manga-filter-toggle-btn:hover {
+  color: var(--text-primary);
+}
+
+.manga-filter-toggle-btn.active {
+  background: rgba(245,166,35,0.16);
+  color: var(--text-primary);
+}
+
+.manga-online-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: 18px;
+  align-items: start;
+}
+
+.manga-online-detail-main,
+.manga-online-detail-aside {
+  min-width: 0;
+}
+
+.manga-filter-empty-state {
+  min-height: 220px;
+}
+
 .manga-chapter-card {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 16px 18px;
-  border-radius: 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
   background:
     linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0) 100%),
     var(--bg-elevated);
@@ -4438,10 +4511,10 @@ h1, h2, h3, h4 {
 }
 
 .manga-chapter-num {
-  min-width: 58px;
-  min-height: 66px;
+  min-width: 52px;
+  min-height: 58px;
   padding: 6px 0;
-  border-radius: 14px;
+  border-radius: 12px;
   background: linear-gradient(135deg, rgba(245,166,35,0.12) 0%, rgba(10,10,14,0.8) 100%);
   border: 1px solid rgba(255,255,255,0.06);
   display: flex;
@@ -4452,7 +4525,7 @@ h1, h2, h3, h4 {
 
 .manga-chapter-num-label {
   font-family: var(--font-body);
-  font-size: 25px;
+  font-size: 21px;
   font-weight: 700;
   font-variant-numeric: tabular-nums lining-nums;
   letter-spacing: -0.03em;
@@ -4480,7 +4553,7 @@ h1, h2, h3, h4 {
 
 .manga-chapter-title {
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -4560,7 +4633,102 @@ h1, h2, h3, h4 {
   justify-content: center;
 }
 
+.manga-character-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 100%),
+    var(--bg-elevated);
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.16);
+}
+
+.manga-character-panel-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.manga-character-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.manga-character-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.manga-character-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.06);
+}
+
+.manga-character-avatar-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.manga-character-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.manga-character-role {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.manga-character-name {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.manga-character-native {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.manga-character-empty {
+  padding: 18px 4px 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 @media (max-width: 1200px) {
+  .manga-online-detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .manga-online-detail-aside {
+    order: -1;
+  }
+
   .discover-showcase-card {
     grid-column: span 6;
   }
@@ -6798,6 +6966,71 @@ body {
 }
 
 @media (max-width: 720px) {
+  .manga-chapter-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .manga-filter-toggle {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .manga-filter-toggle-btn {
+    flex: 1;
+  }
+
+  .manga-chapter-card {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .manga-chapter-actions {
+    width: 100%;
+  }
+
+  .manga-character-card {
+    padding: 9px 10px;
+  }
+
+  .episode-audio-toolbar,
+  .integrated-player-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .integrated-player-audio-group {
+    margin-left: 0;
+  }
+
+  .anime-episode-card {
+    border-radius: 20px;
+  }
+
+  .anime-episode-thumb {
+    width: 100%;
+    min-width: 0;
+    min-height: 112px;
+    aspect-ratio: 16 / 9;
+  }
+
+  .anime-episode-actions {
+    width: 100%;
+    padding: 0 14px 14px;
+  }
+
+  .anime-episode-body {
+    padding: 14px 14px 10px;
+  }
+
+  .anime-episode-title {
+    font-size: 17px;
+  }
+
+  .anime-episode-grid {
+    grid-template-columns: 1fr;
+  }
+
   .hero-carousel {
     min-height: 560px;
   }
@@ -8171,6 +8404,39 @@ body {
   color: var(--text-secondary);
 }
 
+.integrated-player-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 20px 0;
+}
+
+.integrated-player-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.integrated-player-nav-btn {
+  min-height: 34px;
+}
+
+.integrated-player-audio-group {
+  margin-left: auto;
+}
+
+.integrated-player-audio-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.integrated-player-audio-switch {
+  padding: 4px;
+}
+
 .integrated-player-stage {
   position: relative;
   padding: 18px;
@@ -8292,6 +8558,152 @@ body {
   margin-top: 16px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.episode-audio-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.02);
+}
+
+.anime-online-detail-layout {
+  margin-top: 8px;
+}
+
+.anime-cast-inline-panel {
+  margin-bottom: 18px;
+}
+
+.anime-cast-inline-panel .manga-character-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.anime-episode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 280px));
+  justify-content: start;
+  gap: 14px;
+}
+
+.anime-episode-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.022) 0%, rgba(255,255,255,0) 100%),
+    var(--bg-elevated);
+  overflow: hidden;
+  box-shadow: 0 14px 34px rgba(0,0,0,0.16);
+  transition: transform var(--t-mid), border-color var(--t-fast), box-shadow var(--t-mid), opacity var(--t-fast);
+}
+
+.anime-episode-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(245,166,35,0.16);
+  box-shadow: 0 18px 42px rgba(0,0,0,0.22);
+}
+
+.anime-episode-watched {
+  opacity: 0.9;
+}
+
+.anime-episode-num {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7,7,10,0.56);
+  border: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(8px);
+}
+
+.anime-episode-num-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.92);
+}
+
+.anime-episode-body {
+  order: 2;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 8px;
+}
+
+.anime-episode-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.anime-episode-title {
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.16;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.anime-episode-desc {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.anime-episode-thumb {
+  order: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 96px;
+  aspect-ratio: 16 / 9;
+  background-size: cover;
+  background-position: center;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background-color: rgba(255,255,255,0.03);
+}
+
+.anime-episode-actions {
+  order: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0 14px 14px;
 }
 
 .anime-folder-toolbar {

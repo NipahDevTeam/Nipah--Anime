@@ -35,6 +35,7 @@ export default function MangaReader({
   const [showControls, setShowControls] = useState(true)
   const [viewMode, setViewMode] = useState(getSavedReaderViewMode)
   const [visibleCount, setVisibleCount] = useState(INITIAL_VERTICAL_PAGE_BATCH)
+  const [transitioningChapterID, setTransitioningChapterID] = useState('')
 
   const hideTimer = useRef(null)
   const persistTimer = useRef(null)
@@ -79,7 +80,7 @@ export default function MangaReader({
   }, [onOpenChapter])
 
   const handleNextChapter = useCallback(async () => {
-    if (!nextChapter) return
+    if (!nextChapter || transitioningChapterID) return
 
     markMangaReaderChapterCompleted(sourceID, mangaID, chapterID, pages.length)
     onProgressChange?.({
@@ -93,8 +94,12 @@ export default function MangaReader({
       await wails.markMangaChapterCompleted(sourceID, chapterID)
     } catch {}
 
+    setTransitioningChapterID(nextChapter.id)
+    try {
+      await wails.getChapterPagesSource(sourceID, nextChapter.id, dataSaver)
+    } catch {}
     jumpToChapter(nextChapter)
-  }, [chapterID, jumpToChapter, mangaID, nextChapter, onProgressChange, pages.length, sourceID])
+  }, [chapterID, dataSaver, jumpToChapter, mangaID, nextChapter, onProgressChange, pages.length, sourceID, transitioningChapterID])
 
   useEffect(() => {
     currentPageRef.current = currentPage
@@ -117,6 +122,7 @@ export default function MangaReader({
     setPages([])
     setCurrentPage(0)
     setVisibleCount(INITIAL_VERTICAL_PAGE_BATCH)
+    setTransitioningChapterID('')
     restoredRef.current = false
     pageRefs.current = []
 
@@ -287,6 +293,7 @@ export default function MangaReader({
             <button
               className="btn btn-ghost reader-nav-btn"
               onClick={handleNextChapter}
+              disabled={Boolean(transitioningChapterID)}
               title={isEnglish ? 'Next chapter' : 'Siguiente capitulo'}
             >
               ›
@@ -296,6 +303,11 @@ export default function MangaReader({
           {pages.length > 0 && (
             <span className="reader-page-indicator">
               {currentPage + 1} / {pages.length}
+            </span>
+          )}
+          {transitioningChapterID && (
+            <span className="reader-page-indicator">
+              {isEnglish ? 'Loading next chapter...' : 'Cargando siguiente capitulo...'}
             </span>
           )}
         </div>
@@ -430,8 +442,9 @@ export default function MangaReader({
                 <button
                   className="btn btn-primary"
                   onClick={handleNextChapter}
+                  disabled={Boolean(transitioningChapterID)}
                 >
-                  {isEnglish ? 'Next chapter' : 'Siguiente capitulo'}
+                  {transitioningChapterID ? (isEnglish ? 'Loading...' : 'Cargando...') : (isEnglish ? 'Next chapter' : 'Siguiente capitulo')}
                 </button>
               )}
               <button className="btn btn-ghost" onClick={onBack}>
@@ -490,8 +503,9 @@ export default function MangaReader({
               <button
                 className="btn btn-primary"
                 onClick={handleNextChapter}
+                disabled={Boolean(transitioningChapterID)}
               >
-                {isEnglish ? 'Go to next' : 'Ir al siguiente'}
+                {transitioningChapterID ? (isEnglish ? 'Loading...' : 'Cargando...') : (isEnglish ? 'Go to next' : 'Ir al siguiente')}
               </button>
             </div>
           )}

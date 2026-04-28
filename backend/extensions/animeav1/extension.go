@@ -12,6 +12,7 @@ package animeav1
 
 import (
 	"fmt"
+	"html"
 	"regexp"
 	"sort"
 	"strings"
@@ -52,6 +53,9 @@ var av1CardTitleRe = regexp.MustCompile(`<h3[^>]*>([^<]+)</h3>`)
 var av1CoverRe = regexp.MustCompile(`src="(https://cdn\.animeav1\.com/covers/\d+\.jpg)"`)
 var av1HydratedRe = regexp.MustCompile(`results:\[(.*?)\],total:`)
 var av1HydratedItemRe = regexp.MustCompile(`\{id:"(\d+)",title:"([^"]+)"[\s\S]*?slug:"([^"]+)"`)
+var av1FallbackAnchorRe = regexp.MustCompile(`(?is)<a[^>]+href="/media/([^"]+)"[^>]*>(.*?)</a>`)
+var av1FallbackTitleAttrRe = regexp.MustCompile(`(?i)(?:alt|title|data-title)="([^"]+)"`)
+var av1FallbackCoverRe = regexp.MustCompile(`(?i)src="(https?://[^"]+)"`)
 
 func (e *Extension) Search(query string, lang extensions.Language) ([]extensions.SearchResult, error) {
 	url := fmt.Sprintf("%s/catalogo?search=%s", baseURL, urlEncode(query))
@@ -108,6 +112,30 @@ func parseSearchData(body string) []extensions.SearchResult {
 				Languages: []extensions.Language{extensions.LangSpanish},
 			})
 		}
+	}
+
+	for _, anchor := range av1FallbackAnchorRe.FindAllStringSubmatch(body, 120) {
+		if len(anchor) < 3 || seen[anchor[1]] {
+			continue
+		}
+		title := ""
+		if titleMatch := av1FallbackTitleAttrRe.FindStringSubmatch(anchor[2]); len(titleMatch) >= 2 {
+			title = strings.TrimSpace(html.UnescapeString(titleMatch[1]))
+		}
+		if title == "" {
+			continue
+		}
+		seen[anchor[1]] = true
+		cover := ""
+		if coverMatch := av1FallbackCoverRe.FindStringSubmatch(anchor[2]); len(coverMatch) >= 2 {
+			cover = coverMatch[1]
+		}
+		results = append(results, extensions.SearchResult{
+			ID:        "/media/" + anchor[1],
+			Title:     title,
+			CoverURL:  cover,
+			Languages: []extensions.Language{extensions.LangSpanish},
+		})
 	}
 	return results
 }

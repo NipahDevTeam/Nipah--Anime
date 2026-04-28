@@ -25,6 +25,15 @@ type AniListMangaMetadata struct {
 	Volumes         int      `json:"volumes"`
 	Genres          []string `json:"genres"`
 	Synonyms        []string `json:"synonyms"`
+	Characters      []AniListMangaCharacter `json:"characters,omitempty"`
+}
+
+type AniListMangaCharacter struct {
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	NameNative string `json:"name_native"`
+	Role       string `json:"role"`
+	Image      string `json:"image"`
 }
 
 type aniListMangaNode struct {
@@ -191,6 +200,16 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 			volumes
 			genres
 			startDate { year }
+			characters(perPage: 6, sort: [ROLE, RELEVANCE]) {
+				edges {
+					role
+					node {
+						id
+						name { full native }
+						image { large }
+					}
+				}
+			}
 		}
 	}`
 
@@ -230,6 +249,21 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 				StartDate   struct {
 					Year int `json:"year"`
 				} `json:"startDate"`
+				Characters struct {
+					Edges []struct {
+						Role string `json:"role"`
+						Node struct {
+							ID    int `json:"id"`
+							Name  struct {
+								Full   string `json:"full"`
+								Native string `json:"native"`
+							} `json:"name"`
+							Image struct {
+								Large string `json:"large"`
+							} `json:"image"`
+						} `json:"node"`
+					} `json:"edges"`
+				} `json:"characters"`
 			} `json:"Media"`
 		} `json:"data"`
 	}
@@ -242,6 +276,20 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 	}
 
 	media := resp.Data.Media
+	characters := make([]AniListMangaCharacter, 0, len(media.Characters.Edges))
+	for _, edge := range media.Characters.Edges {
+		name := strings.TrimSpace(edge.Node.Name.Full)
+		if name == "" {
+			continue
+		}
+		characters = append(characters, AniListMangaCharacter{
+			ID:         edge.Node.ID,
+			Name:       name,
+			NameNative: strings.TrimSpace(edge.Node.Name.Native),
+			Role:       strings.TrimSpace(edge.Role),
+			Image:      strings.TrimSpace(edge.Node.Image.Large),
+		})
+	}
 	return &AniListMangaMetadata{
 		AniListID:       media.ID,
 		MalID:           media.IDMal,
@@ -260,6 +308,7 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 		Volumes:         media.Volumes,
 		Genres:          media.Genres,
 		Synonyms:        media.Synonyms,
+		Characters:      characters,
 	}, nil
 }
 
