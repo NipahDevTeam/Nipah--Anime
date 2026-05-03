@@ -356,6 +356,7 @@ func (s *Server) handleImageProxy(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMediaProxy(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("url")
 	referer := strings.TrimSpace(r.URL.Query().Get("referer"))
+	cookie := strings.TrimSpace(r.URL.Query().Get("cookie"))
 	if raw == "" {
 		http.Error(w, "missing url", http.StatusBadRequest)
 		return
@@ -376,6 +377,9 @@ func (s *Server) handleMediaProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	req.Header.Set("Referer", referer)
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
 	if accept := strings.TrimSpace(r.Header.Get("Accept")); accept != "" {
 		req.Header.Set("Accept", accept)
 	}
@@ -397,7 +401,7 @@ func (s *Server) handleMediaProxy(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "read error", http.StatusBadGateway)
 			return
 		}
-		manifest := rewriteM3U8Manifest(string(body), parsed)
+		manifest := rewriteM3U8Manifest(string(body), parsed, cookie)
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -476,7 +480,7 @@ func browserMediaContentType(rawURL, contentType string) string {
 	}
 }
 
-func rewriteM3U8Manifest(manifest string, base *url.URL) string {
+func rewriteM3U8Manifest(manifest string, base *url.URL, cookie string) string {
 	lines := strings.Split(manifest, "\n")
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -490,11 +494,11 @@ func rewriteM3U8Manifest(manifest string, base *url.URL) string {
 					return match
 				}
 				resolved := resolveManifestRef(base, parts[1])
-				return fmt.Sprintf(`URI="%s"`, mediaProxyURL(resolved, base.String()))
+				return fmt.Sprintf(`URI="%s"`, mediaProxyURL(resolved, base.String(), cookie))
 			})
 			continue
 		}
-		lines[i] = mediaProxyURL(resolveManifestRef(base, trimmed), base.String())
+		lines[i] = mediaProxyURL(resolveManifestRef(base, trimmed), base.String(), cookie)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -507,22 +511,25 @@ func resolveManifestRef(base *url.URL, ref string) string {
 	return base.ResolveReference(u).String()
 }
 
-func mediaProxyURL(rawURL, referer string) string {
+func mediaProxyURL(rawURL, referer, cookie string) string {
 	params := url.Values{}
 	params.Set("url", rawURL)
 	if referer != "" {
 		params.Set("referer", referer)
 	}
+	if cookie != "" {
+		params.Set("cookie", cookie)
+	}
 	return "http://localhost:43212/proxy/media?" + params.Encode()
 }
 
-func ProbeMediaProxy(rawURL, referer string) (*MediaProxyProbeResult, error) {
-	parsed, refererValue, err := parseMediaProxyInputs(rawURL, referer)
+func ProbeMediaProxy(rawURL, referer, cookie string) (*MediaProxyProbeResult, error) {
+	parsed, refererValue, cookieValue, err := parseMediaProxyInputs(rawURL, referer, cookie)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := fetchMediaProxyResponse(rawURL, refererValue, "", "")
+	resp, err := fetchMediaProxyResponse(rawURL, refererValue, cookieValue, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -530,7 +537,7 @@ func ProbeMediaProxy(rawURL, referer string) (*MediaProxyProbeResult, error) {
 	result := &MediaProxyProbeResult{
 		RawURL:              rawURL,
 		Referer:             refererValue,
-		ProxyURL:            mediaProxyURL(rawURL, refererValue),
+		ProxyURL:            mediaProxyURL(rawURL, refererValue, cookieValue),
 		UpstreamStatus:      resp.status,
 		UpstreamContentType: resp.contentType,
 		IsHLS:               isM3U8Content(rawURL, resp.contentType),
@@ -545,14 +552,14 @@ func ProbeMediaProxy(rawURL, referer string) (*MediaProxyProbeResult, error) {
 	}
 
 	if result.IsHLS {
-		manifest := rewriteM3U8Manifest(string(resp.body), parsed)
+		manifest := rewriteM3U8Manifest(string(resp.body), parsed, cookieValue)
 		result.ManifestLineCount = len(strings.Split(manifest, "\n"))
 		result.ManifestRewritten = strings.Contains(manifest, "/proxy/media?")
 
 		firstSegmentRaw, firstSegmentProxy := firstPlayableManifestLine(manifest)
 		result.FirstSegmentURL = firstSegmentProxy
 		if firstSegmentRaw != "" {
-			segmentResp, segErr := fetchMediaProxyResponse(firstSegmentRaw, parsed.String(), "bytes=0-0", "video/*,*/*;q=0.8")
+			segmentResp, segErr := fetchMediaProxyResponse(firstSegmentRaw, parsed.String(), cookieValue, "bytes=0-0", "video/*,*/*;q=0.8")
 			if segErr == nil {
 				result.FirstSegmentStatus = segmentResp.status
 				result.FirstSegmentType = segmentResp.contentType
@@ -573,7 +580,7 @@ func ProbeMediaProxy(rawURL, referer string) (*MediaProxyProbeResult, error) {
 		return result, nil
 	}
 
-	rangeResp, rangeErr := fetchMediaProxyResponse(rawURL, refererValue, "bytes=0-0", "video/*,*/*;q=0.8")
+	rangeResp, rangeErr := fetchMediaProxyResponse(rawURL, refererValue, cookieValue, "bytes=0-0", "video/*,*/*;q=0.8")
 	if rangeErr == nil {
 		result.RangeProbeStatus = rangeResp.status
 		result.RangeProbeType = rangeResp.contentType
@@ -600,19 +607,19 @@ func ProbeMediaProxy(rawURL, referer string) (*MediaProxyProbeResult, error) {
 	return result, nil
 }
 
-func parseMediaProxyInputs(rawURL, referer string) (*url.URL, string, error) {
+func parseMediaProxyInputs(rawURL, referer, cookie string) (*url.URL, string, string, error) {
 	parsed, err := url.ParseRequestURI(rawURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return nil, "", fmt.Errorf("invalid media url")
+		return nil, "", "", fmt.Errorf("invalid media url")
 	}
 	if strings.TrimSpace(referer) == "" {
 		referer = parsed.Scheme + "://" + parsed.Host + "/"
 	}
-	return parsed, strings.TrimSpace(referer), nil
+	return parsed, strings.TrimSpace(referer), strings.TrimSpace(cookie), nil
 }
 
-func fetchMediaProxyResponse(rawURL, referer, byteRange, accept string) (*responseData, error) {
-	_, refererValue, err := parseMediaProxyInputs(rawURL, referer)
+func fetchMediaProxyResponse(rawURL, referer, cookie, byteRange, accept string) (*responseData, error) {
+	_, refererValue, cookieValue, err := parseMediaProxyInputs(rawURL, referer, cookie)
 	if err != nil {
 		return nil, err
 	}
@@ -623,6 +630,9 @@ func fetchMediaProxyResponse(rawURL, referer, byteRange, accept string) (*respon
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	req.Header.Set("Referer", refererValue)
+	if cookieValue != "" {
+		req.Header.Set("Cookie", cookieValue)
+	}
 	if strings.TrimSpace(accept) != "" {
 		req.Header.Set("Accept", strings.TrimSpace(accept))
 	}

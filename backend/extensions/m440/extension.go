@@ -43,7 +43,7 @@ const (
 	browserRequiredCacheTTL = 90 * time.Minute
 	partialChapterCacheTTL  = 45 * time.Second
 	sharedBrowserTTL        = 20 * time.Minute
-	fastBrowserWait         = 4 * time.Second
+	fastBrowserWait         = 1500 * time.Millisecond
 )
 
 var log = logger.For("m440")
@@ -86,6 +86,8 @@ var (
 	sharedBrowser     *rod.Browser
 	sharedBrowserStop *time.Timer
 	sharedBrowserTill time.Time
+
+	loadBrowserChaptersFn = loadBrowserChapters
 )
 
 type Extension struct{}
@@ -259,16 +261,12 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 				Msg("m440 chapters")
 			return cached, nil
 		}
-		cacheMode := "cache_hit"
-		if partial {
-			cacheMode = "cache_partial"
-		}
 		log.Debug().
 			Str("source_id", sourceID).
 			Str("operation", "chapters").
 			Str("slug", slug).
 			Str("cache_origin", origin).
-			Str("completeness_mode", cacheMode).
+			Str("completeness_mode", "cache_partial_retry").
 			Bool("browser_used", false).
 			Bool("partial", partial).
 			Bool("hydrating", hydrating).
@@ -309,7 +307,7 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 
 		browserForced := requiresBrowserFallback(slug)
 		if browserForced {
-			chapters, browserTook, browserMetrics, err := loadBrowserChapters(pageURL, slug, started, true)
+			chapters, browserTook, browserMetrics, err := loadBrowserChaptersFn(pageURL, slug, started, true)
 			if err != nil {
 				return nil, err
 			}
@@ -380,28 +378,6 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 		}
 		if len(htmlChapters) > 0 && completeness.requiresBrowser {
 			storeBrowserRequirement(slug, browserRequiredCacheTTL)
-			if ready := startBrowserHydration(pageURL, slug); ready != nil {
-				if hydrated, ok, waited := awaitHydratedChapterList(ready, fastBrowserWait); ok {
-					mode := "fast_browser"
-					if waited {
-						mode = "browser_required_waited"
-					}
-					log.Debug().
-						Str("source_id", sourceID).
-						Str("operation", "chapters").
-						Str("slug", slug).
-						Str("completeness_mode", mode).
-						Str("cache_origin", "network").
-						Bool("browser_used", true).
-						Bool("partial", false).
-						Bool("hydrating", false).
-						Int("result_count", len(hydrated)).
-						Dur("html_parse_took", time.Since(htmlParseStarted)).
-						Dur("took", time.Since(started)).
-						Msg("m440 chapters")
-					return hydrated, nil
-				}
-			}
 			if browserCached, ok := readBrowserChapterCache(slug); ok && len(browserCached) > 0 {
 				storeChapterCache(slug, browserCached, chapterCacheTTL)
 				log.Debug().
@@ -419,7 +395,30 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 					Msg("m440 chapters")
 				return browserCached, nil
 			}
-			return nil, fmt.Errorf("m440: full chapter list unavailable for %s", slug)
+			chapters, browserTook, browserMetrics, err := loadBrowserChaptersFn(pageURL, slug, started, true)
+			if err != nil {
+				return nil, err
+			}
+			log.Debug().
+				Str("source_id", sourceID).
+				Str("operation", "chapters").
+				Str("slug", slug).
+				Str("completeness_mode", "browser_required_sync").
+				Str("cache_origin", "network").
+				Bool("browser_used", true).
+				Bool("partial", false).
+				Bool("hydrating", false).
+				Int("result_count", len(chapters)).
+				Int("browser_snapshot_count", browserMetrics.SnapshotCount).
+				Int("browser_total_pages", browserMetrics.TotalPages).
+				Str("browser_payload_mode", browserMetrics.PayloadMode).
+				Int("browser_payload_page", browserMetrics.PayloadPage).
+				Dur("browser_payload_ready_after", browserMetrics.PayloadReadyAfter).
+				Dur("browser_took", browserTook).
+				Dur("html_parse_took", time.Since(htmlParseStarted)).
+				Dur("took", time.Since(started)).
+				Msg("m440 chapters")
+			return chapters, nil
 		}
 
 		if browserCached, ok := readBrowserChapterCache(slug); ok {
@@ -439,7 +438,7 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 			return browserCached, nil
 		}
 
-		chapters, browserTook, browserMetrics, err := loadBrowserChapters(pageURL, slug, started, true)
+		chapters, browserTook, browserMetrics, err := loadBrowserChaptersFn(pageURL, slug, started, true)
 		if err != nil {
 			return nil, err
 		}
@@ -749,8 +748,11 @@ func htmlHasTeaserMarkers(body string) bool {
 }
 
 func htmlLooksBoundaryOnly(chapters []extensions.Chapter) bool {
-	if len(chapters) < 2 {
+	if len(chapters) == 0 {
 		return false
+	}
+	if len(chapters) == 1 {
+		return chapters[0].Number >= 2
 	}
 	first := chapters[0].Number
 	last := chapters[len(chapters)-1].Number
@@ -797,7 +799,7 @@ func browserChaptersWithBrowser(browser *rod.Browser, pageURL, slug string) ([]e
 
 	time.Sleep(250 * time.Millisecond)
 
-	firstSnapshot, err := browserChapterSnapshot(page, slug, 1)
+	firstSnapshot, err := browserChapterSnapshot(page, slug, 1, "", "")
 	if err != nil {
 		return nil, browserChapterMetrics{}, err
 	}
@@ -815,8 +817,10 @@ func browserChaptersWithBrowser(browser *rod.Browser, pageURL, slug string) ([]e
 	}
 
 	merged := mergeChapterLists(parseRenderedChapterList(firstSnapshot.HTML, slug), extractHTMLChapters(firstSnapshot.HTML, slug))
+	previousHTML := firstSnapshot.HTML
+	previousRaw := firstSnapshot.RawChapters
 	for pageNum := 2; pageNum <= totalPages; pageNum++ {
-		snapshot, snapshotErr := browserChapterSnapshot(page, slug, pageNum)
+		snapshot, snapshotErr := browserChapterSnapshot(page, slug, pageNum, previousHTML, previousRaw)
 		if snapshotErr != nil {
 			return nil, metrics, snapshotErr
 		}
@@ -833,6 +837,8 @@ func browserChaptersWithBrowser(browser *rod.Browser, pageURL, slug string) ([]e
 		}
 		merged = mergeChapterLists(merged, parseRenderedChapterList(snapshot.HTML, slug))
 		merged = mergeChapterLists(merged, extractHTMLChapters(snapshot.HTML, slug))
+		previousHTML = snapshot.HTML
+		previousRaw = snapshot.RawChapters
 	}
 
 	if len(merged) == 0 {
@@ -848,12 +854,15 @@ type browserChapterSnapshotPayload struct {
 	HTML        string `json:"html"`
 	RawChapters string `json:"raw_chapters"`
 	TotalPages  int    `json:"total_pages"`
+	CurrentPage int    `json:"current_page"`
 }
 
-func browserChapterSnapshot(page *rod.Page, slug string, pageNumber int) (browserChapterSnapshotPayload, error) {
+func browserChapterSnapshot(page *rod.Page, slug string, pageNumber int, previousHTML string, previousRaw string) (browserChapterSnapshotPayload, error) {
 	script := fmt.Sprintf(`() => new Promise(async (resolve) => {
 		const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 		const slug = %q;
+		const previousHTML = %q;
+		const previousRaw = %q;
 		const getRawChapters = () => {
 			try {
 				if (typeof jschaptertemp !== 'undefined' && Array.isArray(jschaptertemp)) {
@@ -900,6 +909,36 @@ func browserChapterSnapshot(page *rod.Page, slug string, pageNumber int) (browse
 			}
 			return 1;
 		};
+		const getCurrentPage = () => {
+			try {
+				if (typeof ALPlCT === 'object' && ALPlCT) {
+					const direct = Number(ALPlCT.current_page || ALPlCT.page || ALPlCT.cur_page || 0);
+					if (direct > 0) {
+						return direct;
+					}
+				}
+			} catch (error) {}
+			const active = document.querySelector('.page-item.active, .pagination .active, [aria-current="page"]');
+			if (active) {
+				const match = (active.textContent || '').match(/(\d+)/);
+				if (match) {
+					return parseInt(match[1], 10) || 0;
+				}
+			}
+			return 0;
+		};
+		const chapterPayloadLooksAdvanced = (html, raw, currentPage) => {
+			if (raw && raw !== previousRaw) {
+				return true;
+			}
+			if (currentPage === %d) {
+				return true;
+			}
+			if (%d <= 1) {
+				return html.includes('/manga/');
+			}
+			return html && html !== previousHTML;
+		};
 
 		for (let attempt = 0; attempt < 20; attempt++) {
 			if (typeof initChapters === 'function' || getRawChapters()) {
@@ -917,18 +956,20 @@ func browserChapterSnapshot(page *rod.Page, slug string, pageNumber int) (browse
 		let html = '';
 		let rawChapters = getRawChapters();
 		let totalPages = 1;
+		let currentPage = getCurrentPage();
 		for (let attempt = 0; attempt < 20; attempt++) {
 			html = getAnchorHTML();
 			rawChapters = getRawChapters();
 			totalPages = getTotalPages();
-			if (rawChapters || html.includes('/manga/')) {
+			currentPage = getCurrentPage();
+			if (chapterPayloadLooksAdvanced(html, rawChapters, currentPage)) {
 				break;
 			}
 			await sleep(100);
 		}
 
-		resolve(JSON.stringify({ html, raw_chapters: rawChapters, total_pages: totalPages }));
-	})`, slug, pageNumber)
+		resolve(JSON.stringify({ html, raw_chapters: rawChapters, total_pages: totalPages, current_page: currentPage }));
+	})`, slug, previousHTML, previousRaw, pageNumber, pageNumber, pageNumber)
 
 	result, err := page.Eval(script)
 	if err != nil {
@@ -946,6 +987,9 @@ func browserChapterSnapshot(page *rod.Page, slug string, pageNumber int) (browse
 	}
 	if payload.TotalPages <= 0 {
 		payload.TotalPages = 1
+	}
+	if payload.CurrentPage <= 0 {
+		payload.CurrentPage = pageNumber
 	}
 	return payload, nil
 }
@@ -1288,7 +1332,7 @@ func startBrowserHydration(pageURL, slug string) <-chan []extensions.Chapter {
 			}
 
 			started := time.Now()
-			chapters, browserTook, metrics, err := loadBrowserChapters(pageURL, slug, started, false)
+			chapters, browserTook, metrics, err := loadBrowserChaptersFn(pageURL, slug, started, false)
 			if err != nil || len(chapters) == 0 {
 				updateChapterHydrating(slug, false)
 				log.Debug().
@@ -1341,9 +1385,8 @@ func awaitHydratedChapterList(ready <-chan []extensions.Chapter, fastWait time.D
 	case hydrated, ok := <-ready:
 		return hydrated, ok && len(hydrated) > 0, false
 	case <-time.After(fastWait):
+		return nil, false, true
 	}
-	hydrated, ok := <-ready
-	return hydrated, ok && len(hydrated) > 0, true
 }
 
 func readBrowserChapterCache(slug string) ([]extensions.Chapter, bool) {

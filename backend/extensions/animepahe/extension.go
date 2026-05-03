@@ -202,30 +202,41 @@ func (e *Extension) GetEpisodes(animeID string) ([]extensions.Episode, error) {
 	return nil, fmt.Errorf("animepahe: episodes failed: %w", lastErr)
 }
 
+func (e *Extension) GetAudioVariants(animeID string, episodeID string) (map[string]bool, error) {
+	result := map[string]bool{
+		"sub": true,
+		"dub": false,
+	}
+
+	targetEpisodeID := strings.TrimSpace(episodeID)
+	if targetEpisodeID == "" {
+		episodes, err := e.GetEpisodes(animeID)
+		if err != nil {
+			return result, err
+		}
+		if len(episodes) == 0 {
+			return result, fmt.Errorf("animepahe: no episodes found for %s", animeID)
+		}
+		targetEpisodeID = strings.TrimSpace(episodes[0].ID)
+	}
+
+	entries, _, err := animePaheFetchKwikEntries(targetEpisodeID)
+	if err != nil {
+		return result, err
+	}
+	return animePaheAudioVariants(entries), nil
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Streams — load play page, extract kwik embeds, resolve to m3u8
 // ─────────────────────────────────────────────────────────────────────────────
 
 func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSource, error) {
-	idx := strings.LastIndex(episodeID, "/")
-	if idx == -1 {
-		return nil, fmt.Errorf("animepahe: invalid episode ID: %s", episodeID)
-	}
-	animeSession := episodeID[:idx]
-	epSession := episodeID[idx+1:]
-
 	var lastErr error
 	for _, base := range animePaheBaseCandidates() {
-		playURL := fmt.Sprintf("%s/play/%s/%s", base, animeSession, epSession)
-		body, err := fetchPageWithBrowserFallback(playURL, base)
+		kwikEntries, playURL, err := animePaheFetchKwikEntriesForBase(episodeID, base)
 		if err != nil {
 			lastErr = err
-			continue
-		}
-
-		kwikEntries := extractKwikURLs(body)
-		if len(kwikEntries) == 0 {
-			lastErr = fmt.Errorf("animepahe: no embeds found on play page")
 			continue
 		}
 
@@ -242,6 +253,7 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 				URL:      m3u8,
 				Quality:  qual,
 				Language: extensions.LangEnglish,
+				Audio:    ke.audio,
 				Referer:  streamRefererForAnimePahe(ke.url, m3u8, playURL),
 			})
 		}
@@ -265,12 +277,13 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 type kwikEntry struct {
 	url     string
 	quality string
+	audio   string
 }
 
 // cleanQualityLabel extracts the resolution from quality labels like
 // "FLE &middot; 1080p" or "SubsPlease · 720p" → "1080p" / "720p"
 func cleanQualityLabel(raw string) string {
-	raw = html.UnescapeString(raw)
+	raw = animePaheNormalizeLabel(raw)
 	// Extract NNNp pattern
 	re := regexp.MustCompile(`(\d{3,4}p)`)
 	if m := re.FindString(raw); m != "" {
@@ -323,6 +336,36 @@ func extractKwikURLs(body string) []kwikEntry {
 	}
 
 	return entries
+}
+
+func extractAnimePaheKwikEntries(body string) []kwikEntry {
+	var entries []kwikEntry
+	seen := map[string]bool{}
+
+	dataSrcRe := regexp.MustCompile(`data-src="(https?://kwik\.[a-z]+/[^"]+)"`)
+	for _, match := range dataSrcRe.FindAllStringSubmatchIndex(body, -1) {
+		if len(match) < 4 {
+			continue
+		}
+		url := body[match[2]:match[3]]
+		if seen[url] {
+			continue
+		}
+		seen[url] = true
+		context := animePaheElementContext(body, match[0], match[1])
+		label := animePaheNormalizeLabel(context)
+		entries = append(entries, kwikEntry{
+			url:     url,
+			quality: cleanQualityLabel(label),
+			audio:   animePaheDetectAudio(label),
+		})
+	}
+
+	if len(entries) == 0 {
+		return normalizeAnimePaheKwikEntries(extractKwikURLs(body))
+	}
+
+	return normalizeAnimePaheKwikEntries(entries)
 }
 
 // resolveKwik fetches a kwik embed and extracts the m3u8 stream URL.
@@ -384,6 +427,174 @@ func detectQuality(s string) string {
 	default:
 		return ""
 	}
+}
+
+func animePaheFetchKwikEntries(episodeID string) ([]kwikEntry, string, error) {
+	var lastErr error
+	for _, base := range animePaheBaseCandidates() {
+		entries, playURL, err := animePaheFetchKwikEntriesForBase(episodeID, base)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		rememberAnimePaheBase(base)
+		return entries, playURL, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("animepahe: all mirrors failed")
+	}
+	return nil, "", lastErr
+}
+
+func animePaheFetchKwikEntriesForBase(episodeID, base string) ([]kwikEntry, string, error) {
+	animeSession, epSession, err := animePaheEpisodeSessions(episodeID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	playURL := fmt.Sprintf("%s/play/%s/%s", base, animeSession, epSession)
+	body, err := fetchPageWithBrowserFallback(playURL, base)
+	if err != nil {
+		return nil, playURL, err
+	}
+
+	kwikEntries := extractAnimePaheKwikEntries(body)
+	if len(kwikEntries) == 0 {
+		return nil, playURL, fmt.Errorf("animepahe: no embeds found on play page")
+	}
+	return kwikEntries, playURL, nil
+}
+
+func animePaheEpisodeSessions(episodeID string) (string, string, error) {
+	value := strings.TrimSpace(episodeID)
+	idx := strings.LastIndex(value, "/")
+	if idx == -1 {
+		return "", "", fmt.Errorf("animepahe: invalid episode ID: %s", episodeID)
+	}
+	return value[:idx], value[idx+1:], nil
+}
+
+func animePaheNormalizeLabel(raw string) string {
+	tagStripRe := regexp.MustCompile(`<[^>]+>`)
+	cleaned := html.UnescapeString(raw)
+	cleaned = tagStripRe.ReplaceAllString(cleaned, " ")
+	return strings.Join(strings.Fields(strings.TrimSpace(cleaned)), " ")
+}
+
+func animePaheDetectAudio(raw string) string {
+	value := strings.ToLower(animePaheNormalizeLabel(raw))
+	switch {
+	case regexp.MustCompile(`\b(?:eng|english|dub|dubbed)\b`).MatchString(value):
+		return "dub"
+	case regexp.MustCompile(`\b(?:jpn|jap|japanese|sub|subbed|subtitle|subtitles|raw|original)\b`).MatchString(value):
+		return "sub"
+	default:
+		return ""
+	}
+}
+
+func animePaheNormalizeAudio(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "sub", "subs", "subtitle", "subtitles", "raw", "original":
+		return "sub"
+	case "dub", "dublado", "doblaje", "eng", "english":
+		return "dub"
+	default:
+		return ""
+	}
+}
+
+func animePaheElementContext(body string, matchStart, matchEnd int) string {
+	start := strings.LastIndex(body[:matchStart], "<")
+	if start == -1 {
+		start = matchStart
+	}
+
+	openEnd := matchEnd
+	if rel := strings.Index(body[matchEnd:], ">"); rel >= 0 {
+		openEnd = matchEnd + rel + 1
+	}
+
+	searchWindowEnd := openEnd + 240
+	if searchWindowEnd > len(body) {
+		searchWindowEnd = len(body)
+	}
+	lowerWindow := strings.ToLower(body[openEnd:searchWindowEnd])
+
+	end := searchWindowEnd
+	for _, token := range []string{"</button>", "</a>", "</li>", "</div>"} {
+		if idx := strings.Index(lowerWindow, token); idx >= 0 {
+			candidate := openEnd + idx + len(token)
+			if candidate < end {
+				end = candidate
+			}
+		}
+	}
+
+	if end == searchWindowEnd {
+		if nextIdx := strings.Index(lowerWindow, `data-src="`); nextIdx > 0 {
+			end = openEnd + nextIdx
+		}
+	}
+
+	if end <= start {
+		end = searchWindowEnd
+	}
+	return body[start:end]
+}
+
+func normalizeAnimePaheKwikEntries(entries []kwikEntry) []kwikEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	out := make([]kwikEntry, len(entries))
+	copy(out, entries)
+
+	hasExplicitSub := false
+	hasExplicitDub := false
+	for i := range out {
+		out[i].audio = animePaheNormalizeAudio(out[i].audio)
+		switch out[i].audio {
+		case "sub":
+			hasExplicitSub = true
+		case "dub":
+			hasExplicitDub = true
+		}
+	}
+
+	if hasExplicitDub || hasExplicitSub {
+		for i := range out {
+			if out[i].audio == "" {
+				out[i].audio = "sub"
+			}
+		}
+	}
+
+	return out
+}
+
+func animePaheAudioVariants(entries []kwikEntry) map[string]bool {
+	result := map[string]bool{
+		"sub": false,
+		"dub": false,
+	}
+	for _, entry := range normalizeAnimePaheKwikEntries(entries) {
+		switch animePaheNormalizeAudio(entry.audio) {
+		case "dub":
+			result["dub"] = true
+		case "sub":
+			result["sub"] = true
+		default:
+			if strings.TrimSpace(entry.url) != "" {
+				result["sub"] = true
+			}
+		}
+	}
+	if len(entries) == 0 {
+		result["sub"] = true
+	}
+	return result
 }
 
 // unpackAllEvals finds and unpacks ALL eval(function(p,a,c,k,e,d){...}) blocks

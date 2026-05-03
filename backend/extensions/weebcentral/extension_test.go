@@ -1,10 +1,11 @@
 package weebcentral
 
 import (
+	"strings"
 	"testing"
-	"time"
 
 	"miruro/backend/extensions"
+	"miruro/backend/extensions/sourceaccess"
 )
 
 func TestScoreValueMatchesCompactSpacingVariants(t *testing.T) {
@@ -47,18 +48,73 @@ func TestMergeWeebCentralChaptersDedupesAndSorts(t *testing.T) {
 	}
 }
 
-func TestGetChapterCacheStateReturnsPartialHydratingFlags(t *testing.T) {
-	const seriesID = "01/cache-state-series"
-	storeSeriesChaptersWithState(seriesID, []extensions.Chapter{{ID: "c1", Number: 1}}, chapterCacheTTL, true, true)
+func TestGetChaptersPromotesPartialCacheViaRefetch(t *testing.T) {
+	const seriesID = "01/partial-cache-series"
+	storeSeriesChaptersWithState(seriesID, []extensions.Chapter{{ID: "c77", Number: 77}}, chapterCacheTTL, true, false)
 	t.Cleanup(func() {
 		chapterMu.Lock()
 		delete(chapterCache, seriesID)
 		chapterMu.Unlock()
 	})
+	originalFetchHTML := fetchHTMLFn
+	fetchCalls := 0
+	fetchHTMLFn = func(source, url string, options sourceaccess.RequestOptions) (string, error) {
+		fetchCalls++
+		switch {
+		case strings.Contains(url, "/full-chapter-list"):
+			return `
+				<a href="https://weebcentral.com/chapters/partial-cache-series-chapter-1"><span>Chapter 1</span></a>
+				<a href="https://weebcentral.com/chapters/partial-cache-series-chapter-2"><span>Chapter 2</span></a>
+			`, nil
+		default:
+			return `<a href="https://weebcentral.com/chapters/partial-cache-series-chapter-2"><span>Chapter 2</span></a>`, nil
+		}
+	}
+	t.Cleanup(func() { fetchHTMLFn = originalFetchHTML })
 
-	partial, hydrating := GetChapterCacheState(seriesID)
-	if !partial || !hydrating {
-		t.Fatalf("expected partial hydrating cache state, got partial=%v hydrating=%v", partial, hydrating)
+	chapters, err := New().GetChapters(seriesID, extensions.LangEnglish)
+	if err != nil {
+		t.Fatalf("expected partial cache to be promotable, got error %v", err)
+	}
+	if fetchCalls == 0 {
+		t.Fatalf("expected stale partial cache to trigger a refetch")
+	}
+	if len(chapters) != 2 || chapters[0].Number != 1 || chapters[1].Number != 2 {
+		t.Fatalf("expected promoted full chapter list, got %#v", chapters)
+	}
+}
+
+func TestGetChaptersRejectsTeaserOnlyWhenShowAllIsPresent(t *testing.T) {
+	const seriesID = "01/teaser-only-series"
+	t.Cleanup(func() {
+		chapterMu.Lock()
+		delete(chapterCache, seriesID)
+		chapterMu.Unlock()
+	})
+	originalFetchHTML := fetchHTMLFn
+	fetchHTMLFn = func(source, url string, options sourceaccess.RequestOptions) (string, error) {
+		switch {
+		case strings.Contains(url, "/full-chapter-list"):
+			return `
+				<a href="https://weebcentral.com/chapters/teaser-only-series-chapter-200"><span>Chapter 200</span></a>
+				<a href="https://weebcentral.com/chapters/teaser-only-series-chapter-3"><span>Chapter 3</span></a>
+				<a href="https://weebcentral.com/chapters/teaser-only-series-chapter-2"><span>Chapter 2</span></a>
+				<a href="https://weebcentral.com/chapters/teaser-only-series-chapter-1"><span>Chapter 1</span></a>
+			`, nil
+		default:
+			return `
+				<a href="https://weebcentral.com/chapters/teaser-only-series-chapter-200"><span>Chapter 200</span></a>
+				<a href="https://weebcentral.com/chapters/teaser-only-series-chapter-3"><span>Chapter 3</span></a>
+				Show All Chapters
+				<a href="https://weebcentral.com/chapters/teaser-only-series-chapter-2"><span>Chapter 2</span></a>
+				<a href="https://weebcentral.com/chapters/teaser-only-series-chapter-1"><span>Chapter 1</span></a>
+			`, nil
+		}
+	}
+	t.Cleanup(func() { fetchHTMLFn = originalFetchHTML })
+
+	if _, err := New().GetChapters(seriesID, extensions.LangEnglish); err == nil {
+		t.Fatalf("expected teaser-only full-list payload to be rejected")
 	}
 }
 
@@ -79,25 +135,5 @@ func TestBestContiguousTeaserSlicePrefersSingleRun(t *testing.T) {
 	}
 	if trimmed[0].Number != 1173 || trimmed[len(trimmed)-1].Number != 1176 {
 		t.Fatalf("expected latest contiguous run, got %#v", trimmed)
-	}
-}
-
-func TestAwaitHydratedSeriesChaptersWaitsForFullList(t *testing.T) {
-	ready := make(chan []extensions.Chapter, 1)
-	go func() {
-		time.Sleep(20 * time.Millisecond)
-		ready <- []extensions.Chapter{{ID: "c2", Number: 2}}
-		close(ready)
-	}()
-
-	chapters, ok, waited := awaitHydratedSeriesChapters(ready, 5*time.Millisecond)
-	if !ok {
-		t.Fatalf("expected hydrated chapter list")
-	}
-	if !waited {
-		t.Fatalf("expected wait path when hydration exceeds fast window")
-	}
-	if len(chapters) != 1 || chapters[0].Number != 2 {
-		t.Fatalf("expected hydrated full list after waiting, got %#v", chapters)
 	}
 }

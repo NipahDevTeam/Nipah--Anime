@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+const detailPath = resolve(import.meta.dirname, './OnlineAnimeDetail.jsx')
+const cssPath = resolve(import.meta.dirname, '../../gui-v2/styles/gui2.css')
+
+const detailSource = readFileSync(detailPath, 'utf8')
+const css = readFileSync(cssPath, 'utf8')
+
+const toolbarStart = detailSource.indexOf('<div className="manga-chapter-toolbar">')
+const actionsStart = detailSource.indexOf('className="episode-toolbar-actions"')
+const inlineToggleStart = detailSource.indexOf('className="episode-audio-toolbar episode-audio-toolbar--inline"')
+const filtersStart = detailSource.indexOf('className="manga-filter-toggle" role="tablist" aria-label={t(\'Episodios\')}', inlineToggleStart)
+const landingToolsStart = detailSource.indexOf('className="gui2-landing-section-tools gui2-landing-section-tools--wrap"')
+const landingToggleStart = detailSource.indexOf('className="episode-audio-toolbar episode-audio-toolbar--inline gui2-landing-audio-toolbar"', landingToolsStart)
+const landingCountStart = detailSource.indexOf('className="media-detail-count-pill"', landingToggleStart)
+const sideAudioBlockStart = detailSource.indexOf('<h4 className="gui2-landing-mini-title">{ui.audioTrack}</h4>')
+const landingQueueCopyStart = detailSource.indexOf('<p className="gui2-landing-section-copy">{ui.episodeQueueCopy}</p>')
+const landingDetailsSidecardStart = detailSource.indexOf('<aside className="gui2-landing-sidecard">')
+const playerPageStart = detailSource.indexOf('className="gui2-online-player-page"')
+const playerTitleBlockStart = detailSource.indexOf('className="gui2-online-player-copy"')
+const pagePresentationStart = detailSource.indexOf('presentation="gui2-page"')
+const legacyToolbarPattern = /className="episode-audio-toolbar">\s*<div>\s*<div className="detail-stat-label"/
+
+assert.ok(detailSource.includes("audioVariantProbeSources = new Set(['animegg-en', 'animepahe-en', 'animeav1-es'])"), 'audio variant probing should be ready for AnimeGG, AnimePahe, and AnimeAV1')
+assert.ok(detailSource.includes('enabled: canProbeAudioVariants'), 'audio variant query should use the shared frontend probe gate')
+assert.ok(detailSource.includes('const supportsAudioVariants = canProbeAudioVariants'), 'audio variant support should be driven by the shared frontend probe gate')
+assert.ok(detailSource.includes('extractAniListAnimeSearchMedia(search)'), 'online anime detail should normalize AniList fallback search payloads instead of assuming a plain array response')
+assert.ok(!detailSource.includes('const firstHit = Array.isArray(search) ? search[0] : null'), 'online anime detail should not assume searchAniList returns a plain array')
+assert.ok(toolbarStart >= 0, 'episode toolbar should exist')
+assert.ok(actionsStart > toolbarStart, 'episode toolbar actions should render inside the toolbar')
+assert.ok(inlineToggleStart > actionsStart, 'sub/dub toggle should render inline inside the toolbar actions')
+assert.ok(filtersStart > inlineToggleStart, 'sub/dub toggle should appear before the episode filter buttons')
+assert.ok(!legacyToolbarPattern.test(detailSource), 'legacy standalone audio toolbar should not remain below the episode header')
+assert.ok(landingToolsStart >= 0, 'gui-v2 landing episode tools should exist')
+assert.ok(landingToggleStart > landingToolsStart, 'gui-v2 landing layout should render the audio toggle inside the episode tools row')
+assert.ok(landingCountStart > landingToggleStart, 'gui-v2 landing audio toggle should appear before the episode count and filter controls')
+assert.equal(sideAudioBlockStart, -1, 'gui-v2 landing side panel should not render a standalone audio toggle block')
+assert.equal(landingQueueCopyStart, -1, 'gui-v2 landing episode header should not render the legacy helper copy above the episode list')
+assert.equal(landingDetailsSidecardStart, -1, 'gui-v2 landing hero should not render a duplicate Details sidecard above the episode list')
+assert.ok(playerPageStart >= 0, 'gui-v2 online anime detail should define a dedicated in-app player page surface')
+assert.ok(playerTitleBlockStart > playerPageStart, 'gui-v2 player page should render its title block inside the dedicated player surface')
+assert.ok(pagePresentationStart > 0, 'integrated player should support a gui-v2 page presentation mode')
+assert.ok(!detailSource.includes('ui.integratedNote'), 'legacy Anime4K helper copy should not be rendered in the online anime detail layout')
+assert.ok(css.includes('.episode-toolbar-actions {'), 'episode toolbar actions CSS should exist')
+assert.ok(css.includes('.episode-audio-toolbar--inline {'), 'inline audio toolbar CSS should exist')
+assert.ok(css.includes('.episode-audio-toolbar-label {'), 'inline audio label CSS should exist')
+assert.ok(css.includes('.gui2-online-player-page {'), 'gui-v2 online player page CSS should exist')
+assert.ok(css.includes('.integrated-player-overlay--page {'), 'integrated player page presentation CSS should exist')
+assert.ok(css.includes('.integrated-player-shell--page {'), 'integrated player page shell CSS should exist')
+
+console.log('online anime detail layout tests passed')

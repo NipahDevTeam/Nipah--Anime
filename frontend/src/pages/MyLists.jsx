@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { wails, proxyImage } from '../lib/wails'
 import { useI18n } from '../lib/i18n'
 import { toastSuccess, toastError } from '../components/ui/Toast'
+import { extractAniListAnimeSearchMedia } from '../lib/anilistSearch'
 import { filterAndSortMangaEntries } from '../lib/myListsView'
+import { buildAnimeNavigationState, buildMangaListNavigationState } from '../lib/mediaNavigation'
 
 const STATUSES = ['WATCHING', 'PLANNING', 'COMPLETED', 'ON_HOLD', 'DROPPED']
 
@@ -124,6 +126,11 @@ export default function MyLists() {
   const activeLabels = activeMediaType === 'anime' ? animeLabels : mangaLabels
   const isLoading = activeMediaType === 'anime' ? loadingAnime : loadingManga
   const totalCount = Object.values(activeCounts).reduce((acc, value) => acc + value, 0)
+  const animeTotal = Object.values(animeCounts).reduce((acc, value) => acc + value, 0)
+  const mangaTotal = Object.values(mangaCounts).reduce((acc, value) => acc + value, 0)
+  const watchingCount = Number(activeCounts.WATCHING || 0)
+  const planningCount = Number(activeCounts.PLANNING || 0)
+  const completedCount = Number(activeCounts.COMPLETED || 0)
 
   const sections = STATUSES
     .map((status) => ({
@@ -135,6 +142,19 @@ export default function MyLists() {
 
   const mainSections = sections.filter((section) => section.status !== 'DROPPED')
   const droppedSection = sections.find((section) => section.status === 'DROPPED')
+  const quickOverview = sections.slice(0, 3)
+  const featuredSection = sections.find((section) => section.status === 'WATCHING')
+    || sections.find((section) => section.status === 'PLANNING')
+    || sections[0]
+  const featuredEntry = featuredSection?.items?.[0] || activeEntries[0] || null
+  const featuredCover = featuredEntry?.cover_image ? proxyImage(featuredEntry.cover_image) : ''
+  const featuredTitle = featuredEntry?.title_english || featuredEntry?.title || (isEnglish ? 'Your library' : 'Tu biblioteca')
+  const featuredSecondaryTitle = featuredEntry?.title_english && featuredEntry?.title_english !== featuredEntry?.title
+    ? featuredEntry.title
+    : ''
+  const featuredProgress = activeMediaType === 'anime'
+    ? `${featuredEntry?.episodes_watched ?? 0}${Number(featuredEntry?.episodes_total || 0) > 0 ? ` / ${featuredEntry.episodes_total}` : ''}`
+    : `${featuredEntry?.chapters_read ?? 0}${Number(featuredEntry?.chapters_total || 0) > 0 ? ` / ${featuredEntry.chapters_total}` : ''}`
 
   const mangaYearOptions = useMemo(() => {
     const years = [...new Set(
@@ -297,7 +317,7 @@ export default function MyLists() {
     setSearching(true)
     try {
       const result = await wails.searchAniList(addQuery.trim(), lang)
-      const media = result?.data?.Page?.media || []
+      const media = extractAniListAnimeSearchMedia(result)
       setAddResults(media)
     } catch {
       setAddResults([])
@@ -330,52 +350,125 @@ export default function MyLists() {
 
   return (
     <div className="my-lists-page fade-in">
-      <div className="section-header">
-        <span className="section-title">
-          {t('Mis Listas')}
-          {totalCount > 0 && <span className="badge badge-muted" style={{ marginLeft: 8 }}>{totalCount}</span>}
-        </span>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {activeMediaType === 'anime' && (
-            <>
-              <button className="btn btn-ghost" onClick={() => { setShowAdd(!showAdd) }}>
-                + {t('Agregar anime')}
-              </button>
-            </>
-          )}
-          <button className="btn btn-danger" onClick={handleClearList}>
-            {confirmClear
-              ? (isEnglish ? 'Confirm. Click again' : 'Confirmar. Haz clic de nuevo')
-              : (activeMediaType === 'anime' ? t('Borrar lista') : (isEnglish ? 'Clear manga list' : 'Borrar manga'))}
-          </button>
+      <section className="nipah-hero-band my-lists-hero">
+        <div className="nipah-hero-copy">
+          <div className="nipah-hero-kicker">{isEnglish ? 'Collection' : 'Coleccion'}</div>
+          <h1 className="nipah-hero-title">
+            {activeMediaType === 'anime'
+              ? (isEnglish ? 'Track everything with confidence' : 'Controla todo tu anime con confianza')
+              : (isEnglish ? 'Keep your reading shelf clean' : 'Mantén tu estante de lectura impecable')}
+          </h1>
+          <p className="nipah-hero-text">
+            {activeMediaType === 'anime'
+              ? (isEnglish
+                  ? 'A sharper view of progress, planning, and cleanup across every title linked to your local list.'
+                  : 'Una vista mas nitida del progreso, planeacion y limpieza de cada titulo vinculado a tu lista local.')
+              : (isEnglish
+                  ? 'Filter, sort, and update your manga collection with a presentation that feels like a real media shelf.'
+                  : 'Filtra, ordena y actualiza tu coleccion manga con una presentacion que se siente como un estante real.')}
+          </p>
         </div>
-      </div>
+        <div className="my-lists-hero-focus">
+          {featuredCover ? <img src={featuredCover} alt={featuredTitle} className="my-lists-hero-focus-art" /> : <div className="my-lists-hero-focus-art my-lists-hero-focus-art-placeholder" />}
+          <div className="my-lists-hero-focus-copy">
+            <span className="my-lists-hero-focus-kicker">{featuredSection?.label || (isEnglish ? 'Overview' : 'Resumen')}</span>
+            <strong className="my-lists-hero-focus-title">{featuredTitle}</strong>
+            {featuredSecondaryTitle ? <span className="my-lists-hero-focus-subtitle">{featuredSecondaryTitle}</span> : null}
+            <div className="my-lists-hero-focus-meta">
+              <span>{isEnglish ? 'Total titles' : 'Titulos totales'} {totalCount}</span>
+              <span>{activeLabels.WATCHING} {watchingCount}</span>
+              <span>{activeMediaType === 'anime' ? (isEnglish ? 'Episodes' : 'Episodios') : (isEnglish ? 'Chapters' : 'Capitulos')} {featuredProgress}</span>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <div className="list-media-switch" role="tablist" aria-label={isEnglish ? 'List type' : 'Tipo de lista'}>
-        <button
-          type="button"
-          className={`list-media-switch-btn${activeMediaType === 'anime' ? ' active' : ''}`}
-          onClick={() => {
-            setActiveMediaType('anime')
-            setConfirmClear(false)
-          }}
-        >
-          Anime
-          <span className="list-media-switch-count">{Object.values(animeCounts).reduce((acc, value) => acc + value, 0)}</span>
-        </button>
-        <button
-          type="button"
-          className={`list-media-switch-btn${activeMediaType === 'manga' ? ' active' : ''}`}
-          onClick={() => {
-            setActiveMediaType('manga')
-            setShowAdd(false)
-            setConfirmClear(false)
-          }}
-        >
-          Manga
-          <span className="list-media-switch-count">{Object.values(mangaCounts).reduce((acc, value) => acc + value, 0)}</span>
-        </button>
-      </div>
+      <section className="my-lists-collection-strip">
+        {quickOverview.map((section) => (
+          <button
+            key={`collection-${section.status}`}
+            type="button"
+            className="my-lists-collection-card"
+            onClick={() => scrollToSection(section.status)}
+          >
+            <span className="my-lists-collection-label">{section.label}</span>
+            <strong className="my-lists-collection-value">{section.items.length}</strong>
+            <span className="my-lists-collection-copy">
+              {section.status === 'WATCHING'
+                ? (isEnglish ? 'Active right now' : 'Activos ahora')
+                : section.status === 'PLANNING'
+                  ? (isEnglish ? 'Queued for later' : 'Guardados para despues')
+                  : (isEnglish ? 'Wrapped and archived' : 'Terminados y archivados')}
+            </span>
+          </button>
+        ))}
+        {droppedSection ? (
+          <button
+            type="button"
+            className="my-lists-collection-card"
+            onClick={() => scrollToSection('DROPPED')}
+          >
+            <span className="my-lists-collection-label">{droppedSection.label}</span>
+            <strong className="my-lists-collection-value">{droppedSection.items.length}</strong>
+            <span className="my-lists-collection-copy">
+              {isEnglish ? 'Held apart from the main flow' : 'Apartado del flujo principal'}
+            </span>
+          </button>
+        ) : null}
+      </section>
+
+      <div className="my-lists-workspace">
+        <div className="my-lists-main-column">
+          <section className="my-lists-toolbar-shell">
+            <div className="my-lists-toolbar-head">
+              <div className="my-lists-toolbar-copy">
+                <div className="my-lists-toolbar-title">{t('Mis Listas')}</div>
+                <div className="my-lists-toolbar-subtitle">
+                  {activeMediaType === 'anime'
+                    ? (isEnglish ? 'A cleaner watchlist for every tracked anime.' : 'Una watchlist mas limpia para cada anime en seguimiento.')
+                    : (isEnglish ? 'A simpler shelf for manga, manhwa, and manhua.' : 'Un estante mas simple para manga, manhwa y manhua.')}
+                </div>
+              </div>
+              <div className="my-lists-toolbar-actions">
+                {activeMediaType === 'anime' ? (
+                  <button className="btn btn-ghost" onClick={() => { setShowAdd(!showAdd) }}>
+                    + {t('Agregar anime')}
+                  </button>
+                ) : null}
+                <button className="btn btn-danger" onClick={handleClearList}>
+                  {confirmClear
+                    ? (isEnglish ? 'Confirm. Click again' : 'Confirmar. Haz clic de nuevo')
+                    : (activeMediaType === 'anime' ? t('Borrar lista') : (isEnglish ? 'Clear manga list' : 'Borrar manga'))}
+                </button>
+              </div>
+            </div>
+
+            <div className="list-media-switch" role="tablist" aria-label={isEnglish ? 'List type' : 'Tipo de lista'}>
+              <button
+                type="button"
+                className={`list-media-switch-btn${activeMediaType === 'anime' ? ' active' : ''}`}
+                onClick={() => {
+                  setActiveMediaType('anime')
+                  setConfirmClear(false)
+                }}
+              >
+                Anime
+                <span className="list-media-switch-total">{animeTotal}</span>
+              </button>
+              <button
+                type="button"
+                className={`list-media-switch-btn${activeMediaType === 'manga' ? ' active' : ''}`}
+                onClick={() => {
+                  setActiveMediaType('manga')
+                  setShowAdd(false)
+                  setConfirmClear(false)
+                }}
+              >
+                Manga
+                <span className="list-media-switch-total">{mangaTotal}</span>
+              </button>
+            </div>
+          </section>
 
       {activeMediaType === 'anime' && showAdd && (
         <div className="mal-import-panel">
@@ -421,19 +514,6 @@ export default function MyLists() {
         </div>
       )}
 
-      <div className="list-overview-bar">
-        <div className="list-overview-title-wrap">
-          <div className="list-overview-title">{activeMediaType === 'anime' ? (isEnglish ? 'My Anime' : 'Mi Lista') : (isEnglish ? 'My Manga' : 'Mi Manga')}</div>
-          {totalCount > 0 && <span className="badge badge-muted">{totalCount}</span>}
-        </div>
-        {droppedSection && (
-          <button className="list-overview-link" onClick={() => scrollToSection('DROPPED')}>
-            {activeLabels.DROPPED}
-            <span className="list-tab-count">{droppedSection.items.length}</span>
-          </button>
-        )}
-      </div>
-
       {isLoading ? (
         <div className="empty-state">
           <div style={{ display: 'flex', gap: 6 }}>
@@ -446,7 +526,7 @@ export default function MyLists() {
           <h2 className="empty-state-title">{activeMediaType === 'anime' ? (isEnglish ? 'Empty list' : 'Lista vacia') : (isEnglish ? 'Empty manga list' : 'Lista de manga vacia')}</h2>
           <p className="empty-state-desc">
             {activeMediaType === 'anime'
-              ? t('list_empty_desc')
+              ? (isEnglish ? 'Add anime manually or sync AniList to begin filling this shelf.' : 'Agrega anime manualmente o sincroniza AniList para empezar a llenar este estante.')
               : (isEnglish ? 'Sync AniList to see your saved manga here.' : 'Sincroniza AniList para ver aqui tu manga guardado.')}
           </p>
         </div>
@@ -546,7 +626,7 @@ export default function MyLists() {
               <div className="my-list-section-header">
                 <div className="my-list-section-title-wrap">
                   <div className="my-list-section-title">{section.label}</div>
-                  <div className="my-list-section-count">{section.items.length}</div>
+                  <div className="my-list-section-total">{section.items.length}</div>
                 </div>
               </div>
 
@@ -590,7 +670,7 @@ export default function MyLists() {
               <div className="my-list-section-header">
                 <div className="my-list-section-title-wrap">
                   <div className="my-list-section-title">{droppedSection.label}</div>
-                  <div className="my-list-section-count">{droppedSection.items.length}</div>
+                  <div className="my-list-section-total">{droppedSection.items.length}</div>
                 </div>
               </div>
 
@@ -627,6 +707,8 @@ export default function MyLists() {
           )}
         </div>
       )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -646,20 +728,14 @@ function AnimeListCard({ entry, labels, onStatusChange, onScoreChange, onProgres
       <button
         type="button"
         className="my-list-card-visual"
-        onClick={() => navigate('/search', {
-          state: {
-            preSearch: entry.title,
-            altSearch: entry.title_english,
-            preferredAnilistID: entry.anilist_id,
-          },
-        })}
+        onClick={() => navigate('/search', { state: buildAnimeNavigationState(entry) })}
       >
         <div className="my-list-card-art-wrap">
           {coverSrc ? <img src={coverSrc} alt={entry.title} className="my-list-card-art" /> : <div className="my-list-card-art my-list-card-art-placeholder" />}
           <div className="my-list-card-overlay" />
           <div className="my-list-card-topline">
-            {entry.year > 0 && <span className="my-list-card-pill">{entry.year}</span>}
-            {entry.score > 0 && <span className="my-list-card-pill accent">{entry.score}</span>}
+            {entry.year > 0 && <span className="my-list-card-tag">{entry.year}</span>}
+            {entry.score > 0 && <span className="my-list-card-tag accent">{entry.score}</span>}
           </div>
           <div className="my-list-card-copy">
             <div className="my-list-card-title">{displayTitle}</div>
@@ -767,20 +843,14 @@ function MangaListCard({ entry, labels, onStatusChange, onScoreChange, onProgres
       <button
         type="button"
         className="my-list-card-visual"
-        onClick={() => navigate('/manga-online', {
-          state: {
-            preSearch: entry.title,
-            altSearch: entry.title_english,
-            preferredAnilistID: entry.anilist_id,
-          },
-        })}
+        onClick={() => navigate('/manga-online', { state: buildMangaListNavigationState(entry) })}
       >
         <div className="my-list-card-art-wrap">
           {coverSrc ? <img src={coverSrc} alt={entry.title} className="my-list-card-art" /> : <div className="my-list-card-art my-list-card-art-placeholder" />}
           <div className="my-list-card-overlay" />
           <div className="my-list-card-topline">
-            {entry.year > 0 && <span className="my-list-card-pill">{entry.year}</span>}
-            {entry.score > 0 && <span className="my-list-card-pill accent">{entry.score}</span>}
+            {entry.year > 0 && <span className="my-list-card-tag">{entry.year}</span>}
+            {entry.score > 0 && <span className="my-list-card-tag accent">{entry.score}</span>}
           </div>
           <div className="my-list-card-copy">
             <div className="my-list-card-title">{displayTitle}</div>

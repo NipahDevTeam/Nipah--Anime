@@ -37,10 +37,10 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:     "Nipah! Anime",
-		Width:     1400,
-		Height:    900,
-		MinWidth:  1100,
-		MinHeight: 700,
+		Width:     960,
+		Height:    620,
+		MinWidth:  920,
+		MinHeight: 560,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

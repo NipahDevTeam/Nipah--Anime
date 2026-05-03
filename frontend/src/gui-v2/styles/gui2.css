@@ -1,0 +1,7503 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@600;700&display=swap');
+
+:root {
+  --gui2-bg: #090a0c;
+  --gui2-surface: #121315;
+  --gui2-surface-2: #16181c;
+  --gui2-surface-3: #1d2024;
+  --gui2-line: rgba(229, 170, 86, 0.22);
+  --gui2-line-soft: rgba(255, 255, 255, 0.08);
+  --gui2-text: #f3efe8;
+  --gui2-text-soft: rgba(243, 239, 232, 0.72);
+  --gui2-text-dim: rgba(243, 239, 232, 0.42);
+  --gui2-gold: #d7a35a;
+  --gui2-gold-strong: #efbf7a;
+  --gui2-danger: #c66767;
+  --gui2-success: #7dbd92;
+  --gui2-shadow: 0 16px 48px rgba(0, 0, 0, 0.34);
+  --gui2-sidebar-w: 156px;
+  --gui2-topbar-h: 52px;
+  --gui2-radius: 0;
+  --gui2-gap: 16px;
+  --gui2-soft: rgba(243, 239, 232, 0.72);
+  --gui2-muted: rgba(243, 239, 232, 0.42);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  width: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(215, 163, 90, 0.10), transparent 18%),
+    radial-gradient(circle at bottom right, rgba(215, 163, 90, 0.04), transparent 18%),
+    var(--gui2-bg);
+  color: var(--gui2-text);
+  font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body.gui2-boot-active {
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+.gui2-shell {
+  display: grid;
+  grid-template-columns: var(--gui2-sidebar-w) minmax(0, 1fr);
+  min-height: 100vh;
+  background: transparent;
+  position: relative;
+}
+
+.gui2-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 10px 16px 12px;
+  border-right: 1px solid var(--gui2-line-soft);
+  background: linear-gradient(180deg, rgba(10, 11, 14, 0.98), rgba(13, 14, 18, 0.98));
+}
+
+.gui2-brand {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--gui2-line-soft);
+}
+
+.gui2-brand-mark {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--gui2-line);
+  color: var(--gui2-gold-strong);
+  background: rgba(215, 163, 90, 0.08);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.gui2-brand-logo {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.gui2-brand-word {
+  color: var(--gui2-text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.gui2-nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+.gui2-nav-group,
+.gui2-nav-footer {
+  display: grid;
+  gap: 4px;
+}
+
+.gui2-nav-footer {
+  margin-top: auto;
+}
+
+.gui2-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  text-decoration: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--gui2-text-soft);
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.gui2-nav-link:hover,
+.gui2-nav-link.active {
+  border-color: var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gui2-nav-link.active {
+  color: var(--gui2-gold-strong);
+  background: linear-gradient(180deg, rgba(215, 163, 90, 0.16), rgba(215, 163, 90, 0.04));
+  border-color: var(--gui2-line);
+}
+
+.gui2-nav-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gui2-nav-label {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+}
+
+.gui2-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.gui2-topbar {
+  height: var(--gui2-topbar-h);
+  min-height: var(--gui2-topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--gui2-line-soft);
+  background: rgba(12, 13, 16, 0.98);
+}
+
+.gui2-command-surface {
+  height: 32px;
+  min-width: min(520px, 100%);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--gui2-text-soft);
+}
+
+.gui2-command-text {
+  font-size: 13px;
+}
+
+.gui2-topbar-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.gui2-boot-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: #07080b;
+  opacity: 1;
+  transition: opacity 360ms ease;
+}
+
+.gui2-boot-overlay.is-exiting {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gui2-boot-stage {
+  position: relative;
+  width: 100%;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at center, rgba(215, 163, 90, 0.07), transparent 36%),
+    linear-gradient(180deg, rgba(9, 10, 12, 0.98), rgba(9, 10, 12, 0.96));
+}
+
+.gui2-boot-grid,
+.gui2-boot-sweep {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.gui2-boot-grid {
+  background-image:
+    linear-gradient(rgba(215, 163, 90, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(215, 163, 90, 0.09) 1px, transparent 1px);
+  background-size: 96px 96px;
+  mask-image: radial-gradient(circle at center, black 58%, transparent 100%);
+  opacity: 0.92;
+}
+
+.gui2-boot-sweep::before,
+.gui2-boot-sweep::after {
+  content: '';
+  position: absolute;
+  left: -8%;
+  right: -8%;
+}
+
+.gui2-boot-sweep::before {
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+  background: linear-gradient(90deg, transparent, rgba(239, 191, 122, 0.84), transparent);
+  box-shadow:
+    0 0 24px rgba(239, 191, 122, 0.52),
+    0 0 42px rgba(239, 191, 122, 0.24);
+  animation: gui2BootShine 4.4s ease-in-out infinite;
+}
+
+.gui2-boot-sweep::after {
+  top: 34%;
+  bottom: 22%;
+  background:
+    radial-gradient(circle at 22% 64%, rgba(239, 191, 122, 0.14), transparent 18%),
+    radial-gradient(circle at 76% 62%, rgba(239, 191, 122, 0.14), transparent 18%);
+  animation: gui2BootGlow 4.4s ease-in-out infinite;
+}
+
+.gui2-boot-brand {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  overflow: hidden;
+}
+
+.gui2-boot-brand::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  width: 34%;
+  background: linear-gradient(90deg, transparent, rgba(255, 246, 232, 0.18), rgba(255, 246, 232, 0.68), rgba(255, 246, 232, 0.18), transparent);
+  transform: translateX(-220%) skewX(-18deg);
+  filter: blur(10px);
+  mix-blend-mode: screen;
+  animation: gui2BootLogoSweep 4.4s ease-in-out infinite;
+}
+
+.gui2-boot-logo {
+  width: clamp(116px, 12vw, 172px);
+  height: auto;
+  display: block;
+  filter:
+    drop-shadow(0 0 18px rgba(239, 191, 122, 0.16))
+    drop-shadow(0 0 32px rgba(239, 191, 122, 0.12));
+}
+
+@keyframes gui2BootShine {
+  0%,
+  100% {
+    opacity: 0.56;
+    transform: translateY(-50%) scaleX(0.96);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(-50%) scaleX(1.02);
+  }
+}
+
+@keyframes gui2BootGlow {
+  0%,
+  100% {
+    opacity: 0.46;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes gui2BootLogoSweep {
+  0%,
+  12%,
+  100% {
+    opacity: 0;
+    transform: translateX(-220%) skewX(-18deg);
+  }
+  32% {
+    opacity: 0.9;
+    transform: translateX(90%) skewX(-18deg);
+  }
+  44% {
+    opacity: 0;
+    transform: translateX(190%) skewX(-18deg);
+  }
+}
+
+.gui2-icon-button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--gui2-text-soft);
+}
+
+.gui2-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.gui2-content-frame {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.gui2-route-header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: start;
+  padding: 8px 0 2px;
+  border-bottom: 1px solid rgba(215, 163, 90, 0.10);
+}
+
+.gui2-route-index {
+  color: var(--gui2-gold);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.gui2-route-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.gui2-route-label,
+.gui2-eyebrow {
+  color: var(--gui2-gold);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.gui2-route-title,
+.gui2-page-title,
+.gui2-home-hero-title {
+  margin: 0;
+  color: var(--gui2-text);
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  line-height: 0.95;
+}
+
+.gui2-route-title {
+  font-size: 32px;
+}
+
+.gui2-home,
+.gui2-stack-page {
+  display: grid;
+  gap: 16px;
+}
+
+.gui2-home-hero,
+.gui2-page-hero,
+.gui2-home-band,
+.gui2-table-shell,
+.gui2-info-card,
+.gui2-side-card {
+  border: 1px solid var(--gui2-line-soft);
+  background:
+    linear-gradient(180deg, rgba(215, 163, 90, 0.08), rgba(255, 255, 255, 0.02) 22%, rgba(15, 16, 20, 0.98) 50%),
+    linear-gradient(180deg, rgba(18, 20, 24, 0.98), rgba(13, 14, 17, 0.98));
+  box-shadow: var(--gui2-shadow);
+}
+
+.gui2-home-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  gap: 18px;
+  min-height: 360px;
+  overflow: hidden;
+  padding: 16px;
+}
+
+.gui2-home-hero-stage {
+  position: relative;
+  min-height: 328px;
+  overflow: hidden;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-home-hero-copy,
+.gui2-page-hero {
+  padding: 22px;
+}
+
+.gui2-page-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.gui2-home-hero-title,
+.gui2-page-title {
+  font-size: clamp(30px, 4vw, 52px);
+}
+
+.gui2-home-hero-meta,
+.gui2-page-copy,
+.gui2-home-hero-summary,
+.gui2-info-card-copy {
+  color: var(--gui2-text-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.gui2-home-hero-art {
+  position: relative;
+  min-height: 328px;
+  height: 100%;
+}
+
+.gui2-home-hero-art::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(10, 10, 11, 0.84) 0%, rgba(10, 10, 11, 0.20) 26%, rgba(10, 10, 11, 0.04) 56%, rgba(10, 10, 11, 0.26) 100%),
+    linear-gradient(180deg, rgba(10, 10, 11, 0.10), rgba(10, 10, 11, 0.40));
+  pointer-events: none;
+}
+
+.gui2-home-hero-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gui2-home-hero-copy {
+  position: absolute;
+  inset: auto auto 0 0;
+  z-index: 1;
+  max-width: min(500px, 100%);
+  display: grid;
+  gap: 12px;
+  background: linear-gradient(90deg, rgba(10, 10, 11, 0.92), rgba(10, 10, 11, 0.74) 65%, rgba(10, 10, 11, 0.14) 100%);
+}
+
+.gui2-home-hero-rail {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.gui2-section-head-inline {
+  padding: 0;
+}
+
+.gui2-home-rail-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.gui2-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.btn,
+.btn-ghost,
+.btn-primary,
+.btn-danger {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--gui2-text);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.btn-primary {
+  border-color: var(--gui2-line);
+  color: var(--gui2-gold-strong);
+  background: linear-gradient(180deg, rgba(215, 163, 90, 0.20), rgba(215, 163, 90, 0.08));
+}
+
+.btn-ghost {
+  color: var(--gui2-text-soft);
+}
+
+.btn-danger {
+  color: #f0c0c0;
+  border-color: rgba(198, 103, 103, 0.28);
+  background: rgba(198, 103, 103, 0.08);
+}
+
+.gui2-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px 0;
+}
+
+.gui2-section-title {
+  color: var(--gui2-gold-strong);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.gui2-link-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--gui2-text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.gui2-home-band {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 14px;
+}
+
+.gui2-poster-grid {
+  display: grid;
+  gap: 12px;
+  padding: 0 16px;
+}
+
+.gui2-poster-grid-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.gui2-poster-grid-five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.gui2-poster-button {
+  display: grid;
+  grid-template-rows: minmax(112px, 1fr) auto;
+  padding: 0;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.02);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.gui2-poster-button.compact {
+  grid-template-columns: 68px minmax(0, 1fr);
+  grid-template-rows: none;
+  min-height: 86px;
+}
+
+.gui2-poster-media {
+  position: relative;
+  min-height: 0;
+}
+
+.gui2-poster-image,
+.gui2-poster-fallback {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.gui2-poster-image {
+  object-fit: cover;
+}
+
+.gui2-poster-fallback {
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--gui2-text-soft);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.gui2-poster-copy {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.gui2-poster-button.compact .gui2-poster-copy {
+  align-content: center;
+}
+
+.gui2-poster-title,
+.online-result-title,
+.media-card-title,
+.dl-title,
+.episode-title,
+.media-detail-panel-title,
+.my-list-section-title,
+.setting-label,
+.settings-brand-title,
+.nipah-side-panel-title {
+  color: var(--gui2-text);
+  font-weight: 700;
+}
+
+.gui2-poster-meta,
+.gui2-poster-action,
+.online-result-meta,
+.media-card-meta,
+.setting-desc,
+.empty-state-desc,
+.episode-resume-label,
+.media-detail-panel-copy,
+.settings-brand-copy,
+.nipah-side-panel-copy {
+  color: var(--gui2-text-dim);
+  font-size: 11px;
+}
+
+.gui2-card-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.gui2-card-grid-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gui2-card-grid-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.gui2-info-card,
+.gui2-side-card {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+}
+
+.gui2-info-card-kicker {
+  color: var(--gui2-gold);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.gui2-info-card-title {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.gui2-table-shell {
+  display: grid;
+  gap: 0;
+}
+
+.gui2-table-header {
+  display: grid;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--gui2-line-soft);
+  color: var(--gui2-gold);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.gui2-table-header-history {
+  grid-template-columns: minmax(260px, 1.4fr) minmax(0, 1fr) 120px 180px;
+}
+
+.gui2-table-body {
+  display: grid;
+}
+
+.gui2-history-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.4fr) minmax(0, 1fr) 120px 180px;
+  gap: 12px;
+  align-items: stretch;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.gui2-history-card {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.02);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gui2-history-thumb {
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gui2-history-thumb-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gui2-history-copy {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.gui2-history-copy strong {
+  font-size: 13px;
+}
+
+.gui2-history-copy span,
+.gui2-table-cell {
+  color: var(--gui2-text-soft);
+  font-size: 12px;
+}
+
+.gui2-table-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.gui2-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+.gui2-side-rail {
+  display: grid;
+  gap: 16px;
+}
+
+.gui2-side-card-title {
+  color: var(--gui2-gold-strong);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.gui2-side-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--gui2-text-soft);
+  font-size: 12px;
+}
+
+.gui2-side-kv strong {
+  color: var(--gui2-text);
+}
+
+.fade-in,
+.downloads-page,
+.local-page,
+.my-lists-page,
+.settings-page,
+.online-directory-page,
+.media-detail-page {
+  width: 100%;
+  display: grid;
+  gap: 16px;
+}
+
+.gui2-shell[data-route='home'] .gui2-content-frame,
+.gui2-shell[data-route='history'] .gui2-content-frame,
+.gui2-shell[data-route='downloads'] .gui2-content-frame,
+.gui2-shell[data-route='settings'] .gui2-content-frame {
+  gap: 16px;
+}
+
+.empty-state {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 32px 24px;
+  border: 1px dashed var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.02);
+  text-align: center;
+}
+
+.empty-state-title,
+.page-title,
+.section-title,
+.setting-section-title,
+.nipah-hero-title,
+.local-overview-title,
+.my-lists-toolbar-title,
+.online-section-title,
+.online-directory-heading,
+.media-detail-title {
+  margin: 0;
+  color: var(--gui2-text);
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 0.98;
+}
+
+.section-header,
+.dl-header,
+.setting-section-header,
+.online-section-header,
+.my-list-section-header,
+.my-lists-toolbar-head,
+.online-directory-titleblock {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.badge,
+.home-side-list-badge,
+.online-source-badge,
+.media-detail-fact-chip,
+.dl-stat-badge,
+.list-media-switch-total {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--gui2-line);
+  background: rgba(215, 163, 90, 0.10);
+  color: var(--gui2-gold-strong);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.badge-green {
+  border-color: rgba(125, 189, 146, 0.28);
+  background: rgba(125, 189, 146, 0.12);
+  color: #b9e4c8;
+}
+
+.badge-muted {
+  border-color: var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--gui2-text-soft);
+}
+
+.virtuoso-media-grid,
+.online-catalog-grid,
+.my-list-grid,
+.my-list-manga-showcase-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)) !important;
+  gap: 14px !important;
+}
+
+.virtuoso-media-grid-item {
+  display: flex !important;
+}
+
+.virtuoso-media-grid-item > * {
+  width: 100% !important;
+}
+
+.media-card,
+.online-result-card,
+.my-list-card,
+.torrent-card,
+.online-manga-row,
+.episode-row,
+.dl-row,
+.setting-group,
+.my-list-section,
+.nipah-side-panel,
+.settings-brand-card,
+.online-directory-shell,
+.online-directory-results,
+.local-tabs-shell,
+.local-overview-shell,
+.my-lists-hero,
+.settings-hero,
+.media-detail-hero,
+.media-detail-panel,
+.my-lists-toolbar-shell {
+  border: 1px solid var(--gui2-line-soft) !important;
+  background:
+    linear-gradient(180deg, rgba(215, 163, 90, 0.05), rgba(255, 255, 255, 0.02) 22%, rgba(15, 16, 20, 0.98) 50%),
+    linear-gradient(180deg, rgba(18, 20, 24, 0.98), rgba(13, 14, 17, 0.98)) !important;
+  box-shadow: none !important;
+}
+
+.local-overview-shell,
+.my-lists-hero,
+.settings-hero,
+.media-detail-hero,
+.my-lists-toolbar-shell,
+.online-directory-shell {
+  padding: 18px !important;
+}
+
+.downloads-page > .dl-header > .page-title {
+  display: none;
+}
+
+.settings-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.45fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.settings-hero-focus {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 18px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings-hero-focus-title,
+.settings-hero-focus-kicker {
+  display: block;
+}
+
+.settings-hero-focus-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.media-card,
+.online-result-card,
+.my-list-card {
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.media-card-cover,
+.media-card-cover-placeholder,
+.online-result-cover,
+.online-result-cover-placeholder,
+.my-list-card-art,
+.my-list-card-visual,
+.dl-cover,
+.media-detail-cover {
+  width: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.media-card-cover,
+.media-card-cover-placeholder,
+.online-result-cover,
+.online-result-cover-placeholder {
+  aspect-ratio: 0.72;
+}
+
+.media-card-body,
+.online-result-body,
+.my-list-card-copy {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.media-card-meta,
+.online-result-meta,
+.my-list-card-meta,
+.dl-meta,
+.dl-status-text,
+.setting-section-sub,
+.nipah-hero-text,
+.local-overview-text,
+.online-directory-lead,
+.my-lists-toolbar-subtitle,
+.settings-overview-copy,
+.settings-hero-focus-copy,
+.settings-hero-focus-meta,
+.local-overview-meta-copy {
+  color: var(--gui2-text-soft) !important;
+}
+
+.online-directory-toolbar,
+.online-directory-controls,
+.online-directory-sourcebar,
+.online-directory-filterbar,
+.online-directory-sortbar {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.online-directory-titleblock {
+  display: grid;
+  gap: 8px;
+}
+
+.online-directory-upper,
+.online-directory-meta,
+.online-directory-actions,
+.online-directory-badges,
+.online-directory-sourcegrid,
+.online-directory-genrebar,
+.online-directory-genrepills,
+.local-tabs,
+.settings-nav-rail,
+.my-lists-toolbar-actions,
+.online-detail-action-row,
+.media-detail-toolbar-actions,
+.media-detail-facts-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.online-directory-searchbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.online-directory-lead {
+  max-width: 820px;
+  color: var(--gui2-text-soft);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.online-directory-controls {
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.6fr);
+  align-items: start;
+}
+
+.online-directory-filterbar {
+  grid-column: 1 / -1;
+}
+
+.online-directory-searchinput,
+.setting-input,
+.setting-select,
+.custom-select-trigger,
+.custom-select-option,
+.my-list-number-input,
+.my-list-status-select,
+.my-list-manga-search,
+.my-list-manga-select {
+  min-height: 36px;
+  padding: 0 12px !important;
+  border: 1px solid var(--gui2-line-soft) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: var(--gui2-text) !important;
+}
+
+.custom-select-dropdown {
+  border: 1px solid var(--gui2-line-soft) !important;
+  background: #121416 !important;
+}
+
+.online-source-toggle,
+.online-genre-pill,
+.manga-filter-toggle-btn,
+.local-tab,
+.settings-nav-btn,
+.media-detail-tab-btn,
+.list-media-switch-btn {
+  min-height: 34px;
+  padding: 0 12px !important;
+  border: 1px solid var(--gui2-line-soft) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: var(--gui2-text-soft) !important;
+}
+
+.online-source-toggle.active,
+.online-genre-pill.active,
+.manga-filter-toggle-btn.active,
+.local-tab.active,
+.settings-nav-btn.active,
+.media-detail-tab-btn.active,
+.list-media-switch-btn.active {
+  border-color: var(--gui2-line) !important;
+  background: linear-gradient(180deg, rgba(215, 163, 90, 0.18), rgba(215, 163, 90, 0.06)) !important;
+  color: var(--gui2-gold-strong) !important;
+}
+
+.local-tab-panel,
+.settings-main-column,
+.settings-side-column,
+.my-list-sections,
+.dl-list {
+  display: grid;
+  gap: 14px;
+}
+
+.dl-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 14px;
+  align-items: center;
+}
+
+.dl-cover {
+  aspect-ratio: 0.72;
+}
+
+.dl-progress-bar,
+.episode-progress-bar,
+.media-detail-progress-track {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dl-progress-fill,
+.episode-progress-fill,
+.media-detail-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gui2-gold), var(--gui2-gold-strong));
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+  gap: 16px;
+  align-items: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.setting-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.setting-toggle {
+  width: 44px;
+  height: 24px;
+  position: relative;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.setting-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: var(--gui2-text);
+  transition: transform 120ms ease;
+}
+
+.setting-toggle.on {
+  border-color: var(--gui2-line);
+  background: rgba(215, 163, 90, 0.18);
+}
+
+.setting-toggle.on .setting-toggle-knob {
+  transform: translateX(19px);
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.settings-nav-rail {
+  display: grid;
+  align-content: start;
+}
+
+.settings-nav-btn {
+  text-align: left;
+}
+
+.settings-save-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-side-column {
+  display: none;
+}
+
+.my-lists-workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.my-lists-toolbar-metrics,
+.settings-overview-strip,
+.local-overview-feature-grid,
+.local-overview-meta-grid,
+.my-lists-collection-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.my-lists-toolbar-metric,
+.settings-overview-card,
+.local-overview-feature-card,
+.local-overview-meta-card,
+.my-lists-collection-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.my-lists-toolbar-metric strong,
+.settings-overview-value,
+.local-overview-feature-value,
+.local-overview-meta-value,
+.my-lists-collection-value,
+.detail-stat-value {
+  color: var(--gui2-text);
+  font-size: 24px;
+}
+
+.media-detail-page {
+  gap: 16px;
+}
+
+.media-detail-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.media-detail-hero-grid,
+.online-detail-hero-grid {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) 260px;
+  gap: 18px;
+  align-items: start;
+}
+
+.media-detail-content-grid,
+.online-detail-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 16px;
+}
+
+.media-detail-cast-list,
+.episode-list,
+.online-manga-row-list {
+  display: grid;
+  gap: 12px;
+}
+
+.episode-row,
+.online-manga-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+}
+
+.episode-num,
+.online-manga-row-number {
+  min-width: 40px;
+  color: var(--gui2-gold-strong);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.toast-container {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  gap: 8px;
+  z-index: 50;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 360px;
+  padding: 10px 12px;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(12, 14, 17, 0.96);
+  color: var(--gui2-text);
+  cursor: pointer;
+}
+
+.toast-success {
+  border-color: rgba(125, 189, 146, 0.28);
+}
+
+.toast-error {
+  border-color: rgba(198, 103, 103, 0.28);
+}
+
+.toast-icon {
+  color: var(--gui2-gold-strong);
+}
+
+.now-playing-bar {
+  position: fixed;
+  left: calc(var(--gui2-sidebar-w) + 18px);
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(240px, 1.2fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(11, 13, 16, 0.96);
+  z-index: 40;
+}
+
+.np-info,
+.np-centre,
+.np-right,
+.np-controls,
+.np-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.np-info,
+.np-centre {
+  min-width: 0;
+}
+
+.np-info {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.np-anime-title {
+  color: var(--gui2-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.np-episode-title,
+.np-time,
+.np-percent {
+  color: var(--gui2-text-soft);
+  font-size: 11px;
+}
+
+.np-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--gui2-text);
+}
+
+.np-btn-primary {
+  border-color: var(--gui2-line);
+  color: var(--gui2-gold-strong);
+}
+
+.np-scrubber {
+  width: 100%;
+  accent-color: var(--gui2-gold);
+}
+
+@keyframes gui2Pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.gui2-route-loading,
+.gui2-empty-panel {
+  min-height: 60vh;
+  display: grid;
+  place-items: center;
+  gap: 16px;
+  border: 1px solid var(--gui2-line);
+  background:
+    linear-gradient(180deg, rgba(27, 27, 29, 0.96), rgba(16, 16, 18, 0.98)),
+    radial-gradient(circle at top left, rgba(196, 142, 73, 0.08), transparent 35%);
+  padding: 36px;
+  text-align: center;
+}
+
+.gui2-empty-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--gui2-text);
+}
+
+.gui2-loading-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gui2-loading-dots span {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--gui2-gold);
+  opacity: 0.4;
+  animation: gui2Pulse 1s infinite ease-in-out;
+}
+
+.gui2-loading-dots span:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.gui2-loading-dots span:nth-child(3) {
+  animation-delay: 0.28s;
+}
+
+.gui2-inline-empty {
+  padding: 22px 0;
+  color: var(--gui2-muted);
+  font-size: 14px;
+}
+
+.gui2-detail-page,
+.gui2-my-lists-page {
+  display: grid;
+  gap: 18px;
+}
+
+.gui2-detail-hero,
+.gui2-my-lists-hero {
+  border: 1px solid var(--gui2-line);
+  background:
+    linear-gradient(180deg, rgba(24, 24, 26, 0.98), rgba(15, 15, 17, 0.99)),
+    radial-gradient(circle at top left, rgba(196, 142, 73, 0.08), transparent 36%);
+  padding: 18px;
+}
+
+.gui2-detail-toolbar,
+.gui2-detail-toolbar-actions,
+.gui2-add-controls,
+.gui2-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gui2-detail-toolbar {
+  justify-content: space-between;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.gui2-detail-hero-grid {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 18px;
+}
+
+.gui2-my-lists-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.9fr);
+  gap: 18px;
+}
+
+.gui2-detail-cover-shell,
+.gui2-my-lists-feature {
+  min-width: 0;
+}
+
+.gui2-detail-cover,
+.gui2-detail-cover-fallback,
+.gui2-my-lists-feature-image,
+.gui2-my-lists-feature-image-fallback {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(135deg, rgba(42, 60, 32, 0.95), rgba(11, 18, 22, 0.98));
+}
+
+.gui2-detail-cover-fallback,
+.gui2-my-lists-feature-image-fallback {
+  display: grid;
+  place-items: center;
+  font-size: 48px;
+  font-weight: 700;
+  color: var(--gui2-text);
+}
+
+.gui2-detail-copy,
+.gui2-my-lists-copy,
+.gui2-my-lists-feature-copy {
+  min-width: 0;
+}
+
+.gui2-detail-title,
+.gui2-my-lists-title {
+  margin: 6px 0 0;
+  font-size: clamp(34px, 3vw, 54px);
+  line-height: 0.96;
+  letter-spacing: -0.04em;
+  color: var(--gui2-text);
+}
+
+.gui2-detail-subtitle,
+.gui2-my-lists-feature-subtitle {
+  margin-top: 8px;
+  color: var(--gui2-soft);
+  font-size: 16px;
+}
+
+.gui2-detail-meta,
+.gui2-my-lists-feature-meta {
+  margin-top: 10px;
+  color: var(--gui2-gold);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+}
+
+.gui2-detail-summary,
+.gui2-my-lists-summary {
+  max-width: 860px;
+  margin-top: 16px;
+  color: var(--gui2-soft);
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+.gui2-detail-stat-grid,
+.gui2-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.gui2-overview-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 0;
+}
+
+.gui2-stat-card,
+.gui2-overview-card,
+.gui2-side-card,
+.gui2-add-panel,
+.gui2-data-table {
+  border: 1px solid var(--gui2-line);
+  background: linear-gradient(180deg, rgba(26, 26, 28, 0.98), rgba(15, 15, 17, 0.99));
+}
+
+.gui2-stat-card,
+.gui2-overview-card {
+  padding: 14px 16px;
+}
+
+.gui2-stat-label,
+.gui2-overview-label,
+.gui2-side-title {
+  display: block;
+  color: var(--gui2-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+}
+
+.gui2-stat-value,
+.gui2-overview-value {
+  display: block;
+  margin-top: 10px;
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--gui2-text);
+  line-height: 1;
+}
+
+.gui2-overview-copy {
+  margin-top: 10px;
+  color: var(--gui2-soft);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.gui2-detail-layout,
+.gui2-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+}
+
+.gui2-detail-main,
+.gui2-workspace-main,
+.gui2-workspace-side,
+.gui2-detail-side {
+  min-width: 0;
+}
+
+.gui2-queue-list,
+.gui2-cast-list {
+  border: 1px solid var(--gui2-line);
+  background: linear-gradient(180deg, rgba(17, 17, 19, 0.98), rgba(12, 12, 14, 0.99));
+}
+
+.gui2-queue-row,
+.gui2-cast-row,
+.gui2-add-result,
+.gui2-data-row {
+  display: grid;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gui2-queue-row:first-child,
+.gui2-cast-row:first-child,
+.gui2-add-result:first-child,
+.gui2-data-row:first-child {
+  border-top: 0;
+}
+
+.gui2-queue-row {
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+}
+
+.gui2-queue-row.complete .gui2-queue-index {
+  color: var(--gui2-gold);
+}
+
+.gui2-queue-index {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gui2-text);
+}
+
+.gui2-queue-title,
+.gui2-cast-name,
+.gui2-data-name,
+.gui2-add-result-title,
+.gui2-my-lists-feature-title {
+  color: var(--gui2-text);
+  font-weight: 700;
+}
+
+.gui2-queue-meta,
+.gui2-cast-role,
+.gui2-data-meta,
+.gui2-add-result-meta,
+.gui2-add-result-subtitle,
+.gui2-section-caption,
+.gui2-side-note {
+  color: var(--gui2-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.gui2-side-card {
+  padding: 16px;
+}
+
+.gui2-side-facts {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.gui2-side-facts div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.gui2-side-facts span {
+  color: var(--gui2-muted);
+  font-size: 13px;
+}
+
+.gui2-side-facts strong {
+  color: var(--gui2-text);
+  font-size: 14px;
+}
+
+.gui2-cast-row {
+  grid-template-columns: 48px minmax(0, 1fr);
+}
+
+.gui2-cast-avatar,
+.gui2-cast-avatar-fallback {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  object-fit: cover;
+  background: rgba(196, 142, 73, 0.14);
+}
+
+.gui2-cast-avatar-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--gui2-text);
+  font-weight: 700;
+}
+
+.gui2-my-lists-hero {
+  align-items: stretch;
+}
+
+.gui2-my-lists-feature {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 16px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  padding-left: 18px;
+}
+
+.gui2-my-lists-feature-image,
+.gui2-my-lists-feature-image-fallback {
+  aspect-ratio: 3 / 4;
+}
+
+.gui2-my-lists-feature-kicker {
+  color: var(--gui2-gold);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+}
+
+.gui2-workspace-grid {
+  align-items: start;
+}
+
+.gui2-table-toolbar {
+  display: grid;
+  gap: 14px;
+}
+
+.gui2-tab-strip {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.gui2-tab {
+  border: 1px solid var(--gui2-line);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--gui2-soft);
+  padding: 10px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.gui2-tab span {
+  color: var(--gui2-muted);
+  margin-left: 6px;
+}
+
+.gui2-tab.active {
+  color: var(--gui2-text);
+  border-color: rgba(196, 142, 73, 0.35);
+  background: linear-gradient(180deg, rgba(196, 142, 73, 0.16), rgba(196, 142, 73, 0.06));
+}
+
+.gui2-filter-bar,
+.gui2-my-lists-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.gui2-search-input,
+.gui2-select,
+.gui2-number-input {
+  min-height: 42px;
+  border: 1px solid var(--gui2-line);
+  background: rgba(13, 13, 15, 0.98);
+  color: var(--gui2-text);
+  padding: 0 12px;
+  font: inherit;
+}
+
+.gui2-search-input {
+  min-width: 240px;
+  flex: 1 1 240px;
+}
+
+.gui2-select {
+  min-width: 150px;
+}
+
+.gui2-select-compact,
+.gui2-number-input {
+  width: 100%;
+}
+
+.gui2-number-input {
+  max-width: 88px;
+}
+
+.gui2-score-input {
+  max-width: 72px;
+}
+
+.gui2-add-panel {
+  padding: 16px;
+}
+
+.gui2-add-results {
+  margin-top: 14px;
+  border: 1px solid var(--gui2-line);
+  background: rgba(10, 10, 12, 0.96);
+}
+
+.gui2-add-result {
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+}
+
+.gui2-add-result-image,
+.gui2-add-result-image-fallback,
+.gui2-data-cover,
+.gui2-data-cover-fallback {
+  width: 72px;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  background: linear-gradient(135deg, rgba(42, 60, 32, 0.95), rgba(11, 18, 22, 0.98));
+}
+
+.gui2-add-result-image-fallback,
+.gui2-data-cover-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--gui2-text);
+  font-weight: 700;
+}
+
+.gui2-data-table {
+  overflow: hidden;
+}
+
+.gui2-data-table-head,
+.gui2-data-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.7fr) minmax(140px, 0.8fr) minmax(140px, 0.8fr) minmax(100px, 0.6fr) minmax(150px, 0.8fr);
+}
+
+.gui2-data-table-head {
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--gui2-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+}
+
+.gui2-data-title,
+.gui2-progress-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.gui2-data-copy {
+  min-width: 0;
+}
+
+.gui2-data-name,
+.gui2-data-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gui2-progress-total {
+  color: var(--gui2-muted);
+  font-size: 13px;
+}
+
+.gui2-shortcut-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.gui2-shortcut-button {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--gui2-line);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--gui2-text);
+  padding: 10px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 1280px) {
+  .gui2-settings-layout,
+  .settings-layout,
+  .media-detail-content-grid,
+  .online-detail-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .media-detail-hero-grid,
+  .online-detail-hero-grid,
+  .gui2-home-hero,
+  .gui2-detail-hero-grid,
+  .gui2-my-lists-hero,
+  .gui2-detail-layout,
+  .gui2-workspace-grid,
+  .my-lists-toolbar-metrics,
+  .settings-overview-strip,
+  .local-overview-feature-grid,
+  .local-overview-meta-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-my-lists-feature {
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding-left: 0;
+    padding-top: 18px;
+  }
+
+  .gui2-overview-grid,
+  .gui2-detail-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gui2-poster-grid-four,
+  .gui2-poster-grid-five {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-hero,
+  .online-directory-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 960px) {
+  .gui2-shell {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .gui2-sidebar {
+    display: none;
+  }
+
+  .gui2-main {
+    margin-left: 0;
+  }
+
+  .gui2-topbar {
+    left: 0;
+    right: 0;
+    padding: 10px 12px;
+    height: auto;
+    min-height: 0;
+  }
+
+  .gui2-content {
+    padding-top: 72px;
+  }
+
+  .gui2-command-surface {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .now-playing-bar {
+    left: 12px;
+    right: 12px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-table-header-history,
+  .gui2-history-row,
+  .setting-row,
+  .dl-row,
+  .episode-row,
+  .online-manga-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-card-grid-two,
+  .gui2-card-grid-three,
+  .virtuoso-media-grid,
+  .online-catalog-grid,
+  .my-list-grid,
+  .my-list-manga-showcase-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .gui2-my-lists-feature,
+  .gui2-data-table-head,
+  .gui2-data-row,
+  .gui2-add-result,
+  .gui2-queue-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-overview-grid,
+  .gui2-detail-stat-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Fidelity pass overrides */
+
+html,
+body,
+#root {
+  height: auto;
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+}
+
+.gui2-route-title,
+.gui2-page-title,
+.gui2-home-hero-title,
+.gui2-detail-title,
+.gui2-my-lists-title,
+.gui2-section-title {
+  font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+  letter-spacing: -0.055em;
+}
+
+.gui2-shell {
+  display: block;
+  height: auto;
+  min-height: 100dvh;
+}
+
+.gui2-main {
+  display: block;
+  min-height: 100dvh;
+  margin-left: var(--gui2-sidebar-w);
+}
+
+.gui2-content {
+  flex: none;
+  min-height: calc(100dvh - var(--gui2-topbar-h));
+  overflow: visible;
+  padding: calc(var(--gui2-topbar-h) + 10px) 14px 96px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(215, 163, 90, 0.55) rgba(255, 255, 255, 0.04);
+}
+
+.gui2-content::-webkit-scrollbar {
+  width: 10px;
+}
+
+.gui2-content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gui2-content::-webkit-scrollbar-thumb {
+  background: rgba(215, 163, 90, 0.42);
+  border: 2px solid rgba(10, 10, 12, 0.96);
+}
+
+.gui2-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--gui2-sidebar-w);
+  height: 100dvh;
+  z-index: 24;
+  gap: 14px;
+  padding: 12px 10px 14px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.gui2-sidebar::-webkit-scrollbar {
+  display: none;
+}
+
+.gui2-brand {
+  gap: 4px;
+  padding-bottom: 14px;
+}
+
+.gui2-brand-lockup {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.gui2-brand-mark {
+  width: 26px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--gui2-gold);
+  }
+
+.gui2-brand-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.gui2-brand-word {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 15px;
+  letter-spacing: -0.03em;
+}
+
+.gui2-brand-word-accent {
+  color: var(--gui2-gold-strong);
+}
+
+.gui2-brand-word-main {
+  color: var(--gui2-text);
+}
+
+.gui2-brand-subword,
+.gui2-brand-version,
+.gui2-nav-heading {
+  color: var(--gui2-text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.gui2-nav-group,
+.gui2-nav-footer {
+  gap: 6px;
+}
+
+.gui2-nav-footer {
+  margin-top: auto;
+  padding-top: 12px;
+  background: linear-gradient(180deg, rgba(10, 11, 14, 0.02), rgba(10, 11, 14, 0.96) 24%);
+}
+
+.gui2-nav-heading {
+  padding: 10px 8px 6px;
+}
+
+.gui2-nav-link {
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.gui2-nav-label {
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+.gui2-nav-link:hover,
+.gui2-nav-link.active {
+  background: rgba(215, 163, 90, 0.08);
+}
+
+.gui2-topbar {
+  position: fixed;
+  top: 0;
+  left: var(--gui2-sidebar-w);
+  right: 0;
+  z-index: 20;
+  gap: 14px;
+  padding: 0 16px;
+}
+
+body.reader-active .gui2-shell {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+body.reader-active .gui2-sidebar,
+body.reader-active .gui2-topbar {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+body.reader-active .gui2-sidebar {
+  transform: translateX(-18px);
+}
+
+body.reader-active .gui2-topbar {
+  transform: translateY(-18px);
+}
+
+body.reader-active .gui2-main {
+  margin-left: 0;
+}
+
+body.reader-active .gui2-topbar {
+  left: 0;
+}
+
+body.reader-active .gui2-content {
+  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
+  padding: 0;
+}
+
+.gui2-command-surface {
+  height: 36px;
+  max-width: 520px;
+  min-width: min(520px, 100%);
+  margin: 0 auto;
+}
+
+.gui2-command-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--gui2-text-soft);
+}
+
+.gui2-command-shortcut {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gui2-text-dim);
+  letter-spacing: 0.08em;
+}
+
+.gui2-topbar-actions {
+  align-items: center;
+  margin-left: auto;
+}
+
+.gui2-lang-button,
+.gui2-user-chip {
+  height: 30px;
+  border: 1px solid var(--gui2-line-soft);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--gui2-text);
+  font: inherit;
+}
+
+.gui2-lang-button {
+  min-width: 42px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gui2-user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.gui2-user-avatar {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  background: rgba(215, 163, 90, 0.14);
+  color: var(--gui2-gold);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.gui2-user-name {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gui2-home {
+  display: grid;
+  gap: 12px;
+}
+
+.gui2-home-hero,
+.gui2-home-band,
+.gui2-detail-hero,
+.gui2-detail-layout,
+.gui2-dense-header,
+.gui2-dense-toolbar,
+.gui2-dense-table,
+.gui2-status-grid,
+.gui2-add-panel {
+  border: 1px solid rgba(215, 163, 90, 0.12);
+  background:
+    linear-gradient(180deg, rgba(18, 19, 22, 0.98), rgba(11, 12, 15, 0.99));
+  box-shadow: none;
+}
+
+.gui2-home-hero {
+  grid-template-columns: minmax(0, 1.2fr) minmax(250px, 0.5fr);
+  gap: 10px;
+  padding: 10px;
+}
+
+.gui2-home-hero-stage,
+.gui2-home-hero-art {
+  min-height: 228px;
+}
+
+.gui2-home-hero-copy {
+  padding: 14px;
+  max-width: 390px;
+}
+
+.gui2-eyebrow,
+.gui2-route-label {
+  letter-spacing: 0.16em;
+}
+
+.gui2-home-hero-title {
+  font-size: clamp(24px, 3vw, 36px);
+}
+
+.gui2-home-hero-summary {
+  max-width: 44ch;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.gui2-home-hero-rail {
+  padding: 10px;
+}
+
+.gui2-home-rail-list {
+  gap: 8px;
+}
+
+.gui2-home-band {
+  padding: 10px;
+  gap: 10px;
+}
+
+.gui2-poster-grid {
+  gap: 10px;
+}
+
+.gui2-poster-button,
+.gui2-poster-button.compact {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.gui2-poster-copy {
+  padding: 8px;
+}
+
+.gui2-poster-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gui2-poster-meta,
+.gui2-poster-action {
+  font-size: 11px;
+}
+
+.gui2-dense-header,
+.gui2-dense-toolbar,
+.gui2-dense-table,
+.gui2-inline-status,
+.gui2-status-grid {
+  padding: 12px 14px;
+}
+
+.gui2-dense-header,
+.gui2-dense-toolbar {
+  display: grid;
+  gap: 12px;
+}
+
+.gui2-dense-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.gui2-dense-actions,
+.gui2-dense-actions-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.gui2-toolbar-count {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--gui2-line-soft);
+  color: var(--gui2-text-dim);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gui2-inline-status {
+  border: 1px solid rgba(215, 163, 90, 0.1);
+  color: var(--gui2-text-soft);
+  font-size: 12px;
+}
+
+.gui2-dense-table {
+  padding: 0;
+  overflow: hidden;
+}
+
+.gui2-dense-table-head,
+.gui2-dense-row {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+}
+
+.gui2-dense-table-head {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--gui2-text-dim);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.gui2-dense-row {
+  width: 100%;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  background: transparent;
+  color: var(--gui2-text);
+  text-align: left;
+  font: inherit;
+}
+
+.gui2-dense-row-anime,
+.gui2-dense-table-head-anime {
+  grid-template-columns: minmax(0, 1.8fr) 120px 140px 100px;
+}
+
+.gui2-dense-row-downloads,
+.gui2-dense-table-head-downloads {
+  grid-template-columns: minmax(0, 1.6fr) 140px 180px 180px;
+}
+
+.gui2-dense-row-lists,
+.gui2-dense-table-head-lists {
+  grid-template-columns: minmax(0, 1.8fr) 160px 160px 100px 180px;
+}
+
+.gui2-dense-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.gui2-dense-thumb,
+.gui2-dense-thumb-fallback {
+  width: 42px;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(135deg, rgba(36, 54, 26, 0.95), rgba(10, 18, 22, 0.98));
+}
+
+.gui2-dense-thumb-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--gui2-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.gui2-dense-title-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.gui2-dense-title-copy strong,
+.gui2-status-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--gui2-text);
+}
+
+.gui2-dense-title-copy small,
+.gui2-status-meta {
+  color: var(--gui2-text-dim);
+  font-size: 12px;
+}
+
+.gui2-local-desk,
+.gui2-lists-desk {
+  display: grid;
+  gap: 12px;
+}
+
+.gui2-status-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.gui2-status-card {
+  display: grid;
+  grid-template-rows: 112px auto;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.015);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+
+.gui2-status-art {
+  overflow: hidden;
+}
+
+.gui2-status-image,
+.gui2-status-image-fallback {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: linear-gradient(135deg, rgba(36, 54, 26, 0.95), rgba(10, 18, 22, 0.98));
+}
+
+.gui2-status-image-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--gui2-text);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.gui2-status-body {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.gui2-status-label {
+  color: var(--gui2-gold);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.gui2-status-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.gui2-detail-hero {
+  padding: 12px 14px 14px;
+}
+
+.gui2-detail-toolbar {
+  margin-bottom: 10px;
+}
+
+.gui2-detail-banner-shell {
+  position: relative;
+  min-height: 230px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, rgba(25, 25, 28, 0.98), rgba(12, 12, 14, 0.98));
+}
+
+.gui2-detail-banner-image,
+.gui2-detail-banner-fallback {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.gui2-detail-banner-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--gui2-text);
+  font-size: 52px;
+  font-weight: 800;
+}
+
+.gui2-detail-banner-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(8, 8, 10, 0.14), rgba(8, 8, 10, 0.36)),
+    linear-gradient(0deg, rgba(8, 8, 10, 0.82) 0%, rgba(8, 8, 10, 0.32) 48%, rgba(8, 8, 10, 0.10) 100%);
+}
+
+.gui2-detail-hero-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.gui2-detail-copy {
+  align-self: start;
+}
+
+.gui2-detail-title {
+  font-size: clamp(26px, 3vw, 44px);
+}
+
+.gui2-detail-summary {
+  max-width: 72ch;
+  font-size: 15px;
+}
+
+.gui2-detail-stat-grid {
+  grid-template-columns: repeat(3, minmax(0, 180px));
+  margin-top: 14px;
+}
+
+.gui2-detail-layout {
+  grid-template-columns: minmax(0, 1fr) 300px;
+  padding: 0;
+  margin-top: 8px;
+}
+
+.gui2-detail-main,
+.gui2-detail-side {
+  padding: 12px 14px;
+}
+
+.gui2-detail-side {
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gui2-side-card + .gui2-side-card {
+  margin-top: 10px;
+}
+
+.gui2-add-panel {
+  padding: 12px 14px;
+}
+
+.gui2-add-panel .gui2-section-head {
+  margin-bottom: 12px;
+}
+
+.gui2-homev2 {
+  display: grid;
+  gap: 16px;
+}
+
+.gui2-homev2-hero-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.gui2-homev2-hero,
+.gui2-homev2-recent,
+.gui2-homev2-band {
+  border: 1px solid rgba(215, 163, 90, 0.12);
+  background: linear-gradient(180deg, rgba(18, 19, 22, 0.98), rgba(11, 12, 15, 0.99));
+}
+
+.gui2-homev2-hero {
+  display: flex;
+  padding: 12px;
+  min-height: 100%;
+}
+
+.gui2-homev2-hero-stage {
+  position: relative;
+  flex: 1;
+  height: clamp(420px, 46vh, 520px);
+  min-height: 420px;
+  max-height: 520px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-homev2-hero-image,
+.gui2-homev2-hero-fallback {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  transition: opacity 320ms ease, transform 320ms ease;
+}
+
+.gui2-homev2-hero-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--gui2-text);
+  font-size: 72px;
+  font-weight: 800;
+}
+
+.gui2-homev2-hero-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(8, 9, 11, 0.92) 0%, rgba(8, 9, 11, 0.46) 36%, rgba(8, 9, 11, 0.16) 66%, rgba(8, 9, 11, 0.28) 100%),
+    linear-gradient(180deg, rgba(8, 9, 11, 0.04) 0%, rgba(8, 9, 11, 0.14) 32%, rgba(8, 9, 11, 0.88) 100%);
+  transition: opacity 320ms ease;
+}
+
+.gui2-homev2-hero-copy {
+  position: absolute;
+  left: 34px;
+  bottom: 28px;
+  z-index: 1;
+  max-width: 470px;
+  display: grid;
+  gap: 8px;
+  transition: opacity 320ms ease, transform 320ms ease;
+}
+
+.gui2-homev2-hero-stage.transitioning .gui2-homev2-hero-image,
+.gui2-homev2-hero-stage.transitioning .gui2-homev2-hero-fallback,
+.gui2-homev2-hero-stage.transitioning .gui2-homev2-hero-overlay {
+  opacity: 0.76;
+}
+
+.gui2-homev2-hero-stage.transitioning .gui2-homev2-hero-copy {
+  opacity: 0.72;
+  transform: translateY(4px);
+}
+
+.gui2-homev2-hero-title {
+  margin: 0;
+  color: var(--gui2-text);
+  font-size: clamp(24px, 2.95vw, 44px);
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 0.95;
+  max-width: 15ch;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gui2-homev2-hero-meta {
+  color: var(--gui2-gold-strong);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.gui2-homev2-primary {
+  width: fit-content;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid rgba(215, 163, 90, 0.36);
+  background: linear-gradient(180deg, rgba(215, 163, 90, 0.96), rgba(194, 142, 65, 0.94));
+  color: #131313;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.gui2-homev2-hero-summary {
+  margin: 0;
+  color: rgba(243, 239, 232, 0.9);
+  max-width: 54ch;
+  font-size: 14px;
+  line-height: 1.48;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gui2-homev2-hero-arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  margin-top: -22px;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 42px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.gui2-homev2-hero-arrow-left {
+  left: 16px;
+}
+
+.gui2-homev2-hero-arrow-right {
+  right: 16px;
+}
+
+.gui2-homev2-hero-dots {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  z-index: 1;
+  display: inline-flex;
+  gap: 8px;
+  transform: translateX(-50%);
+}
+
+.gui2-homev2-hero-dot {
+  width: 34px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.gui2-homev2-hero-dot.active {
+  background: var(--gui2-gold);
+}
+
+.gui2-homev2-recent {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 12px;
+}
+
+.gui2-homev2-band-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.gui2-homev2-band-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.gui2-homev2-band-title {
+  color: var(--gui2-gold-strong);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gui2-homev2-band-subtitle {
+  color: rgba(243, 239, 232, 0.52);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.gui2-homev2-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: rgba(243, 239, 232, 0.74);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.gui2-homev2-recent-list {
+  display: grid;
+  gap: 8px;
+}
+
+.gui2-homev2-recent-row {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.gui2-homev2-recent-row:first-of-type {
+  border-top: 0;
+}
+
+.gui2-homev2-recent-thumb {
+  aspect-ratio: 1.55 / 1;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-homev2-recent-image,
+.gui2-homev2-recent-fallback {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.gui2-homev2-recent-fallback {
+  display: grid;
+  place-items: center;
+  font-size: 32px;
+  font-weight: 800;
+}
+
+.gui2-homev2-recent-copy {
+  display: grid;
+  gap: 3px;
+  padding-top: 2px;
+}
+
+.gui2-homev2-recent-title {
+  color: var(--gui2-text);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.22;
+  text-transform: uppercase;
+}
+
+.gui2-homev2-recent-episode {
+  color: rgba(243, 239, 232, 0.78);
+  font-size: 13px;
+}
+
+.gui2-homev2-recent-age {
+  color: var(--gui2-gold);
+  font-size: 13px;
+}
+
+.gui2-homev2-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.gui2-homev2-band {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.gui2-homev2-band-continue-watching {
+  gap: 12px;
+}
+
+.gui2-homev2-poster-rail {
+  display: grid;
+  grid-template-columns: repeat(var(--gui2-homev2-poster-columns, 10), minmax(0, 1fr));
+  gap: 8px;
+  justify-content: start;
+}
+
+.gui2-homev2-poster {
+  display: grid;
+  grid-template-rows: auto auto;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.015);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.gui2-homev2-poster-art {
+  aspect-ratio: 0.7;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gui2-homev2-poster-image,
+.gui2-homev2-poster-fallback {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.gui2-homev2-poster-fallback {
+  display: grid;
+  place-items: center;
+  font-size: 36px;
+  font-weight: 800;
+}
+
+.gui2-homev2-poster-copy {
+  display: grid;
+  gap: 4px;
+  padding: 8px 8px 10px;
+}
+
+.gui2-homev2-poster-title {
+  color: var(--gui2-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.24;
+  text-transform: uppercase;
+}
+
+.gui2-homev2-poster-meta {
+  color: rgba(243, 239, 232, 0.66);
+  font-size: 12px;
+}
+
+.gui2-homev2-continue-rail {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  justify-content: start;
+}
+
+.gui2-homev2-continue-shell {
+  position: relative;
+}
+
+.gui2-homev2-continue-viewport {
+  overflow: hidden;
+}
+
+.gui2-homev2-continue-track {
+  display: flex;
+  transition: transform 220ms ease;
+  will-change: transform;
+}
+
+.gui2-homev2-continue-page {
+  min-width: 100%;
+}
+
+.gui2-homev2-rail-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(8, 8, 10, 0.82);
+  color: var(--gui2-text);
+  font-size: 22px;
+  line-height: 1;
+  z-index: 2;
+}
+
+.gui2-homev2-rail-arrow-left {
+  left: -10px;
+}
+
+.gui2-homev2-rail-arrow-right {
+  right: -10px;
+}
+
+.gui2-homev2-rail-arrow.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gui2-homev2-continue {
+  display: grid;
+  grid-template-rows: auto auto;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.015);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.gui2-homev2-continue-art {
+  position: relative;
+  aspect-ratio: 1.64 / 1;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gui2-homev2-continue-image,
+.gui2-homev2-continue-fallback {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.gui2-homev2-continue-fallback {
+  display: grid;
+  place-items: center;
+  font-size: 36px;
+  font-weight: 800;
+}
+
+.gui2-homev2-continue-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(7, 8, 10, 0.08) 0%, rgba(7, 8, 10, 0.18) 48%, rgba(7, 8, 10, 0.78) 100%);
+}
+
+.gui2-homev2-playmark {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 1;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 22px;
+}
+
+.gui2-homev2-continue-copy {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+
+.gui2-homev2-continue-title {
+  color: var(--gui2-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.22;
+  text-transform: uppercase;
+}
+
+.gui2-homev2-continue-meta {
+  color: rgba(243, 239, 232, 0.72);
+  font-size: 12px;
+}
+
+.gui2-homev2-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.gui2-homev2-progress-bar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.gui2-homev2-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--gui2-gold);
+}
+
+.gui2-homev2-progress-label {
+  color: rgba(243, 239, 232, 0.74);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+@media (max-width: 1280px) {
+  .gui2-homev2-hero-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-homev2-poster-rail {
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    justify-content: stretch;
+  }
+
+  .gui2-homev2-continue-rail {
+    grid-template-columns: repeat(auto-fit, minmax(184px, 1fr));
+    justify-content: stretch;
+  }
+
+  .gui2-home-hero,
+  .gui2-status-grid,
+  .gui2-dense-header,
+  .gui2-dense-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-dense-header,
+  .gui2-dense-toolbar {
+    display: grid;
+  }
+
+  .gui2-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .gui2-homev2-hero-stage {
+    height: clamp(340px, 40vh, 420px);
+    min-height: 340px;
+    max-height: 420px;
+  }
+
+  .gui2-homev2-hero-copy {
+    left: 20px;
+    right: 20px;
+    bottom: 20px;
+    max-width: none;
+  }
+
+  .gui2-homev2-poster-rail,
+  .gui2-homev2-continue-rail {
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+
+  .gui2-homev2-recent-row {
+    grid-template-columns: 108px minmax(0, 1fr);
+  }
+
+  .gui2-command-surface {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .gui2-command-shortcut,
+  .gui2-user-name {
+    display: none;
+  }
+
+  .gui2-dense-table-head,
+  .gui2-dense-row,
+  .gui2-home-hero,
+  .gui2-detail-hero-grid,
+  .gui2-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-status-grid {
+    grid-template-columns: 1fr;
+  }
+
+.gui2-dense-actions-inline {
+  justify-content: flex-start;
+}
+}
+
+.gui2-catalog-page {
+  width: 100%;
+}
+
+.gui2-catalog-shell {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, rgba(14, 15, 18, 0.98), rgba(11, 12, 15, 0.98));
+}
+
+.gui2-catalog-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 0.7fr);
+  gap: 16px;
+  align-items: end;
+}
+
+.gui2-catalog-header-copy,
+.gui2-catalog-header-side,
+.gui2-catalog-results-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.gui2-catalog-title {
+  margin: 0;
+  color: #fbf8f2;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.gui2-catalog-description {
+  margin: 0;
+  color: rgba(243, 239, 232, 0.76);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.gui2-catalog-description-accent {
+  color: var(--gui2-gold-strong);
+  font-weight: 700;
+}
+
+.gui2-catalog-query-row {
+  display: grid;
+}
+
+.gui2-catalog-query {
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.gui2-catalog-query-icon,
+.gui2-catalog-source-display-icon,
+.gui2-catalog-filter-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gui2-gold);
+}
+
+.gui2-catalog-query-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--gui2-text);
+  font-size: 13px;
+}
+
+.gui2-catalog-query-input::placeholder {
+  color: rgba(243, 239, 232, 0.4);
+}
+
+.gui2-catalog-query-btn,
+.gui2-catalog-page-arrow,
+.gui2-catalog-clear-btn {
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--gui2-text);
+}
+
+.gui2-catalog-query-btn {
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gui2-catalog-status-strip {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto minmax(120px, auto) auto minmax(170px, auto);
+  align-items: center;
+  gap: 14px;
+  padding: 0 4px 0 0;
+}
+
+.gui2-catalog-status-block {
+  display: grid;
+  gap: 6px;
+}
+
+.gui2-catalog-status-label {
+  color: rgba(243, 239, 232, 0.48);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gui2-catalog-status-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #fbf8f2;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gui2-catalog-status-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.gui2-catalog-top-pagination,
+.gui2-catalog-footer-pagination,
+.gui2-catalog-inline-controls,
+.gui2-catalog-toggle-row,
+.gui2-catalog-activebar,
+.gui2-catalog-activebar-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gui2-catalog-page-arrow {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
+.gui2-catalog-filterbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(140px, 0.7fr)) minmax(190px, 0.9fr);
+  gap: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  overflow: visible;
+}
+
+.gui2-catalog-filter-cell {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 12px 16px 13px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+  overflow: visible;
+}
+
+.gui2-catalog-filter-cell:last-child {
+  border-right: 0;
+}
+
+.gui2-catalog-filter-labelrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gui2-catalog-filter-label {
+  color: rgba(243, 239, 232, 0.52);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.gui2-catalog-select .custom-select-trigger,
+.gui2-catalog-select .custom-select-option,
+.gui2-catalog-inline-controls .setting-select {
+  min-height: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #fbf8f2 !important;
+  font-size: 14px;
+  font-weight: 600;
+  justify-content: space-between;
+}
+
+.gui2-catalog-inline-controls .setting-select {
+  min-height: 30px;
+  padding: 0 10px !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+}
+
+.gui2-catalog-select {
+  position: relative;
+  width: 100%;
+}
+
+.gui2-catalog-multi-select {
+  position: relative;
+  width: 100%;
+  display: grid;
+  gap: 10px;
+}
+
+.gui2-catalog-select .custom-select-trigger {
+  width: 100%;
+}
+
+.gui2-catalog-multi-trigger {
+  width: 100%;
+}
+
+.gui2-catalog-select .custom-select-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 50;
+  margin-top: 0;
+  min-width: max(100%, 112px);
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: #121416 !important;
+  box-shadow: 0 18px 32px rgba(0, 0, 0, 0.38);
+}
+
+.gui2-catalog-multi-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: grid;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #121416;
+  box-shadow: 0 18px 32px rgba(0, 0, 0, 0.38);
+}
+
+.gui2-catalog-select .custom-select-option {
+  padding: 10px 12px !important;
+}
+
+.gui2-catalog-multi-option {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: #fbf8f2;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gui2-catalog-multi-option.selected {
+  background: rgba(215, 163, 90, 0.12);
+  color: var(--gui2-gold-strong);
+}
+
+.gui2-catalog-multi-option-mark {
+  min-width: 12px;
+  color: inherit;
+}
+
+.gui2-catalog-multi-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gui2-catalog-multi-value {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid rgba(215, 163, 90, 0.22);
+  background: rgba(215, 163, 90, 0.08);
+  color: var(--gui2-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gui2-catalog-multi-remove {
+  color: rgba(243, 239, 232, 0.72);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.gui2-catalog-toggle-row {
+  flex-wrap: wrap;
+}
+
+.gui2-catalog-toggle {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(243, 239, 232, 0.72);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.gui2-catalog-toggle.active {
+  border-color: rgba(215, 163, 90, 0.38);
+  background: rgba(215, 163, 90, 0.12);
+  color: var(--gui2-gold-strong);
+}
+
+.gui2-catalog-activebar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 4px 0 0;
+}
+
+.gui2-catalog-activebar-copy {
+  color: var(--gui2-gold-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gui2-catalog-activebar-tags {
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.gui2-catalog-active-tag {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(243, 239, 232, 0.76);
+  font-size: 12px;
+}
+
+.gui2-catalog-active-tag-label {
+  color: rgba(243, 239, 232, 0.5);
+}
+
+.gui2-catalog-clear-btn {
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.gui2-catalog-results-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.gui2-catalog-results-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gui2-catalog-results-title {
+  color: var(--gui2-gold-strong);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.gui2-catalog-results-subtitle {
+  color: rgba(243, 239, 232, 0.44);
+  font-size: 13px;
+}
+
+.gui2-catalog-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)) !important;
+  gap: 10px !important;
+  align-items: stretch;
+}
+
+.gui2-catalog-grid-item {
+  width: 100%;
+  display: flex;
+}
+
+.gui2-catalog-card {
+  width: 100%;
+  display: grid;
+  grid-template-rows: auto auto;
+  height: 100%;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.015);
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  overflow: hidden;
+  cursor: pointer;
+  position: relative;
+}
+
+.gui2-catalog-card-cover,
+.gui2-catalog-card-cover-placeholder {
+  width: 100%;
+  aspect-ratio: 0.71;
+  display: block;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gui2-catalog-card-cover-placeholder {
+  display: grid;
+  place-items: center;
+  color: rgba(243, 239, 232, 0.38);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.gui2-catalog-card-topline {
+  position: absolute;
+  inset: 10px 10px auto 10px;
+  display: flex;
+  justify-content: flex-start;
+  z-index: 2;
+}
+
+.gui2-catalog-card-overlay {
+  display: none;
+}
+
+.gui2-catalog-card-body {
+  display: grid;
+  align-content: start;
+  grid-template-rows: minmax(36px, auto) auto;
+  gap: 7px;
+  padding: 10px 10px 12px;
+  min-height: 78px;
+}
+
+.gui2-catalog-card-title {
+  color: #f5f1ea;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gui2-catalog-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(243, 239, 232, 0.46);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.gui2-catalog-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gui2-catalog-card-meta::after {
+  content: "";
+  width: 12px;
+  height: 12px;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='black' d='M5.1 2.5h5.8a1 1 0 0 1 1 1V14L8 11.6 4.1 14V3.5a1 1 0 0 1 1-1Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='black' d='M5.1 2.5h5.8a1 1 0 0 1 1 1V14L8 11.6 4.1 14V3.5a1 1 0 0 1 1-1Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  background: rgba(243, 239, 232, 0.44);
+}
+
+.gui2-catalog-status-badge,
+.gui2-catalog-source-badge {
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid rgba(215, 163, 90, 0.22);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(243, 239, 232, 0.82);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.gui2-catalog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.gui2-catalog-footer-pagechip {
+  min-width: 30px;
+  min-height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(243, 239, 232, 0.64);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.gui2-catalog-footer-pagechip.active {
+  border-color: rgba(215, 163, 90, 0.34);
+  background: rgba(215, 163, 90, 0.10);
+  color: var(--gui2-gold-strong);
+}
+
+.gui2-catalog-footer-pagechip:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.gui2-catalog-footer-ellipsis {
+  min-width: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(243, 239, 232, 0.34);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  user-select: none;
+  cursor: default;
+}
+
+.gui2-catalog-pagesize {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(243, 239, 232, 0.72);
+  font-size: 12px;
+}
+
+@media (max-width: 1320px) {
+  .gui2-catalog-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-catalog-filterbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gui2-catalog-filterbar > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 840px) {
+  .gui2-catalog-shell {
+    padding: 12px;
+  }
+
+  .gui2-catalog-status-strip,
+  .gui2-catalog-filterbar,
+  .gui2-catalog-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-catalog-status-divider {
+    display: none;
+  }
+
+  .gui2-catalog-grid {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)) !important;
+  }
+
+  .gui2-catalog-query {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .gui2-catalog-query-btn {
+    grid-column: 1 / -1;
+  }
+}
+
+.gui2-landing-page {
+  display: grid;
+  gap: 18px;
+}
+
+.gui2-landing-hero {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(17, 18, 22, 0.82), rgba(11, 13, 16, 0.96)),
+    radial-gradient(circle at top left, rgba(214, 164, 89, 0.12), transparent 34%);
+  background-size: cover;
+  background-position: center;
+  padding: 18px 18px 20px;
+}
+
+.gui2-landing-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 16px;
+}
+
+.gui2-landing-hero-grid {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr) 286px;
+  gap: 22px;
+  align-items: start;
+}
+
+.gui2-landing-cover {
+  width: 100%;
+  display: block;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gui2-landing-cover--round {
+  border-radius: 28px;
+}
+
+.gui2-landing-copy {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-width: 0;
+}
+
+.gui2-landing-kicker {
+  color: var(--gui2-gold-strong);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gui2-landing-title {
+  margin: 0;
+  color: var(--gui2-text);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: clamp(34px, 4vw, 52px);
+  font-weight: 700;
+  line-height: 1.02;
+}
+
+.gui2-landing-subtitle {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.gui2-landing-facts-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.gui2-landing-inline-fact {
+  position: relative;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 13px;
+}
+
+.gui2-landing-inline-fact:not(:last-child)::after {
+  content: '•';
+  margin-left: 14px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.gui2-landing-story {
+  margin: 0;
+  max-width: 760px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.gui2-landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.gui2-landing-primary-btn,
+.gui2-landing-secondary-btn {
+  min-height: 48px;
+  padding: 0 18px !important;
+}
+
+.gui2-landing-inline-progress {
+  display: inline-flex;
+  align-items: center;
+  width: 70px;
+  height: 4px;
+  margin-left: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.gui2-landing-inline-progress-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--gui2-gold), var(--gui2-gold-strong));
+}
+
+.gui2-landing-sidecard,
+.gui2-landing-panel {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(14, 16, 19, 0.96), rgba(10, 11, 14, 0.98));
+  padding: 16px;
+}
+
+.gui2-landing-sidecard-title,
+.gui2-landing-section-title,
+.gui2-landing-mini-title {
+  margin: 0;
+  color: var(--gui2-text);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.gui2-landing-mini-title {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.gui2-landing-sidecard-list,
+.gui2-landing-meta-list {
+  display: grid;
+  gap: 10px;
+}
+
+.gui2-landing-sidecard-row,
+.gui2-landing-meta-row {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gui2-landing-sidecard-row:last-child,
+.gui2-landing-meta-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.gui2-landing-sidecard-row span,
+.gui2-landing-meta-row span {
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.gui2-landing-sidecard-row strong,
+.gui2-landing-meta-row strong {
+  color: var(--gui2-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.gui2-landing-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 286px;
+  gap: 18px;
+}
+
+.gui2-landing-main,
+.gui2-landing-aside {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.gui2-landing-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.gui2-landing-section-head--split {
+  align-items: flex-start;
+}
+
+.gui2-landing-section-copy {
+  margin: 6px 0 0;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.gui2-landing-section-link {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+}
+
+.gui2-landing-section-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gui2-landing-section-tools--wrap {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.gui2-landing-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.gui2-landing-fact-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-landing-fact-label {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gui2-landing-fact-value {
+  color: var(--gui2-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.gui2-landing-fact-note {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+}
+
+.gui2-landing-character-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 10px;
+}
+
+.gui2-landing-character-card {
+  display: grid;
+  gap: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-landing-character-art {
+  width: 100%;
+  aspect-ratio: 1.2 / 1;
+  object-fit: cover;
+  display: block;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gui2-landing-character-art--placeholder {
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.gui2-landing-character-copy {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+}
+
+.gui2-landing-character-name {
+  color: var(--gui2-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gui2-landing-character-role {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 10px;
+}
+
+.gui2-landing-episode-list,
+.gui2-landing-source-stack,
+.gui2-landing-chapter-list {
+  display: grid;
+  gap: 12px;
+}
+
+.gui2-local-folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.gui2-local-folder-card {
+  min-height: 92px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--gui2-text);
+  text-align: left;
+  font: inherit;
+}
+
+.gui2-local-folder-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.gui2-local-folder-title {
+  color: var(--gui2-text);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.gui2-local-folder-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+}
+
+.gui2-local-folder-arrow {
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.gui2-landing-episode-row {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: stretch;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-landing-episode-media {
+  position: relative;
+}
+
+.gui2-landing-episode-thumb {
+  width: 100%;
+  height: 136px;
+  background-size: cover;
+  background-position: center;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gui2-landing-episode-thumb--placeholder {
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 12px;
+}
+
+.gui2-landing-episode-number {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  min-width: 36px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.74);
+  color: var(--gui2-text);
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.gui2-landing-episode-copy {
+  display: grid;
+  gap: 8px;
+  align-content: center;
+  min-width: 0;
+}
+
+.gui2-landing-episode-meta,
+.gui2-landing-chapter-subline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 11px;
+}
+
+.gui2-landing-episode-title,
+.gui2-landing-chapter-title {
+  color: var(--gui2-text);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.gui2-landing-episode-description {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.gui2-landing-episode-actions {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  justify-items: end;
+}
+
+.gui2-landing-setting-block {
+  display: grid;
+  gap: 10px;
+}
+
+.gui2-landing-setting-copy,
+.gui2-landing-source-inline {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.gui2-landing-source-inline {
+  padding: 12px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.gui2-landing-source-btn {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--gui2-text);
+  text-align: left;
+}
+
+.gui2-landing-source-btn.active {
+  border-color: rgba(215, 163, 90, 0.4);
+  background: linear-gradient(180deg, rgba(215, 163, 90, 0.16), rgba(215, 163, 90, 0.05));
+}
+
+.gui2-landing-source-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gui2-landing-source-status {
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 11px;
+}
+
+.gui2-landing-chapter-table {
+  display: grid;
+  gap: 10px;
+}
+
+.gui2-landing-chapter-header,
+.gui2-landing-chapter-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1.6fr) 132px 120px 132px auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.gui2-landing-chapter-header {
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 12px;
+}
+
+.gui2-landing-chapter-row {
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-landing-chapter-index {
+  color: var(--gui2-gold-strong);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.gui2-landing-chapter-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gui2-landing-chapter-progress {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.gui2-landing-chapter-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gui2-gold), var(--gui2-gold-strong));
+}
+
+.gui2-landing-chapter-col {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+}
+
+.gui2-landing-chapter-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.gui2-landing-page--anime .gui2-landing-hero {
+  min-height: 360px;
+}
+
+.gui2-landing-page--manga .gui2-landing-hero {
+  min-height: 320px;
+}
+
+@media (max-width: 1320px) {
+  .gui2-landing-hero-grid,
+  .gui2-landing-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-landing-sidecard {
+    order: 3;
+  }
+
+  .gui2-landing-chapter-header,
+  .gui2-landing-chapter-row {
+    grid-template-columns: 56px minmax(0, 1fr) 110px 110px;
+  }
+
+  .gui2-landing-chapter-col--source,
+  .gui2-landing-chapter-actions,
+  .gui2-landing-chapter-header span:last-child,
+  .gui2-landing-chapter-header span:nth-last-child(2) {
+    display: none;
+  }
+}
+
+@media (max-width: 960px) {
+  .gui2-landing-hero-grid,
+  .gui2-landing-episode-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-landing-cover-wrap {
+    max-width: 220px;
+  }
+
+  .gui2-landing-character-strip,
+  .gui2-landing-fact-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-landing-chapter-header {
+    display: none;
+  }
+
+  .gui2-landing-chapter-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.gui2-localv2-page {
+  display: grid;
+  gap: 14px;
+}
+
+.gui2-localv2-hero,
+.gui2-localv2-overview,
+.gui2-localv2-workspace {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(17, 18, 22, 0.98), rgba(11, 12, 15, 0.99));
+}
+
+.gui2-localv2-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: end;
+  padding: 14px 18px 10px;
+  border-bottom: 0;
+}
+
+.gui2-localv2-heading {
+  display: grid;
+  gap: 6px;
+}
+
+.gui2-localv2-title {
+  margin: 0;
+  color: var(--gui2-text);
+  font-size: clamp(30px, 3.3vw, 42px);
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.gui2-localv2-copy {
+  margin: 0;
+  max-width: 500px;
+  color: var(--gui2-text-soft);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.gui2-localv2-hero-tools {
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+}
+
+.gui2-localv2-search {
+  position: relative;
+  width: min(100%, 400px);
+  min-width: 332px;
+}
+
+.gui2-localv2-search-icon {
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  width: 18px;
+  height: 18px;
+  color: var(--gui2-text-dim);
+  transform: translateY(-50%);
+}
+
+.gui2-localv2-search-input {
+  width: 100%;
+  height: 44px;
+  padding: 0 82px 0 40px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--gui2-text);
+  font-size: 13px;
+}
+
+.gui2-localv2-search-shortcut {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  color: var(--gui2-text-dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transform: translateY(-50%);
+}
+
+.gui2-localv2-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.gui2-localv2-icon-btn {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+}
+
+.gui2-localv2-icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.gui2-localv2-overview {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: -1px;
+}
+
+.gui2-localv2-stat {
+  display: grid;
+  gap: 4px;
+  padding: 14px 18px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gui2-localv2-stat:last-child {
+  border-right: 0;
+}
+
+.gui2-localv2-stat-label {
+  color: var(--gui2-text-dim);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gui2-localv2-stat-value {
+  color: var(--gui2-text);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+.gui2-localv2-stat-meta {
+  color: var(--gui2-text-soft);
+  font-size: 12px;
+}
+
+.gui2-localv2-workspace {
+  display: grid;
+  overflow: hidden;
+}
+
+.gui2-localv2-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gui2-localv2-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gui2-localv2-tab {
+  position: relative;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--gui2-text-soft);
+  font-size: 14px;
+}
+
+.gui2-localv2-tab::after {
+  content: '';
+  position: absolute;
+  right: 14px;
+  bottom: 0;
+  left: 14px;
+  height: 2px;
+  background: transparent;
+}
+
+.gui2-localv2-tab.is-active {
+  color: var(--gui2-text);
+}
+
+.gui2-localv2-tab.is-active::after {
+  background: var(--gui2-accent);
+}
+
+.gui2-localv2-tab-secondary {
+  margin-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  padding-left: 18px;
+}
+
+.gui2-localv2-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gui2-localv2-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--gui2-text-soft);
+  font-size: 13px;
+}
+
+.gui2-localv2-select {
+  min-width: 150px;
+  height: 38px;
+  padding: 0 36px 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--gui2-text);
+  color-scheme: dark;
+}
+
+.gui2-localv2-select option {
+  background: #111318;
+  color: var(--gui2-text);
+}
+
+.gui2-localv2-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-localv2-view-btn {
+  min-width: 58px;
+  height: 38px;
+  border: 0;
+  background: transparent;
+  color: var(--gui2-text-soft);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gui2-localv2-view-btn.is-active {
+  background: rgba(215, 163, 90, 0.16);
+  color: var(--gui2-text);
+}
+
+.gui2-localv2-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1.56fr) minmax(360px, 0.92fr) 240px;
+  min-height: 700px;
+}
+
+.gui2-localv2-library,
+.gui2-localv2-panel,
+.gui2-localv2-activity {
+  min-width: 0;
+  padding: 16px;
+}
+
+.gui2-localv2-library,
+.gui2-localv2-panel {
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gui2-localv2-library {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.gui2-localv2-countline {
+  color: var(--gui2-text-soft);
+  font-size: 13px;
+}
+
+.gui2-localv2-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.gui2-localv2-card {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.015);
+  text-align: left;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.gui2-localv2-card:hover,
+.gui2-localv2-card.is-selected {
+  border-color: rgba(215, 163, 90, 0.32);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gui2-localv2-card.is-selected {
+  transform: translateY(-1px);
+}
+
+.gui2-localv2-card-cover-wrap {
+  aspect-ratio: 0.72;
+}
+
+.gui2-localv2-card-cover,
+.gui2-localv2-card-cover-fallback {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gui2-localv2-card-cover-fallback,
+.gui2-localv2-row-cover-fallback,
+.gui2-localv2-panel-cover-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--gui2-text);
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.gui2-localv2-card-body {
+  display: grid;
+  gap: 7px;
+}
+
+.gui2-localv2-card-title {
+  color: var(--gui2-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.gui2-localv2-card-subtitle {
+  color: var(--gui2-text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.gui2-localv2-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--gui2-text-dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gui2-localv2-list {
+  display: grid;
+  align-content: start;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.gui2-localv2-list-head,
+.gui2-localv2-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) 100px 100px 110px 70px;
+  gap: 12px;
+  align-items: center;
+}
+
+.gui2-localv2-list-head {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--gui2-text-dim);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.gui2-localv2-row {
+  width: 100%;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: transparent;
+  color: var(--gui2-text-soft);
+  text-align: left;
+}
+
+.gui2-localv2-row:last-child {
+  border-bottom: 0;
+}
+
+.gui2-localv2-row:hover,
+.gui2-localv2-row.is-selected {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gui2-localv2-row-leading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.gui2-localv2-row-cover,
+.gui2-localv2-row-cover-fallback {
+  width: 52px;
+  height: 72px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.gui2-localv2-row-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.gui2-localv2-row-copy strong,
+.gui2-localv2-row-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gui2-localv2-row-copy strong {
+  color: var(--gui2-text);
+  font-size: 14px;
+}
+
+.gui2-localv2-row-copy span {
+  color: var(--gui2-text-soft);
+  font-size: 12px;
+}
+
+.gui2-localv2-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.gui2-localv2-panel-empty {
+  place-items: center;
+}
+
+.gui2-localv2-panel-hero {
+  display: grid;
+  grid-template-columns: 138px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.gui2-localv2-panel-cover,
+.gui2-localv2-panel-cover-fallback {
+  width: 138px;
+  height: 190px;
+  object-fit: cover;
+}
+
+.gui2-localv2-panel-copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gui2-localv2-panel-heading {
+  color: var(--gui2-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.gui2-localv2-panel-subheading {
+  color: var(--gui2-text-soft);
+  font-size: 13px;
+}
+
+.gui2-localv2-panel-meta-line {
+  color: var(--gui2-text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.gui2-localv2-panel-status {
+  color: var(--gui2-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.gui2-localv2-panel-banner {
+  height: 126px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gui2-localv2-panel-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.gui2-localv2-panel-actions > .btn:first-child {
+  grid-column: 1 / -1;
+}
+
+.gui2-localv2-danger {
+  color: #f08f84;
+  border-color: rgba(240, 143, 132, 0.25);
+}
+
+.gui2-localv2-panel-section {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gui2-localv2-panel-title {
+  color: var(--gui2-text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.gui2-localv2-fact-list {
+  display: grid;
+  gap: 8px;
+}
+
+.gui2-localv2-fact-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  color: var(--gui2-text-soft);
+  font-size: 12px;
+}
+
+.gui2-localv2-fact-row strong {
+  color: var(--gui2-text);
+  text-align: right;
+}
+
+.gui2-localv2-panel-story {
+  margin: 0;
+  color: var(--gui2-text-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.gui2-localv2-activity {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.gui2-localv2-activity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.gui2-localv2-activity-item {
+  display: grid;
+  gap: 5px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+
+.gui2-localv2-activity-button {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+.gui2-localv2-activity-kind {
+  color: var(--gui2-accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.gui2-localv2-activity-title {
+  color: var(--gui2-text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.gui2-localv2-activity-copy,
+.gui2-localv2-activity-meta {
+  color: var(--gui2-text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.gui2-localv2-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--gui2-text-soft);
+  font-size: 12px;
+}
+
+.gui2-localv2-footer-paths {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gui2-localv2-footer-status {
+  color: var(--gui2-text-dim);
+  white-space: nowrap;
+}
+
+@media (max-width: 1200px) {
+  .gui2-localv2-content {
+    grid-template-columns: minmax(0, 1.28fr) minmax(320px, 0.92fr);
+  }
+
+  .gui2-localv2-activity {
+    grid-column: 1 / -1;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+}
+
+@media (max-width: 960px) {
+  .gui2-localv2-hero,
+  .gui2-localv2-overview,
+  .gui2-localv2-content,
+  .gui2-localv2-panel-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-localv2-search {
+    min-width: 0;
+  }
+
+  .gui2-localv2-hero-tools {
+    justify-items: stretch;
+  }
+
+  .gui2-localv2-action-row,
+  .gui2-localv2-controls {
+    justify-content: flex-start;
+  }
+
+  .gui2-localv2-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gui2-localv2-toolbar,
+  .gui2-localv2-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-localv2-list-head {
+    display: none;
+  }
+
+  .gui2-localv2-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .gui2-localv2-panel-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+.gui2-localv2-panel-actions > .btn:first-child {
+    grid-column: auto;
+  }
+}
+
+.gui2-mylist-page {
+  display: grid;
+  gap: 18px;
+  padding: 8px 0 4px;
+}
+
+.gui2-mylist-header {
+  display: grid;
+  gap: 14px;
+}
+
+.gui2-mylist-header-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.gui2-mylist-title {
+  color: var(--gui2-text);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.gui2-mylist-subtitle {
+  color: rgba(243, 239, 232, 0.62);
+  font-size: 14px;
+}
+
+.gui2-mylist-tabline {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(214, 190, 154, 0.18);
+}
+
+.gui2-mylist-media-tab {
+  padding: 0 2px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: rgba(243, 239, 232, 0.72);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.gui2-mylist-media-tab.active {
+  border-bottom-color: var(--gui2-gold-strong);
+  color: var(--gui2-gold-strong);
+}
+
+.gui2-mylist-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.gui2-mylist-status-tabs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.gui2-mylist-status-tab {
+  min-height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: rgba(243, 239, 232, 0.66);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.gui2-mylist-status-tab.active {
+  border-bottom-color: var(--gui2-gold-strong);
+  color: var(--gui2-gold-strong);
+}
+
+.gui2-mylist-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gui2-mylist-search {
+  min-width: 340px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-mylist-search-icon {
+  color: rgba(243, 239, 232, 0.58);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.gui2-mylist-search-input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--gui2-text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.gui2-mylist-search-input:focus {
+  outline: none;
+}
+
+.gui2-mylist-actions-menu-wrap {
+  position: relative;
+}
+
+.gui2-mylist-actions-toggle {
+  width: 40px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-mylist-actions-toggle span {
+  width: 15px;
+  height: 1px;
+  background: rgba(243, 239, 232, 0.86);
+}
+
+.gui2-mylist-actions-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 50;
+  min-width: 190px;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #121416;
+  box-shadow: 0 18px 32px rgba(0, 0, 0, 0.38);
+}
+
+.gui2-mylist-actions-item {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--gui2-text);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+}
+
+.gui2-mylist-actions-item.danger {
+  color: #ff6f61;
+}
+
+.gui2-mylist-actions-item:disabled {
+  opacity: 0.45;
+}
+
+.gui2-mylist-add-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-mylist-add-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px auto;
+  gap: 10px;
+}
+
+.gui2-mylist-inline-select,
+.gui2-mylist-editor-select,
+.gui2-mylist-editor-input {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--gui2-text);
+  font: inherit;
+  font-size: 14px;
+  color-scheme: dark;
+}
+
+.gui2-mylist-inline-select option,
+.gui2-mylist-editor-select option {
+  background: #111318;
+  color: var(--gui2-text);
+}
+
+.gui2-mylist-add-results {
+  display: grid;
+  gap: 10px;
+}
+
+.gui2-mylist-add-result {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.gui2-mylist-add-result-image,
+.gui2-mylist-add-result-image-fallback {
+  width: 52px;
+  aspect-ratio: 0.72;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.gui2-mylist-add-result-image-fallback {
+  display: grid;
+  place-items: center;
+  color: rgba(243, 239, 232, 0.7);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.gui2-mylist-add-result-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.gui2-mylist-add-result-title {
+  color: var(--gui2-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gui2-mylist-add-result-subtitle {
+  color: rgba(243, 239, 232, 0.58);
+  font-size: 12px;
+}
+
+.gui2-mylist-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-mylist-metric {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gui2-mylist-metric:last-child {
+  border-right: 0;
+}
+
+.gui2-mylist-metric-label {
+  color: rgba(243, 239, 232, 0.54);
+  font-size: 11px;
+}
+
+.gui2-mylist-metric-value {
+  color: var(--gui2-text);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.gui2-mylist-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 372px;
+  gap: 22px;
+  align-items: start;
+}
+
+.gui2-mylist-table-wrap,
+.gui2-mylist-editor {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-mylist-table-head,
+.gui2-mylist-row {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.5fr) 120px 140px 92px 72px 46px;
+  align-items: center;
+  gap: 12px;
+}
+
+.gui2-mylist-table-head {
+  min-height: 42px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(243, 239, 232, 0.48);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gui2-mylist-table {
+  display: grid;
+}
+
+.gui2-mylist-row {
+  min-height: 76px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  color: var(--gui2-text);
+  text-align: left;
+  font: inherit;
+}
+
+.gui2-mylist-row.active {
+  background: rgba(214, 190, 154, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(214, 190, 154, 0.62);
+}
+
+.gui2-mylist-row:last-child {
+  border-bottom: 0;
+}
+
+.gui2-mylist-row-title {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.gui2-mylist-row-cover,
+.gui2-mylist-row-cover-fallback {
+  width: 84px;
+  height: 54px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.gui2-mylist-row-cover-fallback {
+  display: grid;
+  place-items: center;
+  color: rgba(243, 239, 232, 0.72);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.gui2-mylist-row-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.gui2-mylist-row-copy strong {
+  color: var(--gui2-text);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.gui2-mylist-row-copy small {
+  color: rgba(243, 239, 232, 0.5);
+  font-size: 12px;
+}
+
+.gui2-mylist-row-status,
+.gui2-mylist-row-score,
+.gui2-mylist-row-year,
+.gui2-mylist-row-more {
+  font-size: 14px;
+}
+
+.gui2-mylist-row-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.gui2-mylist-row-progress-label {
+  color: var(--gui2-text);
+  font-size: 14px;
+}
+
+.gui2-mylist-row-progressbar {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.gui2-mylist-row-progressfill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+}
+
+.gui2-mylist-row-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gui2-mylist-row-star,
+.gui2-mylist-score-star {
+  color: #f0b14d;
+}
+
+.gui2-mylist-table-footer {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gui2-mylist-table-summary,
+.gui2-mylist-rows span {
+  color: rgba(243, 239, 232, 0.52);
+  font-size: 12px;
+}
+
+.gui2-mylist-footer-actions,
+.gui2-mylist-pagination,
+.gui2-mylist-rows {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gui2-mylist-page-btn,
+.gui2-mylist-page-chip {
+  min-width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--gui2-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.gui2-mylist-page-chip.active {
+  border-color: rgba(214, 190, 154, 0.42);
+  color: var(--gui2-gold-strong);
+}
+
+.gui2-mylist-editor {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  min-height: 820px;
+}
+
+.gui2-mylist-editor-visual {
+  position: relative;
+  min-height: 296px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gui2-mylist-editor-image,
+.gui2-mylist-editor-image-fallback {
+  width: 100%;
+  height: 296px;
+  object-fit: cover;
+  display: block;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.gui2-mylist-editor-image-fallback {
+  display: grid;
+  place-items: center;
+  color: rgba(243, 239, 232, 0.72);
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.gui2-mylist-editor-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: rgba(0, 0, 0, 0.36);
+  color: var(--gui2-text);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.gui2-mylist-editor-header,
+.gui2-mylist-editor-fields,
+.gui2-mylist-editor-footer {
+  padding: 18px 20px;
+}
+
+.gui2-mylist-editor-header {
+  display: grid;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gui2-mylist-editor-title {
+  color: var(--gui2-text);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.gui2-mylist-editor-meta {
+  color: rgba(243, 239, 232, 0.58);
+  font-size: 13px;
+}
+
+.gui2-mylist-editor-fields {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.gui2-mylist-field {
+  display: grid;
+  gap: 10px;
+}
+
+.gui2-mylist-field > span {
+  color: rgba(243, 239, 232, 0.74);
+  font-size: 13px;
+}
+
+.gui2-mylist-stepper {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 42px auto;
+  align-items: center;
+  gap: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-mylist-stepper-btn {
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--gui2-text);
+  font-size: 20px;
+}
+
+.gui2-mylist-stepper-input {
+  width: 100%;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--gui2-text);
+  text-align: center;
+  font: inherit;
+  font-size: 16px;
+}
+
+.gui2-mylist-stepper-total {
+  padding: 0 14px;
+  color: rgba(243, 239, 232, 0.6);
+  font-size: 14px;
+}
+
+.gui2-mylist-editor-progressbar {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.gui2-mylist-editor-progressfill {
+  height: 100%;
+  background: #f0b14d;
+}
+
+.gui2-mylist-score-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.gui2-mylist-editor-notes {
+  min-height: 126px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--gui2-text);
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.gui2-mylist-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gui2-mylist-tag {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid rgba(214, 190, 154, 0.2);
+  background: rgba(214, 190, 154, 0.08);
+  color: var(--gui2-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.gui2-mylist-tag-empty {
+  color: var(--gui2-gold-strong);
+  font-size: 13px;
+}
+
+.gui2-mylist-tag-inputrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.gui2-mylist-editor-footer {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gui2-mylist-remove-btn {
+  color: #ff6f61;
+}
+
+.gui2-mylist-route-links {
+  display: flex;
+  justify-content: flex-start;
+}
+
+@media (max-width: 1400px) {
+  .gui2-mylist-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-mylist-editor {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 1100px) {
+  .gui2-mylist-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .gui2-mylist-toolbar-actions {
+    flex-wrap: wrap;
+  }
+
+  .gui2-mylist-search {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .gui2-mylist-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .gui2-mylist-table-head,
+  .gui2-mylist-row {
+    grid-template-columns: minmax(220px, 1.4fr) 110px 132px 86px 66px 38px;
+  }
+}
+
+.reader-shell-v2 {
+  position: relative;
+  min-height: calc(100dvh - var(--gui2-topbar-h) - 24px);
+  height: calc(100dvh - var(--gui2-topbar-h) - 24px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background:
+    linear-gradient(180deg, rgba(18, 21, 28, 0.98) 0%, rgba(10, 12, 18, 0.995) 100%),
+    radial-gradient(circle at top left, rgba(214, 190, 154, 0.1) 0%, transparent 30%);
+  color: #f3efe8;
+  overflow: hidden;
+}
+
+.reader-topbar-v2,
+.reader-settings-panel {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    visibility 180ms ease;
+}
+
+.reader-ui-hidden .reader-topbar-v2,
+.reader-ui-hidden .reader-settings-panel {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.reader-ui-hidden .reader-topbar-v2 {
+  transform: translateY(-18px);
+}
+
+.reader-ui-hidden .reader-settings-panel {
+  transform: translateX(18px);
+}
+
+.reader-shell-v2.is-fullscreen {
+  min-height: 100vh;
+  height: 100vh;
+}
+
+body.reader-active .reader-shell-v2 {
+  min-height: 100dvh;
+  height: 100dvh;
+}
+
+.reader-shell-v2.reader-ui-hidden {
+  grid-template-rows: 0 minmax(0, 1fr) 0;
+}
+
+.reader-shell-v2.reader-ui-hidden .reader-workspace-v2 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.reader-topbar-v2 {
+  position: relative;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: minmax(260px, 1.15fr) auto minmax(360px, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(17, 20, 28, 0.96), rgba(17, 20, 28, 0.82));
+  backdrop-filter: blur(18px);
+}
+
+.reader-shell-v2.settings-open .reader-topbar-v2 {
+  margin-right: min(360px, 92vw);
+}
+
+.reader-topbar-left,
+.reader-topbar-center,
+.reader-topbar-right,
+.reader-icon-strip,
+.reader-chapter-jump-group,
+.reader-zoom-controls,
+.reader-slider-wrap,
+.reader-settings-row-head,
+.reader-settings-toggle-row {
+  display: flex;
+  align-items: center;
+}
+
+.reader-topbar-left,
+.reader-topbar-right {
+  gap: 14px;
+}
+
+.reader-topbar-center {
+  justify-content: center;
+}
+
+.reader-topbar-right {
+  justify-content: flex-end;
+}
+
+.reader-title-stack {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.reader-series-title {
+  color: #f7f3eb;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+}
+
+.reader-chapter-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: rgba(243, 239, 232, 0.68);
+  font-size: 13px;
+}
+
+.reader-chapter-line > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reader-chapter-select-shell,
+.reader-delay-select-shell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(243, 239, 232, 0.78);
+}
+
+.reader-delay-select-shell {
+  min-width: 132px;
+  justify-content: space-between;
+}
+
+.reader-chapter-select,
+.reader-delay-select-shell select {
+  border: 0;
+  background: transparent;
+  color: #f3efe8;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.reader-chapter-select-shell select option,
+.reader-delay-select-shell select option {
+  background: #131822;
+  color: #f3efe8;
+}
+
+.reader-toggle-group {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.reader-toggle-btn,
+.reader-icon-btn,
+.reader-chapter-btn,
+.reader-secondary-action,
+.reader-primary-action,
+.reader-reset-btn,
+.reader-mini-nav,
+.reader-page-arrow {
+  border: 0;
+  background: transparent;
+  color: #f3efe8;
+  font: inherit;
+}
+
+.reader-toggle-btn {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 14px;
+  color: rgba(243, 239, 232, 0.66);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.reader-toggle-btn.is-active {
+  background: rgba(214, 190, 154, 0.18);
+  color: #fff6e8;
+  box-shadow: inset 0 0 0 1px rgba(214, 190, 154, 0.22);
+}
+
+.reader-toggle-icon {
+  display: inline-grid;
+  place-items: center;
+}
+
+.reader-icon-strip,
+.reader-chapter-jump-group {
+  gap: 8px;
+}
+
+.reader-icon-btn,
+.reader-mini-nav {
+  width: 38px;
+  height: 38px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.reader-icon-btn.is-active {
+  border-color: rgba(214, 190, 154, 0.3);
+  color: #f0d3a6;
+}
+
+.reader-icon-btn:disabled,
+.reader-mini-nav:disabled,
+.reader-chapter-btn:disabled,
+.reader-page-arrow:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.reader-chapter-btn {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(243, 239, 232, 0.84);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.reader-workspace-v2 {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.reader-shell-v2.settings-closed .reader-workspace-v2 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.reader-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background:
+    linear-gradient(180deg, rgba(11, 14, 20, 0.98), rgba(7, 9, 14, 1)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.01) 0,
+      rgba(255, 255, 255, 0.01) 1px,
+      transparent 1px,
+      transparent 48px
+    );
+}
+
+.reader-stage--scroll {
+  overflow: hidden;
+}
+
+.reader-stage--paged,
+.reader-stage--double {
+  overflow: hidden;
+}
+
+.reader-shell-v2.reader-ui-hidden .reader-page-canvas {
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+
+.reader-shell-v2.reader-ui-hidden .reader-scroll-canvas {
+  padding-top: 18px;
+  padding-bottom: 28px;
+}
+
+.reader-shell-v2.reader-ui-hidden .reader-scroll-canvas--strip {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.episode-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.episode-audio-toolbar--inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.episode-audio-toolbar-label {
+  color: rgba(243, 239, 232, 0.58);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.episode-audio-toolbar--inline .episode-playback-switch {
+  gap: 8px;
+}
+
+.reader-scroll-canvas {
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: 26px 0 60px;
+}
+
+.reader-scroll-canvas--strip {
+  padding: 0 22px;
+}
+
+.reader-scroll-stack {
+  width: min(var(--reader-scroll-page-width, 100%), 1280px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 0;
+}
+
+.reader-scroll-stack--strip {
+  align-items: stretch;
+}
+
+.reader-scroll-slice {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  line-height: 0;
+}
+
+.reader-fit--height .reader-scroll-stack {
+  width: 100%;
+}
+
+.reader-fit--height .reader-scroll-slice {
+  display: grid;
+  place-items: center;
+}
+
+.reader-fit--original .reader-scroll-stack {
+  width: min(var(--reader-scroll-page-width, 74%), 1280px);
+}
+
+.reader-page-sheet {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+}
+
+.reader-page-media {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.reader-scroll-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: transparent;
+  box-shadow: none;
+  max-width: none;
+  content-visibility: auto;
+  contain-intrinsic-size: 1200px;
+}
+
+.reader-fit--height .reader-scroll-image {
+  width: auto;
+  max-width: 100%;
+  height: min(var(--reader-scroll-page-height, 78vh), 960px);
+  object-fit: contain;
+}
+
+.reader-page-sheet--paged .reader-page-media,
+.reader-page-sheet--double .reader-page-media {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.reader-page-canvas {
+  position: relative;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 28px 86px 60px;
+  overflow: hidden;
+}
+
+.reader-page-canvas.is-rtl {
+  direction: rtl;
+}
+
+.reader-page-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 22%;
+  opacity: 0;
+  z-index: 1;
+}
+
+.reader-page-zone--prev {
+  left: 0;
+}
+
+.reader-page-zone--next {
+  right: 0;
+}
+
+.reader-page-arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  width: 44px;
+  height: 88px;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(243, 239, 232, 0.78);
+  transform: translateY(-50%);
+}
+
+.reader-page-arrow--prev {
+  left: 22px;
+}
+
+.reader-page-arrow--next {
+  right: 22px;
+}
+
+.reader-spread {
+  width: 100%;
+  height: 100%;
+  max-width: 1280px;
+  min-height: 0;
+  max-height: 100%;
+  display: grid;
+  align-items: center;
+  justify-content: center;
+  justify-items: center;
+  gap: 18px;
+}
+
+.reader-spread--paged {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.reader-spread--double {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.reader-page-sheet--paged,
+.reader-page-sheet--double {
+  width: var(--reader-canvas-sheet-width, 100%);
+  height: var(--reader-canvas-sheet-height, 100%);
+  max-width: var(--reader-canvas-sheet-max-width, 100%);
+  max-height: var(--reader-canvas-sheet-max-height, 100%);
+  min-width: 0;
+  min-height: 0;
+  justify-self: center;
+  align-self: center;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.reader-settings-panel {
+  position: fixed;
+  top: var(--gui2-topbar-h);
+  right: 0;
+  width: 360px;
+  min-width: 0;
+  height: calc(100dvh - var(--gui2-topbar-h));
+  max-height: calc(100dvh - var(--gui2-topbar-h));
+  overflow-y: auto;
+  padding: 22px 20px 28px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(14, 17, 23, 0.98), rgba(11, 14, 20, 1));
+  z-index: 12;
+}
+
+body.reader-active .reader-settings-panel {
+  top: 0;
+  height: 100dvh;
+  max-height: 100dvh;
+}
+
+.reader-settings-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.reader-settings-head h3 {
+  margin: 0;
+  color: #f7f3eb;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.reader-settings-section {
+  display: grid;
+  gap: 14px;
+  padding: 18px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.reader-settings-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.reader-settings-label {
+  color: rgba(243, 239, 232, 0.84);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.reader-settings-button-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.reader-settings-button-grid.two-up {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.reader-settings-button-grid.three-up {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.reader-settings-button-grid .reader-toggle-btn {
+  justify-content: flex-start;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.reader-settings-row,
+.reader-settings-toggle-row {
+  display: grid;
+  gap: 12px;
+}
+
+.reader-settings-toggle-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.reader-settings-toggle-title {
+  color: #f3efe8;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.reader-settings-toggle-copy {
+  color: rgba(243, 239, 232, 0.58);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.reader-settings-ai-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0 5px;
+  min-height: 18px;
+  background: rgba(214, 190, 154, 0.18);
+  color: #f0d3a6;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.reader-switch {
+  position: relative;
+  display: inline-flex;
+}
+
+.reader-switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.reader-switch-track {
+  width: 44px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.reader-switch-track::after {
+  content: '';
+  width: 20px;
+  height: 20px;
+  background: #f3efe8;
+  transform: translateX(0);
+  transition: transform 160ms ease;
+}
+
+.reader-switch input:checked + .reader-switch-track {
+  background: rgba(214, 190, 154, 0.34);
+}
+
+.reader-switch input:checked + .reader-switch-track::after {
+  transform: translateX(20px);
+}
+
+.reader-zoom-controls {
+  gap: 10px;
+}
+
+.reader-slider-wrap {
+  gap: 12px;
+}
+
+.reader-slider-wrap .reader-slider {
+  flex: 1 1 auto;
+}
+
+.reader-slider {
+  width: 100%;
+  accent-color: #d6be9a;
+}
+
+.reader-slider-value {
+  color: rgba(243, 239, 232, 0.62);
+  font-size: 12px;
+}
+
+.reader-reset-btn,
+.reader-secondary-action,
+.reader-primary-action {
+  min-height: 36px;
+  padding: 0 14px;
+  justify-self: flex-start;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.reader-primary-action {
+  background: rgba(214, 190, 154, 0.18);
+  color: #fff6e8;
+  border-color: rgba(214, 190, 154, 0.24);
+}
+
+.reader-quality-chip {
+  justify-self: flex-start;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(243, 239, 232, 0.76);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reader-settings-icon {
+  display: inline-grid;
+  place-items: center;
+  color: rgba(243, 239, 232, 0.74);
+}
+
+.reader-state-panel {
+  height: 100%;
+  min-height: 540px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 16px;
+}
+
+.reader-state-copy,
+.reader-state-error {
+  color: rgba(243, 239, 232, 0.72);
+  font-size: 14px;
+}
+
+.reader-state-error {
+  color: #ff8b7a;
+}
+
+.reader-loadmore-shell {
+  display: grid;
+  place-items: center;
+  padding: 8px 22px 32px;
+}
+
+.reader-end-card {
+  width: min(760px, calc(100% - 44px));
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  margin: 0 auto;
+  padding: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+  color: rgba(243, 239, 232, 0.78);
+}
+
+.reader-end-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+@media (max-width: 1480px) {
+  .reader-topbar-v2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reader-topbar-center {
+    justify-content: flex-start;
+  }
+
+  .reader-topbar-right {
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .reader-workspace-v2 {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+}
+
+@media (max-width: 1240px) {
+  .reader-workspace-v2,
+  .reader-shell-v2.settings-open .reader-workspace-v2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reader-shell-v2.settings-open .reader-topbar-v2 {
+    margin-right: 0;
+  }
+
+  .reader-settings-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 72px;
+    width: min(360px, 92vw);
+    z-index: 5;
+    box-shadow: -18px 0 44px rgba(0, 0, 0, 0.34);
+  }
+
+  .reader-spread--double {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .reader-topbar-v2 {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .reader-toggle-group,
+  .reader-chapter-jump-group {
+    flex-wrap: wrap;
+  }
+
+  .reader-page-canvas {
+    padding: 22px 18px 50px;
+  }
+
+  .reader-page-arrow {
+    display: none;
+  }
+
+}
+
+.gui2-settingsv2 {
+  display: grid;
+  gap: 16px;
+}
+
+.gui2-settingsv2-header {
+  display: grid;
+  gap: 8px;
+  padding: 8px 2px 0;
+}
+
+.gui2-settingsv2-title {
+  margin: 0;
+  color: var(--gui2-text);
+  font-size: clamp(28px, 3vw, 44px);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 0.96;
+}
+
+.gui2-settingsv2-copy {
+  margin: 0;
+  color: var(--gui2-text-soft);
+  font-size: 15px;
+}
+
+.gui2-settingsv2-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(20, 22, 28, 0.96), rgba(13, 15, 20, 0.98));
+}
+
+.gui2-settingsv2-overview-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 78px;
+  padding: 0 24px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gui2-settingsv2-overview-card:last-child {
+  border-right: 0;
+}
+
+.gui2-settingsv2-overview-icon {
+  width: 38px;
+  height: 38px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--gui2-gold-strong);
+}
+
+.gui2-settingsv2-overview-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.gui2-settingsv2-overview-label {
+  color: var(--gui2-text);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.gui2-settingsv2-overview-value {
+  color: var(--gui2-gold-strong);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.gui2-settingsv2-overview-value.is-positive,
+.gui2-settingsv2-status.is-positive {
+  color: #79cd83;
+}
+
+.gui2-settingsv2-overview-value.is-gold,
+.gui2-settingsv2-status.is-gold {
+  color: var(--gui2-gold-strong);
+}
+
+.gui2-settingsv2-workspace {
+  display: grid;
+  grid-template-columns: 252px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.gui2-settingsv2-nav,
+.gui2-settingsv2-panel {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(20, 22, 28, 0.96), rgba(13, 15, 20, 0.98));
+}
+
+.gui2-settingsv2-nav {
+  display: grid;
+  align-content: start;
+}
+
+.gui2-settingsv2-nav-btn {
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 0 22px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: rgba(243, 239, 232, 0.82);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+}
+
+.gui2-settingsv2-nav-btn:first-child {
+  border-top: 0;
+}
+
+.gui2-settingsv2-nav-btn.is-active {
+  background: linear-gradient(90deg, rgba(214, 190, 154, 0.14), rgba(214, 190, 154, 0.04));
+  color: var(--gui2-gold-strong);
+  box-shadow: inset 3px 0 0 rgba(214, 190, 154, 0.9);
+}
+
+.gui2-settingsv2-nav-icon {
+  display: inline-grid;
+  place-items: center;
+}
+
+.gui2-settingsv2-panel {
+  display: grid;
+}
+
+.gui2-settingsv2-panel-header {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--gui2-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.gui2-settingsv2-group {
+  scroll-margin-top: 80px;
+}
+
+.gui2-settingsv2-group-title {
+  min-height: 38px;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 24px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(243, 239, 232, 0.58);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gui2-settingsv2-group-body {
+  display: grid;
+}
+
+.gui2-settingsv2-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 18px;
+  align-items: center;
+  padding: 14px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gui2-settingsv2-row.is-stacked {
+  align-items: start;
+}
+
+.gui2-settingsv2-row-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.gui2-settingsv2-row-title {
+  color: var(--gui2-text);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.gui2-settingsv2-row-description {
+  color: rgba(243, 239, 232, 0.62);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.gui2-settingsv2-row-control {
+  display: grid;
+  justify-items: end;
+  gap: 12px;
+}
+
+.gui2-settingsv2-select-shell,
+.gui2-settingsv2-input {
+  width: min(100%, 320px);
+  min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--gui2-text);
+}
+
+.gui2-settingsv2-select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.gui2-settingsv2-select option {
+  background: #14171d;
+  color: var(--gui2-text);
+}
+
+.gui2-settingsv2-input {
+  padding: 0 14px;
+  font: inherit;
+}
+
+.gui2-settingsv2-switch {
+  position: relative;
+  display: inline-flex;
+}
+
+.gui2-settingsv2-switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.gui2-settingsv2-switch-track {
+  width: 48px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.gui2-settingsv2-switch-track::after {
+  content: '';
+  width: 20px;
+  height: 20px;
+  background: #f3efe8;
+  transform: translateX(0);
+  transition: transform 160ms ease;
+}
+
+.gui2-settingsv2-switch input:checked + .gui2-settingsv2-switch-track {
+  background: rgba(214, 190, 154, 0.42);
+}
+
+.gui2-settingsv2-switch input:checked + .gui2-settingsv2-switch-track::after {
+  transform: translateX(22px);
+}
+
+.gui2-settingsv2-inline-status,
+.gui2-settingsv2-inline-spread,
+.gui2-settingsv2-inline-controls,
+.gui2-settingsv2-button-row,
+.gui2-settingsv2-account-summary {
+  display: flex;
+  align-items: center;
+}
+
+.gui2-settingsv2-inline-spread {
+  width: min(100%, 460px);
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.gui2-settingsv2-inline-controls {
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.gui2-settingsv2-button-row {
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.gui2-settingsv2-account-summary {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.gui2-settingsv2-status,
+.gui2-settingsv2-account-sync {
+  color: rgba(243, 239, 232, 0.72);
+  font-size: 13px;
+}
+
+.gui2-settingsv2-ghost-btn,
+.gui2-settingsv2-primary-btn,
+.gui2-settingsv2-save-btn,
+.gui2-settingsv2-text-btn {
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: var(--gui2-text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.gui2-settingsv2-primary-btn,
+.gui2-settingsv2-save-btn {
+  border-color: rgba(214, 190, 154, 0.42);
+  background: linear-gradient(180deg, rgba(242, 196, 102, 1), rgba(228, 179, 79, 1));
+  color: #1a1612;
+  font-weight: 700;
+}
+
+.gui2-settingsv2-text-btn {
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  color: rgba(243, 239, 232, 0.68);
+}
+
+.gui2-settingsv2-library-list,
+.gui2-settingsv2-error-list {
+  width: min(100%, 520px);
+  display: grid;
+  gap: 10px;
+}
+
+.gui2-settingsv2-library-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-settingsv2-library-item.is-static {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.gui2-settingsv2-library-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.gui2-settingsv2-library-copy strong,
+.gui2-settingsv2-library-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gui2-settingsv2-library-copy strong {
+  color: var(--gui2-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.gui2-settingsv2-library-copy span {
+  color: rgba(243, 239, 232, 0.52);
+  font-size: 12px;
+}
+
+.gui2-settingsv2-error-list {
+  color: #df8b7c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.gui2-settingsv2-footer {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gui2-settingsv2-footer-note {
+  color: rgba(243, 239, 232, 0.58);
+  font-size: 14px;
+}
+
+@media (max-width: 1320px) {
+  .gui2-settingsv2-workspace {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .gui2-settingsv2-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .gui2-settingsv2-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-settingsv2-nav {
+    order: 2;
+  }
+
+  .gui2-settingsv2-panel {
+    order: 1;
+  }
+
+  .gui2-settingsv2-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-settingsv2-row-control,
+  .gui2-settingsv2-inline-controls,
+  .gui2-settingsv2-button-row {
+    justify-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .gui2-settingsv2-overview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.gui2-online-player-page {
+  --gui2-online-player-backdrop: none;
+  position: relative;
+  display: grid;
+  gap: 20px;
+  min-height: calc(100vh - var(--gui2-topbar-h) - 36px);
+  padding: 24px 18px 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(10, 11, 15, 0.92), rgba(8, 9, 12, 0.98)),
+    radial-gradient(circle at top center, rgba(214, 164, 89, 0.14), transparent 34%),
+    var(--gui2-online-player-backdrop);
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.gui2-online-player-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(7, 7, 10, 0.48) 0%, rgba(7, 7, 10, 0.82) 42%, rgba(7, 7, 10, 0.96) 100%),
+    radial-gradient(circle at top center, rgba(239, 191, 122, 0.10), transparent 30%);
+  pointer-events: none;
+}
+
+.gui2-online-player-copy,
+.integrated-player-shell,
+.integrated-player-shell--page {
+  position: relative;
+  z-index: 1;
+}
+
+.gui2-online-player-copy {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  text-align: center;
+}
+
+.gui2-online-player-title {
+  margin: 0;
+  color: #f2bf74;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: clamp(28px, 3.6vw, 56px);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.04;
+}
+
+.gui2-online-player-episode {
+  margin: 0;
+  color: rgba(243, 239, 232, 0.78);
+  font-size: clamp(18px, 1.9vw, 30px);
+  font-weight: 500;
+  line-height: 1.12;
+}
+
+.integrated-player-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(6, 7, 10, 0.84);
+  backdrop-filter: blur(10px);
+}
+
+.integrated-player-overlay--page {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  display: block;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.integrated-player-shell {
+  position: relative;
+  width: min(1280px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background:
+    linear-gradient(180deg, rgba(19, 20, 24, 0.98), rgba(11, 12, 15, 0.98)),
+    radial-gradient(circle at top right, rgba(214, 164, 89, 0.12), transparent 32%);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.38);
+}
+
+.integrated-player-shell--page {
+  width: min(1268px, 100%);
+  gap: 18px;
+  padding: 14px 14px 8px;
+  border-color: rgba(214, 164, 89, 0.18);
+  background:
+    linear-gradient(180deg, rgba(15, 16, 20, 0.96), rgba(8, 9, 12, 0.98)),
+    radial-gradient(circle at top center, rgba(214, 164, 89, 0.10), transparent 30%);
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.24);
+}
+
+.integrated-player-header,
+.integrated-player-toolbar,
+.integrated-player-page-actions,
+.integrated-player-footer,
+.integrated-player-retry-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.integrated-player-header,
+.integrated-player-toolbar,
+.integrated-player-footer {
+  justify-content: space-between;
+}
+
+.integrated-player-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.integrated-player-eyebrow,
+.integrated-player-audio-label {
+  color: rgba(243, 239, 232, 0.56);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.integrated-player-sep {
+  margin: 0 6px;
+}
+
+.integrated-player-title {
+  color: var(--gui2-text);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.integrated-player-subtitle {
+  color: rgba(243, 239, 232, 0.78);
+  font-size: 14px;
+}
+
+.integrated-player-toolbar-group,
+.integrated-player-page-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.integrated-player-stage {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(214, 164, 89, 0.24);
+  background: rgba(4, 5, 8, 0.96);
+  aspect-ratio: 16 / 9;
+}
+
+.integrated-player-video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #05060a;
+}
+
+.integrated-player-retry {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(7, 7, 10, 0.18), rgba(7, 7, 10, 0.78));
+}
+
+.integrated-player-retry-actions,
+.integrated-player-footer-actions {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.integrated-player-corner-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  width: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+}
+
+.integrated-player-page-actions {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 0 4px;
+}
+
+.integrated-player-page-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 16px;
+  flex: 1 1 420px;
+}
+
+.integrated-player-page-nav .integrated-player-toolbar-group {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.integrated-player-page-nav-spacer {
+  display: inline-block;
+  min-width: 132px;
+  min-height: 34px;
+}
+
+.integrated-player-audio-group--page {
+  margin-left: auto;
+}
+
+.integrated-player-note {
+  color: rgba(243, 239, 232, 0.58);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.integrated-player-nav-btn,
+.integrated-player-retry-btn,
+.integrated-player-external-btn {
+  min-width: 168px;
+  justify-content: center;
+}
+
+@media (max-width: 1100px) {
+  .gui2-online-player-page {
+    min-height: auto;
+    padding: 18px 12px 22px;
+  }
+
+  .integrated-player-shell,
+  .integrated-player-shell--page {
+    width: 100%;
+    padding: 12px;
+  }
+
+  .integrated-player-page-actions,
+  .integrated-player-toolbar,
+  .integrated-player-footer {
+    align-items: stretch;
+  }
+
+  .integrated-player-page-actions,
+  .integrated-player-toolbar,
+  .integrated-player-footer,
+  .integrated-player-header {
+    flex-direction: column;
+  }
+
+  .integrated-player-page-nav {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .integrated-player-page-nav .integrated-player-toolbar-group {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .integrated-player-audio-group--page {
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .integrated-player-footer-actions {
+    width: 100%;
+  }
+}

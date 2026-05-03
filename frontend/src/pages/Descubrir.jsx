@@ -342,10 +342,10 @@ export function DiscoverFeed({ embedded = false, afterHeroSlot = null }) {
       const currentYear = new Date().getFullYear()
       const settled = await Promise.allSettled([
         wails.getTrending(lang),
-        wails.discoverAnime('', '', currentYear, 'POPULARITY_DESC', '', 1),
-        wails.discoverAnime('', '', currentYear, 'START_DATE_DESC', '', 1),
-        wails.discoverAnime('', '', 0, 'POPULARITY_DESC', 'FINISHED', 1),
-        ...DISCOVER_GENRE_ROWS.map((row) => wails.discoverAnime(row.genre, '', 0, 'POPULARITY_DESC', '', 1)),
+        wails.discoverAnime('', '', currentYear, 'POPULARITY_DESC', '', '', 1),
+        wails.discoverAnime('', '', currentYear, 'START_DATE_DESC', '', '', 1),
+        wails.discoverAnime('', '', 0, 'POPULARITY_DESC', 'FINISHED', '', 1),
+        ...DISCOVER_GENRE_ROWS.map((row) => wails.discoverAnime(row.genre, '', 0, 'POPULARITY_DESC', '', '', 1)),
       ])
 
       const pick = (index) => (settled[index]?.status === 'fulfilled' ? settled[index].value : null)

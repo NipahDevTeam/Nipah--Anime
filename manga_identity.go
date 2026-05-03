@@ -250,8 +250,7 @@ func (a *App) resolveOnlineMangaIdentityWithNeedles(sourceID, sourceMangaID, sou
 		}
 	}
 
-	candidates := buildMangaSearchCandidates(sourceTitle, sourceMangaID)
-	candidates = append(candidates, extraNeedles...)
+	candidates := prioritizeMangaIdentityQueries(buildMangaSearchCandidates(sourceTitle, sourceMangaID), extraNeedles, mangaAniListQueryBudget)
 	meta, matchedTitle, confidence, err := a.matchAniListMangaCandidates(candidates, year)
 	if err != nil {
 		return nil, err
@@ -540,6 +539,41 @@ func buildMangaSearchCandidates(sourceTitle, sourceMangaID string) []string {
 	slug = strings.ReplaceAll(slug, "_", " ")
 	push(slug)
 	push(cleanMangaIdentityTitle(slug))
+	return out
+}
+
+func prioritizeMangaIdentityQueries(baseCandidates, extraNeedles []string, budget int) []string {
+	if budget <= 0 {
+		return []string{}
+	}
+
+	seen := map[string]struct{}{}
+	out := make([]string, 0, budget)
+	push := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, value)
+	}
+
+	for _, value := range extraNeedles {
+		push(value)
+		if len(out) >= budget {
+			return out
+		}
+	}
+	for _, value := range baseCandidates {
+		push(value)
+		if len(out) >= budget {
+			return out
+		}
+	}
 	return out
 }
 
@@ -1284,8 +1318,7 @@ func (a *App) SearchMangaGlobal(query, lang string) ([]map[string]interface{}, e
 	}
 	if len(combined) == 0 && lastErr != nil {
 		if retryableFailure {
-			log.Warn().Str("query", normalizedQuery).Msg("SearchMangaGlobal returning empty results after transient AniList failure")
-			return []map[string]interface{}{}, nil
+			log.Warn().Str("query", normalizedQuery).Msg("SearchMangaGlobal surfacing transient AniList failure")
 		}
 		return nil, lastErr
 	}
@@ -1383,7 +1416,7 @@ func (a *App) ResolveMangaSourceForAniList(sourceID string, anilistID int, lang 
 		}
 	}
 
-	meta, err := a.metadata.GetAniListMangaByID(anilistID)
+	meta, err := a.loadAniListMangaMetadata(anilistID)
 	if err != nil {
 		if metadata.IsRetryableAniListError(err) {
 			log.Warn().Err(err).Str("source", sourceID).Int("anilist_id", anilistID).Str("lang", lang).Msg("ResolveMangaSourceForAniList metadata transient failure")

@@ -47,6 +47,33 @@ func TestScoreMangaTitleAgainstNeedlesMatchesCompactSpacing(t *testing.T) {
 	}
 }
 
+func TestPrioritizeMangaIdentityQueriesPrefersTrustedNeedlesWithinBudget(t *testing.T) {
+	base := []string{
+		"The Knight Who Only Lives Today",
+		"the knight who only lives today",
+		"the knight who only lives today",
+		"the knight who only lives today volume 1",
+	}
+	extra := []string{
+		"The Knight Only Lives Today",
+		"Eternally Regressing Knight",
+	}
+
+	queries := prioritizeMangaIdentityQueries(base, extra, 4)
+	if len(queries) != 4 {
+		t.Fatalf("expected 4 prioritized queries, got %d (%v)", len(queries), queries)
+	}
+	if queries[0] != "The Knight Only Lives Today" {
+		t.Fatalf("expected canonical AniList title first, got %v", queries)
+	}
+	if queries[1] != "Eternally Regressing Knight" {
+		t.Fatalf("expected trusted synonym second, got %v", queries)
+	}
+	if !containsString(queries, "The Knight Who Only Lives Today") {
+		t.Fatalf("expected source wording to remain available, got %v", queries)
+	}
+}
+
 func TestShouldPreferMangaSourceMatchPrefersBaseTitleOnEqualConfidence(t *testing.T) {
 	needles := []string{"A Returner's Magic Should Be Special"}
 	if !shouldPreferMangaSourceMatch(0.92, "A Returner's Magic Should Be Special", needles, 0.92, "A Returner's Magic Should Be Special Part 1") {

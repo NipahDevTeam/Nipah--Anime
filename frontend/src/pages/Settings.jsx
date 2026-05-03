@@ -182,11 +182,102 @@ export default function Settings() {
 
   const boolVal = (key) => settings[key] === 'true'
   const providerCounts = remoteSyncStatus?.by_provider ?? {}
+  const connectedProviders = [
+    authStatus.anilist?.logged_in ? 'AniList' : null,
+    authStatus.mal?.logged_in ? 'MyAnimeList' : null,
+  ].filter(Boolean)
+  const mpvOnlyLabel = isEnglish ? 'MPV only for now' : 'Solo MPV por ahora'
+  const mpvOnlyDescription = isEnglish
+    ? 'MPV is temporarily the only playback mode while we finish stabilizing the in-app player.'
+    : 'MPV es temporalmente el unico modo de reproduccion mientras terminamos de estabilizar el reproductor interno.'
+  const settingsSummaryCards = [
+    {
+      label: isEnglish ? 'Playback' : 'Reproduccion',
+      value: 'MPV',
+      copy: mpvOnlyDescription,
+    },
+    {
+      label: isEnglish ? 'Library' : 'Biblioteca',
+      value: animeImportDir ? (isEnglish ? 'Ready' : 'Lista') : (isEnglish ? 'Unset' : 'Sin ruta'),
+      copy: isEnglish ? 'Import folders and automatic scanning live under one broader library block.' : 'Importacion y escaneo automatico viven bajo un mismo bloque de biblioteca.',
+    },
+    {
+      label: isEnglish ? 'Sync' : 'Sync',
+      value: connectedProviders.length > 0 ? connectedProviders.join(' / ') : (isEnglish ? 'Idle' : 'Sin conectar'),
+      copy: isEnglish ? 'Remote list sync stays visible without overwhelming the route.' : 'La sincronizacion remota sigue visible sin invadir toda la ruta.',
+    },
+  ]
+  const settingsSections = [
+    { id: 'settings-language', label: isEnglish ? 'General' : 'General' },
+    { id: 'settings-playback', label: isEnglish ? 'Playback' : 'Reproduccion' },
+    { id: 'settings-reading', label: isEnglish ? 'Reading' : 'Lectura' },
+    { id: 'settings-library', label: isEnglish ? 'Library' : 'Biblioteca' },
+    { id: 'settings-accounts', label: isEnglish ? 'Accounts' : 'Cuentas' },
+    { id: 'settings-updates', label: isEnglish ? 'Updates' : 'Actualizaciones' },
+  ]
+  const scrollToSettingsSection = (id) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   return (
     <div className="fade-in settings-page">
+      <section className="nipah-hero-band settings-hero">
+        <div className="nipah-hero-copy">
+          <div className="nipah-hero-kicker">{isEnglish ? 'System preferences' : 'Preferencias del sistema'}</div>
+          <h1 className="nipah-hero-title">
+            {isEnglish ? 'Tune playback, sync, and your local library' : 'Ajusta reproduccion, sincronizacion y tu biblioteca local'}
+          </h1>
+          <p className="nipah-hero-text">
+            {isEnglish
+              ? 'Everything important now lives in a cleaner desktop control center: player behavior, account sync, import folders, and update checks.'
+              : 'Todo lo importante ahora vive en un centro de control mas limpio: reproduccion, cuentas, carpetas de importacion y actualizaciones.'}
+          </p>
+        </div>
+        <div className="settings-hero-focus">
+          <span className="settings-hero-focus-kicker">{isEnglish ? 'System state' : 'Estado del sistema'}</span>
+          <strong className="settings-hero-focus-title">
+            {connectedProviders.length > 0 ? connectedProviders.join(' / ') : (isEnglish ? 'Ready for tuning' : 'Lista para ajustar')}
+          </strong>
+          <div className="settings-hero-focus-copy">
+            {mpvOk
+              ? (isEnglish ? 'MPV is ready, library import is configured, and the route can now spend more space on the controls that actually matter.' : 'MPV esta listo, la importacion local esta configurada y la ruta ya puede dedicar mas espacio a los controles que de verdad importan.')
+              : (isEnglish ? 'Playback fallback still needs attention, but the rest of the control center is ready to configure.' : 'La ruta alternativa de reproduccion aun necesita atencion, pero el resto del centro de control ya se puede configurar.')}
+          </div>
+          <div className="settings-hero-focus-meta">
+            <span>MPV {mpvOk ? (isEnglish ? 'Ready' : 'Listo') : (isEnglish ? 'Missing' : 'Falta')}</span>
+            <span>{isEnglish ? 'Queue' : 'Cola'} {remoteSyncStatus?.pending_count ?? 0}</span>
+            <span>{isEnglish ? 'Paths' : 'Rutas'} {libPaths.length}</span>
+          </div>
+        </div>
+      </section>
 
-      {/* â”€â”€ Idioma â”€â”€ */}
+      <section className="settings-overview-strip">
+        {settingsSummaryCards.map((item) => (
+          <article key={item.label} className="settings-overview-card">
+            <span className="settings-overview-label">{item.label}</span>
+            <strong className="settings-overview-value">{item.value}</strong>
+            <p className="settings-overview-copy">{item.copy}</p>
+          </article>
+        ))}
+      </section>
+
+      <div className="settings-layout">
+        <aside className="settings-nav-rail">
+          {settingsSections.map((section) => (
+            <button
+              key={section.id}
+              type="button"
+              className="settings-nav-btn"
+              onClick={() => scrollToSettingsSection(section.id)}
+            >
+              {section.label}
+            </button>
+          ))}
+        </aside>
+
+        <div className="settings-main-column">
+
+      <section className="settings-cluster" id="settings-language">
       <SectionHeader title={t("Idioma y región")} />
       <div className="setting-group">
         <SettingRow
@@ -216,8 +307,9 @@ export default function Settings() {
           />
         </SettingRow>
       </div>
+      </section>
 
-      {/* â”€â”€ ReproducciÃ³n â”€â”€ */}
+      <section className="settings-cluster" id="settings-playback">
       <SectionHeader
         title={t("Reproducción")}
         subtitle={isEnglish ? 'MPV and video quality settings' : 'Configuración de MPV y calidad de video'}
@@ -229,7 +321,7 @@ export default function Settings() {
         >
           <span className={`badge ${mpvOk ? 'badge-green' : 'badge-muted'}`}
             style={{ fontSize: 11, padding: '4px 10px' }}>
-            {mpvOk ? (isEnglish ? 'âœ“ Detected' : 'âœ“ Detectado') : (isEnglish ? 'âœ• Not found' : 'âœ• No encontrado')}
+            {mpvOk ? (isEnglish ? 'Detected' : 'Detectado') : (isEnglish ? 'Not found' : 'No encontrado')}
           </span>
         </SettingRow>
 
@@ -252,14 +344,14 @@ export default function Settings() {
           <div className="setting-notice">
             {isEnglish ? (
               <>
-                <b>MPV is not installed or could not be found.</b> In-app playback can still open supported streams, but MPV is recommended as the fallback path for tougher providers and Anime4K.
+                <b>MPV is not installed or could not be found.</b> MPV is the only playback path exposed in this build while the in-app player is being stabilized.
                 Download it from <a href="https://mpv.io" target="_blank" rel="noreferrer"
                   style={{ color: 'var(--accent)' }}>mpv.io</a> and install it normally.
                 On Windows, you can also specify the full path to the `.exe` above.
               </>
             ) : (
               <>
-                <b>MPV no está instalado o no se encontró.</b> La reproducción dentro de la app puede abrir streams compatibles, pero MPV sigue siendo la ruta recomendada para fuentes más pesadas y para Anime4K.
+                <b>MPV no esta instalado o no se encontro.</b> MPV es la unica ruta de reproduccion expuesta en esta build mientras estabilizamos el reproductor interno.
                 Descárgalo desde <a href="https://mpv.io" target="_blank" rel="noreferrer"
                   style={{ color: 'var(--accent)' }}>mpv.io</a> e instálalo normalmente.
                 En Windows, también puedes especificar la ruta completa al .exe arriba.
@@ -270,21 +362,16 @@ export default function Settings() {
 
         <SettingRow
           label={isEnglish ? 'Preferred player' : 'Reproductor preferido'}
-          description={isEnglish ? 'Choose between in-app playback and external MPV. MPV remains the compatibility fallback and the only mode with Anime4K shaders.' : 'Elige entre reproducción dentro de la app y MPV externo. MPV sigue siendo la opción de compatibilidad y la única con shaders Anime4K.'}
+          description={mpvOnlyDescription}
         >
-          <SettingSelect
-                    value={settings.player ?? 'mpv'}
-            onChange={v => set('player', v)}
-            options={[
-              { value: 'integrated', label: isEnglish ? 'In-app' : 'Dentro de la app' },
-              { value: 'mpv', label: 'MPV' },
-            ]}
-          />
+          <span className="badge badge-muted" style={{ fontSize: 11, padding: '4px 10px' }}>
+            {mpvOnlyLabel}
+          </span>
         </SettingRow>
         <div className="setting-notice">
           {isEnglish
-            ? 'In-app playback now handles supported streams directly inside Nipah!. If a provider fights back, you can still switch to MPV instantly.'
-            : 'La reproducción dentro de la app ahora maneja streams compatibles directamente en Nipah!. Si una fuente se pone pesada, puedes cambiar a MPV al instante.'}
+            ? 'The in-app player is hidden for now, so every provider opens through MPV until that path is fully stabilized.'
+            : 'El reproductor interno queda oculto por ahora, asi que todas las fuentes se abren con MPV hasta que esa ruta quede totalmente estabilizada.'}
         </div>
 
         <SettingRow
@@ -318,8 +405,9 @@ export default function Settings() {
           />
         </SettingRow>
       </div>
+      </section>
 
-      {/* â”€â”€ Manga â”€â”€ */}
+      <section className="settings-cluster" id="settings-reading">
       <SectionHeader title={t("Lectura de manga")} />
       <div className="setting-group">
         <SettingRow
@@ -346,8 +434,9 @@ export default function Settings() {
           />
         </SettingRow>
       </div>
+      </section>
 
-      {/* â”€â”€ Biblioteca â”€â”€ */}
+      <section className="settings-cluster" id="settings-library">
       <SectionHeader title={t("Biblioteca")} />
       <div className="setting-group">
         <SettingRow
@@ -413,8 +502,9 @@ export default function Settings() {
           </div>
         </div>
       )}
+      </section>
 
-      {/* â”€â”€ Cuentas vinculadas â”€â”€ */}
+      <section className="settings-cluster" id="settings-accounts">
       <SectionHeader
         title={t("Cuentas vinculadas")}
         subtitle={isEnglish ? 'Connect your accounts to sync anime and manga lists' : 'Conecta tus cuentas para sincronizar listas de anime y manga'}
@@ -575,18 +665,18 @@ export default function Settings() {
             : 'La sincronizacion con AniList es la soportada en esta version. MyAnimeList queda deprecado por ahora.'}
         </div>
       </div>
+      </section>
 
-      {/* ── Actualizaciones ── */}
+      <section className="settings-cluster" id="settings-updates">
       <SectionHeader title={t('update_section')} />
       <UpdateChecker t={t} isEnglish={isEnglish} />
 
-      {/* â”€â”€ Save button â”€â”€ */}
       <div className="setting-group">
         <SettingRow
           label={isEnglish ? 'Sync status' : 'Estado de sincronizacion'}
           description={isEnglish
-            ? `Pending: ${remoteSyncStatus?.pending_count ?? 0} Â· Failed: ${remoteSyncStatus?.failed_count ?? 0}`
-            : `Pendientes: ${remoteSyncStatus?.pending_count ?? 0} Â· Fallidos: ${remoteSyncStatus?.failed_count ?? 0}`}
+            ? `Pending: ${remoteSyncStatus?.pending_count ?? 0} - Failed: ${remoteSyncStatus?.failed_count ?? 0}`
+            : `Pendientes: ${remoteSyncStatus?.pending_count ?? 0} - Fallidos: ${remoteSyncStatus?.failed_count ?? 0}`}
         >
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <button
@@ -685,6 +775,82 @@ export default function Settings() {
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
           Nipah! Anime
         </span>
+      </div>
+      </section>
+
+        </div>
+
+        <aside className="settings-side-column">
+          <section className="settings-brand-card">
+            <span className="settings-brand-kicker">{isEnglish ? 'Nipah! desktop' : 'Nipah! escritorio'}</span>
+            <strong className="settings-brand-title">{isEnglish ? 'Keep the system broad, calm, and tuned for media-first flows.' : 'Manten el sistema amplio, sereno y ajustado para flujos centrados en medios.'}</strong>
+            <p className="settings-brand-copy">
+              {isEnglish
+                ? 'This route should feel like a product control center, not a maintenance form. Accounts, playback, and library actions stay visible without taking over the page.'
+                : 'Esta ruta debe sentirse como un centro de control del producto, no como un formulario de mantenimiento. Cuentas, reproduccion y biblioteca siguen visibles sin apoderarse de la pagina.'}
+            </p>
+          </section>
+
+          <section className="nipah-side-panel settings-side-panel">
+            <div className="nipah-side-panel-head">
+              <div>
+                <div className="nipah-side-panel-title">{isEnglish ? 'Runtime snapshot' : 'Estado rapido'}</div>
+                <div className="nipah-side-panel-copy">
+                  {isEnglish ? 'A tighter read on playback, library, and reading defaults while you tune the app.' : 'Una lectura mas cerrada de reproduccion, biblioteca y lectura mientras ajustas la app.'}
+                </div>
+              </div>
+            </div>
+            <div className="settings-side-list">
+              <div className="settings-side-list-item">
+                <span>{isEnglish ? 'Preferred player' : 'Reproductor preferido'}</span>
+                <strong>MPV</strong>
+              </div>
+              <div className="settings-side-list-item">
+                <span>{isEnglish ? 'Video quality' : 'Calidad de video'}</span>
+                <strong>{settings.preferred_quality ?? '1080p'}</strong>
+              </div>
+              <div className="settings-side-list-item">
+                <span>{isEnglish ? 'Reader direction' : 'Direccion de lectura'}</span>
+                <strong>{settings.manga_reading_direction === 'rtl' ? 'RTL' : 'LTR'}</strong>
+              </div>
+              <div className="settings-side-list-item">
+                <span>{isEnglish ? 'Auto scan' : 'Escaneo automatico'}</span>
+                <strong>{boolVal('auto_scan_on_startup') ? (isEnglish ? 'On' : 'Activo') : (isEnglish ? 'Off' : 'Inactivo')}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="nipah-side-panel settings-side-panel">
+            <div className="nipah-side-panel-head">
+              <div>
+                <div className="nipah-side-panel-title">{isEnglish ? 'Connected services' : 'Servicios conectados'}</div>
+                <div className="nipah-side-panel-copy">
+                  {connectedProviders.length > 0
+                    ? connectedProviders.join(' / ')
+                    : (isEnglish ? 'No active connections yet.' : 'Todavia no hay conexiones activas.')}
+                </div>
+              </div>
+            </div>
+            <div className="settings-side-list">
+              <div className="settings-side-list-item">
+                <span>AniList</span>
+                <strong>{authStatus.anilist?.logged_in ? (isEnglish ? 'Connected' : 'Conectado') : (isEnglish ? 'Idle' : 'Sin conectar')}</strong>
+              </div>
+              <div className="settings-side-list-item">
+                <span>{isEnglish ? 'Pending sync items' : 'Pendientes de sync'}</span>
+                <strong>{remoteSyncStatus?.pending_count ?? 0}</strong>
+              </div>
+              <div className="settings-side-list-item">
+                <span>{isEnglish ? 'Failed sync items' : 'Fallidos'}</span>
+                <strong>{remoteSyncStatus?.failed_count ?? 0}</strong>
+              </div>
+              <div className="settings-side-list-item">
+                <span>{isEnglish ? 'Import folder' : 'Carpeta importacion'}</span>
+                <strong>{animeImportDir ? (isEnglish ? 'Ready' : 'Lista') : (isEnglish ? 'Unset' : 'No definida')}</strong>
+              </div>
+            </div>
+          </section>
+        </aside>
       </div>
     </div>
   )
