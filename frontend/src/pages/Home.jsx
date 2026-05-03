@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { MANGA_SOURCE_IDS, normalizeMangaSourceID } from '../lib/mangaSources'
 import { buildOrderedMangaSearchCandidates } from '../lib/mangaSearchCandidates'
 import { isAniListUnavailableErrorMessage } from '../lib/anilistStatus'
+import { useStableLoadingGate } from '../lib/useStableLoadingGate'
+import { buildAnimeNavigationState } from '../lib/mediaNavigation'
 import { proxyImage, wails } from '../lib/wails'
 import { enrichJKAnimeHit } from '../lib/onlineAnimeResolver'
 import { toastSuccess, toastError } from '../components/ui/Toast'
@@ -504,19 +506,24 @@ function OnlineHistoryCard({ item, navigate, targetPath = '/search', chapterPref
 }
 
 function ContinueCard({ item, onClick }) {
+  const [imgErr, setImgErr] = useState(false)
+  const title = item?.anime_title || item?.animeTitle || 'Anime'
+  const episodeValue = item?.episode_num ?? item?.episodeTitle ?? '?'
+  const percent = item?.percent ?? item?.progressPercent ?? 0
+  const image = resolveResumeCardImage(item)
   return (
     <div className="home-progress-card" onClick={onClick}>
       <div className="home-progress-poster">
-        {item.cover_image
-          ? <img src={item.cover_image} alt={item.anime_title} className="home-progress-poster-image" />
-          : <div className="home-progress-poster-image" />
+        {image && !imgErr
+          ? <img src={image} alt={title} className="home-progress-poster-image" onError={() => setImgErr(true)} />
+          : <div className="home-progress-poster-image home-progress-poster-fallback">{title?.[0] ?? '?'}</div>
         }
         <div className="home-progress-ring">
-          <ProgressRing percent={item.percent ?? 0} />
+          <ProgressRing percent={percent} />
         </div>
       </div>
       <div className="home-progress-copy">
-        <div className="home-progress-title">{item.anime_title}</div>
+        <div className="home-progress-title">{title}</div>
         <div className="home-progress-meta">
           Ep. {item.episode_num ?? '?'}
           {item.percent != null && item.percent > 0 ? ` · ${Math.round(item.percent)}%` : ''}
@@ -550,6 +557,18 @@ function buildResumeBadge(progressSec, durationSec, isEnglish = false) {
   return isEnglish ? 'Resume' : 'Continuar'
 }
 
+function resolveResumeCardImage(item) {
+  const image = item?.image
+    || item?.resolved_cover_url
+    || item?.cover_url
+    || item?.cover_image
+    || item?.resolved_banner_url
+    || item?.banner_url
+    || item?.banner_image
+    || ''
+  return image ? proxyImage(image) : ''
+}
+
 function ContinueWatchingRailCard({ entry }) {
   const [imgErr, setImgErr] = useState(false)
   const progressWidth = entry.progressPercent != null ? `${Math.max(4, Math.min(100, Math.round(entry.progressPercent)))}%` : '0%'
@@ -565,7 +584,11 @@ function ContinueWatchingRailCard({ entry }) {
           </div>
         )}
         <div className="home-crunchy-card-shade" />
-        <div className="home-crunchy-card-play">▶</div>
+        <div className="home-crunchy-card-play" aria-hidden="true">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M2 1.5 8 5 2 8.5V1.5Z" fill="currentColor" />
+          </svg>
+        </div>
         <div className="home-crunchy-card-pill">{entry.badge}</div>
         {entry.progressPercent != null ? (
           <div className="home-crunchy-card-progress">
@@ -611,7 +634,7 @@ function WatchHistoryDrawer({
                 {isEnglish ? 'Clear all' : 'Limpiar'}
               </button>
             ) : null}
-            <button type="button" className="btn btn-ghost" onClick={onClose}>×</button>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>x</button>
           </div>
         </div>
 
@@ -624,21 +647,19 @@ function WatchHistoryDrawer({
             </div>
           ) : null}
           {!isLoading && !error && items.length > 0 ? items.map((item) => {
-            const image = item.episode_thumbnail || item.banner_image || item.cover_url
+            const image = resolveResumeCardImage(item)
             const watchedAt = item.watched_at ? new Date(item.watched_at).toLocaleDateString() : ''
             const progressBadge = buildResumeBadge(item.progress_sec, item.duration_sec, isEnglish)
             return (
               <div key={`${item.source_id}-${item.episode_id}`} className="home-history-item">
                 <button type="button" className="home-history-hit" onClick={() => onOpenItem?.(item)}>
                   <div className="home-history-thumb">
-                    {image ? <img src={proxyImage(image)} alt={item.anime_title} className="home-history-thumb-image" /> : <div className="home-history-thumb-image" />}
+                    {image ? <img src={image} alt={item.anime_title} className="home-history-thumb-image" /> : <div className="home-history-thumb-image" />}
                   </div>
                   <div className="home-history-copy">
                     <div className="home-history-anime">{item.anime_title}</div>
                     <div className="home-history-episode">{item.episode_title || `${isEnglish ? 'Episode' : 'Episodio'} ${item.episode_num ?? '?'}`}</div>
-                    <div className="home-history-meta">
-                      {[item.source_name, progressBadge, watchedAt].filter(Boolean).join(' · ')}
-                    </div>
+                    <div className="home-history-meta">{[item.source_name, progressBadge, watchedAt].filter(Boolean).join(' / ')}</div>
                   </div>
                 </button>
                 <button
@@ -647,7 +668,7 @@ function WatchHistoryDrawer({
                   onClick={() => onRemoveItem?.(item.source_id, item.anime_id)}
                   title={isEnglish ? 'Remove from history' : 'Eliminar del historial'}
                 >
-                  ×
+                  x
                 </button>
               </div>
             )
@@ -676,11 +697,7 @@ function TrackedListCard({ item, navigate, type = 'anime', isEnglish = false, cl
         onClick={() => navigate(type === 'manga' ? '/manga-online' : '/search', {
           state: type === 'manga'
             ? buildHomeMangaNavigationState(item)
-            : {
-              preSearch: item.title,
-              altSearch: item.title_english,
-              preferredAnilistID: Number(item.anilist_id || item.id || 0),
-            },
+            : buildAnimeNavigationState(item),
         })}
       />
   )
@@ -726,9 +743,15 @@ function SpotlightHero({ slides, current, onSelect, onJump, lang, searching }) {
         style={backdrop ? { backgroundImage: `linear-gradient(90deg, rgba(5,8,14,0.96) 8%, rgba(5,8,14,0.76) 44%, rgba(5,8,14,0.22) 100%), url(${backdrop})` } : undefined}
       />
       <div className="home-spotlight-noise" />
-      <div className="home-spotlight-content">
+      <div className="home-spotlight-content home-spotlight-content--rebuilt">
+        {poster ? (
+          <div className="home-spotlight-poster-column">
+            <img src={poster} alt={title} className="home-spotlight-poster" />
+          </div>
+        ) : null}
+
         <div className="home-spotlight-copy">
-          <div className="home-spotlight-kicker">{isEnglish ? 'Featured this week' : 'Destacado de la semana'}</div>
+          <div className="home-spotlight-kicker">{isEnglish ? 'Trending this week' : 'Tendencia de la semana'}</div>
           <h1 className="home-spotlight-title">{title}</h1>
           {meta.length > 0 && <div className="home-spotlight-meta">{meta.join(' · ')}</div>}
           <div className="home-spotlight-actions">
@@ -739,7 +762,7 @@ function SpotlightHero({ slides, current, onSelect, onJump, lang, searching }) {
               {isEnglish ? `Watch in ${preferredSourceLabel}` : `Ver en ${preferredSourceLabel}`}
             </button>
           </div>
-          {slides.length > 1 && (
+          {slides.length > 1 ? (
             <div className="home-spotlight-pager">
               {slides.map((item, index) => (
                 <button
@@ -751,11 +774,11 @@ function SpotlightHero({ slides, current, onSelect, onJump, lang, searching }) {
                 />
               ))}
             </div>
-          )}
+          ) : null}
         </div>
 
-        <div className="home-spotlight-side">
-          {poster ? <img src={poster} alt={title} className="home-spotlight-poster" /> : null}
+        <aside className="home-spotlight-side">
+          <div className="home-spotlight-side-title">{isEnglish ? 'Up next' : 'Sigue despues'}</div>
           <div className="home-spotlight-stack">
             {sideCards.map((item) => {
               const itemTitle = getAniListTitle(item, isEnglish)
@@ -771,55 +794,89 @@ function SpotlightHero({ slides, current, onSelect, onJump, lang, searching }) {
               )
             })}
           </div>
-        </div>
+        </aside>
       </div>
     </section>
   )
 }
 
+function buildHomeHeroSummary(media, isEnglish = false) {
+  const meta = getAniListMeta(media)
+  const desc = stripHtml(media?.description || '')
+  const summary = desc ? desc.slice(0, 220) : (isEnglish ? 'Open the strongest title in your feed without leaving Home.' : 'Abre el titulo mas fuerte de tu feed sin salir de Inicio.')
+  return {
+    meta: meta.join('  /  '),
+    summary,
+  }
+}
+
+function HomeFeatureTile({ title, image, meta, onClick, actionLabel = '', compact = false }) {
+  const [imgErr, setImgErr] = useState(false)
+  const resolvedImage = image ? proxyImage(image) : ''
+
+  return (
+    <button
+      type="button"
+      className={`home-feature-tile${compact ? ' compact' : ''}`}
+      onClick={onClick}
+      title={title}
+    >
+      <div className="home-feature-tile-media">
+        {resolvedImage && !imgErr ? (
+          <img src={resolvedImage} alt={title} className="home-feature-tile-image" onError={() => setImgErr(true)} />
+        ) : (
+          <div className="home-feature-tile-image home-feature-tile-fallback">{title?.[0] ?? '?'}</div>
+        )}
+        <div className="home-feature-tile-shade" />
+      </div>
+      <div className="home-feature-tile-copy">
+        <div className="home-feature-tile-title">{title}</div>
+        {meta ? <div className="home-feature-tile-meta">{meta}</div> : null}
+        {actionLabel ? <div className="home-feature-tile-action">{actionLabel}</div> : null}
+      </div>
+    </button>
+  )
+}
+
 export default function Home() {
-  const [dash, setDash] = useState(null)
-  const [syncedManga, setSyncedManga] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [loadingMangaTab, setLoadingMangaTab] = useState(false)
-  const [loadedMangaTab, setLoadedMangaTab] = useState(false)
   const [heroIndex, setHeroIndex] = useState(0)
   const [searchingIDs, setSearchingIDs] = useState(new Set())
-  const [homeTab, setHomeTab] = useState('anime')
   const [mangaRecommendationsReady, setMangaRecommendationsReady] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyReloadToken, setHistoryReloadToken] = useState(0)
   const { t, lang } = useI18n()
   const isEnglish = lang === 'en'
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
-  const load = useCallback(() => {
-    const safetyTimer = setTimeout(() => {
-      setLoading(false)
-    }, 4000)
+  const dashboardQuery = useQuery({
+    queryKey: ['home-dashboard'],
+    queryFn: async () => wails.getDashboard(),
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  })
 
-    wails.getDashboard()
-      .then((dashboard) => {
-        setDash(dashboard)
-      })
-      .catch(() => {
-        setDash(null)
-      })
-      .finally(() => {
-        clearTimeout(safetyTimer)
-        setLoading(false)
-      })
+  const syncedMangaQuery = useQuery({
+    queryKey: ['home-synced-manga'],
+    queryFn: async () => wails.getMangaListAll(),
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: 0,
+  })
 
-  }, [])
-
-  useEffect(() => {
-    load()
-  }, [load])
+  const dash = dashboardQuery.data ?? null
+  const syncedManga = syncedMangaQuery.data ?? []
+  const homeTab = 'anime'
+  const loadingMangaTab = !syncedMangaQuery.data && syncedMangaQuery.isLoading
 
   const refreshDashboard = useCallback(() => {
-    load()
+    void queryClient.invalidateQueries({ queryKey: ['home-dashboard'] })
+    void queryClient.invalidateQueries({ queryKey: ['home-synced-manga'] })
     setHistoryReloadToken((value) => value + 1)
-  }, [load])
+  }, [queryClient])
 
   useEffect(() => {
     if (!(typeof window !== 'undefined' && window?.runtime?.EventsOnMultiple)) {
@@ -853,22 +910,9 @@ export default function Home() {
     }
   }, [refreshDashboard])
 
-  useEffect(() => {
-    if (homeTab !== 'manga') return
-    if (loadedMangaTab || loadingMangaTab) return
-    setLoadingMangaTab(true)
-    wails.getMangaListAll()
-      .then((value) => setSyncedManga(value ?? []))
-      .catch(() => setSyncedManga([]))
-      .finally(() => {
-        setLoadedMangaTab(true)
-        setLoadingMangaTab(false)
-      })
-  }, [homeTab, loadedMangaTab, loadingMangaTab])
-
   const homeHeroQuery = useQuery({
     queryKey: ['home-catalog-anime-hero', lang],
-    enabled: homeTab === 'anime',
+    enabled: true,
     queryFn: async () => {
       const trendingRes = await runHomeQueryWithTimeout(wails.getTrending(lang), 'home hero')
       const trending = uniqueMedia(trendingRes?.data?.Page?.media ?? [])
@@ -883,12 +927,12 @@ export default function Home() {
 
   const homeCatalogQuery = useQuery({
     queryKey: ['home-catalog-anime-primary', lang],
-    enabled: homeTab === 'anime',
+    enabled: true,
     queryFn: async () => {
       const currentYear = new Date().getFullYear()
       const settled = await Promise.allSettled([
-        runHomeQueryWithTimeout(wails.discoverAnime('', '', currentYear, 'POPULARITY_DESC', '', 1), 'home popular'),
-        runHomeQueryWithTimeout(wails.discoverAnime('', '', currentYear, 'START_DATE_DESC', '', 1), 'home new releases'),
+        runHomeQueryWithTimeout(wails.discoverAnime('', '', currentYear, 'POPULARITY_DESC', '', '', 1), 'home popular'),
+        runHomeQueryWithTimeout(wails.discoverAnime('', '', currentYear, 'START_DATE_DESC', '', '', 1), 'home new releases'),
       ])
 
       const pick = (index) => (settled[index]?.status === 'fulfilled' ? settled[index].value : null)
@@ -916,12 +960,21 @@ export default function Home() {
     refetchOnMount: false,
   })
 
+  const homeMangaCatalogQuery = useQuery({
+    queryKey: ['home-catalog-manga-primary', lang],
+    queryFn: async () => wails.getAniListMangaCatalogHome(lang),
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  })
+
   const genreCatalogQuery = useQuery({
     queryKey: ['home-catalog-anime-genres', lang],
-    enabled: homeTab === 'anime' && Boolean(homeCatalogQuery.data),
+    enabled: Boolean(homeCatalogQuery.data),
     queryFn: async () => {
       const genreResults = await Promise.allSettled(
-        HOME_GENRE_ROWS.map((row) => runHomeQueryWithTimeout(wails.discoverAnime(row.genre, '', 0, 'POPULARITY_DESC', '', 1), `genre ${row.key}`)),
+        HOME_GENRE_ROWS.map((row) => runHomeQueryWithTimeout(wails.discoverAnime(row.genre, '', 0, 'POPULARITY_DESC', '', '', 1), `genre ${row.key}`)),
       )
 
       return HOME_GENRE_ROWS.map((row, index) => ({
@@ -953,7 +1006,6 @@ export default function Home() {
   })
 
   useEffect(() => {
-    if (homeTab !== 'anime') return
     if (heroSlides.length < 2) return
 
     const timer = window.setInterval(() => {
@@ -961,17 +1013,12 @@ export default function Home() {
     }, 5500)
 
     return () => window.clearInterval(timer)
-  }, [homeTab, heroSlides.length])
+  }, [heroSlides.length])
 
   const handleOpenAniListMedia = useCallback((media) => {
     if (!media || searchingIDs.has(media.id)) return
-    navigate('/search', {
-      state: {
-        preSearch: media?.title?.english || media?.title?.romaji || media?.title?.native || getAniListTitle(media, isEnglish),
-        altSearch: media?.title?.romaji || media?.title?.native || media?.title?.english || '',
-        preferredAnilistID: Number(media?.id || 0),
-      },
-    })
+    const fallbackSourceID = isEnglish ? 'animegg-en' : 'animeav1-es'
+    navigate('/search', { state: buildAnimeNavigationState(media, fallbackSourceID) })
   }, [isEnglish, navigate, searchingIDs])
 
   const handleOpenOnlineAnime = useCallback(async (item) => {
@@ -997,12 +1044,11 @@ export default function Home() {
   const handleRemoveAnime = useCallback(async (sourceID, animeID) => {
     try {
       await wails.removeAnimeFromHistory(sourceID, animeID)
-      load()
-      setHistoryReloadToken((value) => value + 1)
+      refreshDashboard()
     } catch (error) {
       toastError(`${isEnglish ? 'Error removing from history' : 'Error al eliminar'}: ${error?.message ?? error}`)
     }
-  }, [isEnglish, load])
+  }, [isEnglish, refreshDashboard])
 
   const handleClearHistory = useCallback(async () => {
     try {
@@ -1063,10 +1109,11 @@ export default function Home() {
       return {
         key: `online-${item.source_id}-${item.episode_id}`,
         animeTitle: item.anime_title || 'Anime',
+        episodeNum: item.episode_num ?? '?',
         episodeTitle: item.episode_title || fallbackEpisodeTitle,
-        image: item.episode_thumbnail ? proxyImage(item.episode_thumbnail) : (item.banner_image ? proxyImage(item.banner_image) : (item.cover_url ? proxyImage(item.cover_url) : '')),
+        image: resolveResumeCardImage(item),
         badge: buildResumeBadge(progressSec, durationSec, isEnglish),
-        metaLine: [item.source_name, `${isEnglish ? 'Episode' : 'Episodio'} ${item.episode_num ?? '?'}`].filter(Boolean).join(' · '),
+        metaLine: [item.source_name, `${isEnglish ? 'Episode' : 'Episodio'} ${item.episode_num ?? '?'}`].filter(Boolean).join(' / '),
         progressPercent,
         onOpen: () => handleOpenOnlineAnime(item),
       }
@@ -1079,10 +1126,11 @@ export default function Home() {
       return {
         key: `local-${item.episode_id}`,
         animeTitle: item.anime_title || 'Anime',
+        episodeNum: item.episode_num ?? '?',
         episodeTitle: item.episode_title || fallbackEpisodeTitle,
-        image: item.episode_thumbnail || item.banner_image || item.cover_image || '',
+        image: resolveResumeCardImage(item),
         badge: buildResumeBadge(progressSec, durationSec, isEnglish),
-        metaLine: [(isEnglish ? 'Local library' : 'Biblioteca local'), `${isEnglish ? 'Episode' : 'Episodio'} ${item.episode_num ?? '?'}`].join(' · '),
+        metaLine: [(isEnglish ? 'Local library' : 'Biblioteca local'), `${isEnglish ? 'Episode' : 'Episodio'} ${item.episode_num ?? '?'}`].join(' / '),
         progressPercent,
         onOpen: () => handlePlayLocalEpisode(item),
       }
@@ -1144,7 +1192,7 @@ export default function Home() {
   const recommendationExcludeKey = recommendationExcludeIDs.join(',')
 
   useEffect(() => {
-    if (homeTab !== 'manga' || recommendationSeedIDs.length === 0) {
+    if (recommendationSeedIDs.length === 0) {
       setMangaRecommendationsReady(false)
       return
     }
@@ -1153,11 +1201,11 @@ export default function Home() {
       setMangaRecommendationsReady(true)
     }, 2500)
     return () => window.clearTimeout(timer)
-  }, [homeTab, recommendationExcludeKey, recommendationSeedKey, recommendationSeedIDs.length])
+  }, [recommendationExcludeKey, recommendationSeedKey, recommendationSeedIDs.length])
 
   const homeMangaRecommendationsQuery = useQuery({
     queryKey: ['home-manga-recommendations', lang, recommendationSeedKey, recommendationExcludeKey],
-    enabled: homeTab === 'manga' && mangaRecommendationsReady && recommendationSeedIDs.length > 0,
+    enabled: mangaRecommendationsReady && recommendationSeedIDs.length > 0,
     queryFn: async () => wails.getHomeMangaRecommendations(recommendationSeedIDs, recommendationExcludeIDs, lang),
     staleTime: 20 * 60_000,
     gcTime: 30 * 60_000,
@@ -1165,7 +1213,17 @@ export default function Home() {
     refetchOnMount: false,
   })
 
-  if (loading && !dash && !homeCatalogQuery.data) {
+  const showHomeSkeleton = useStableLoadingGate(
+    !dash && (
+      dashboardQuery.isLoading
+      || syncedMangaQuery.isLoading
+      || (homeCatalogQuery.isLoading && !homeCatalogQuery.data)
+      || (homeHeroQuery.isLoading && !homeHeroQuery.data)
+    ),
+    { delayMs: 0, minVisibleMs: 360 },
+  )
+
+  if (showHomeSkeleton) {
     return <HomeSkeleton />
   }
 
@@ -1177,8 +1235,104 @@ export default function Home() {
   const onHoldCards = onHoldManga.map((item) => buildTrackedMangaCard(item, isEnglish, handleOpenHomeManga))
   const droppedCards = droppedManga.map((item) => buildTrackedMangaCard(item, isEnglish, handleOpenHomeManga))
   const recommendationCards = (homeMangaRecommendationsQuery.data ?? []).map((item) => buildRecommendedMangaCard(item, isEnglish, handleOpenHomeManga))
+  const seenRecentAnime = new Set()
+  const recentAnimeUpdates = [
+    ...(primaryAnimeRows.find((row) => row.key === 'new')?.items ?? []),
+    ...(primaryAnimeRows.find((row) => row.key === 'popular')?.items ?? []),
+  ]
+    .filter((item) => {
+      if (!item) return false
+      const key = Number(item.id || 0)
+      if (key && seenRecentAnime.has(key)) return false
+      if (key) seenRecentAnime.add(key)
+      return item?.status === 'RELEASING' || Boolean(item?.nextAiringEpisode?.episode)
+    })
+    .slice(0, 6)
+    .map((item) => ({
+      key: `anime-update-${item.id}`,
+      title: getAniListTitle(item, isEnglish),
+      meta: item?.nextAiringEpisode?.episode
+        ? (isEnglish ? `Episode ${item.nextAiringEpisode.episode} next` : `Siguiente ep ${item.nextAiringEpisode.episode}`)
+        : (isEnglish ? 'Currently releasing' : 'En emision'),
+      badge: isEnglish ? 'Airing' : 'Emision',
+      onOpen: () => handleOpenAniListMedia(item),
+    }))
+
+  const recentMangaUpdates = [
+    ...((homeMangaCatalogQuery.data?.recent ?? []).slice(0, 4)),
+    ...((homeMangaCatalogQuery.data?.featured ?? []).slice(0, 2)),
+  ]
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((item) => ({
+      key: `manga-update-${item.anilist_id || item.AniListID || item.id}`,
+      title: item.canonical_title || item.title_english || item.title_romaji || item.title_native || item.title || 'Manga',
+      meta: Number(item.chapters_total || item.chapters || 0) > 0
+        ? `${Number(item.chapters_total || item.chapters || 0)} ${isEnglish ? 'chapters' : 'caps'}`
+        : (item.format || item.resolved_format || (isEnglish ? 'Manga' : 'Manga')),
+      badge: item.status || (isEnglish ? 'Updated' : 'Actualizado'),
+      onOpen: () => handleOpenHomeManga(item),
+    }))
 
   const hasUserAnimeContent = resumeAnimeEntries.length > 0 || continueTrackedAnime.length > 0 || plannedAnime.length > 0 || onHoldAnime.length > 0
+  const homeResumePreview = resumeAnimeEntries.slice(0, 4).map((entry) => ({
+    anime_title: entry.animeTitle,
+    episode_num: entry.episodeNum,
+    percent: entry.progressPercent ?? 0,
+    image: entry.image,
+    onOpen: entry.onOpen,
+    key: entry.key,
+  }))
+  const homeQuickStats = [
+    {
+      label: isEnglish ? 'Anime tracked' : 'Anime en seguimiento',
+      value: resumeAnimeEntries.length + plannedAnime.length + onHoldAnime.length,
+      note: isEnglish ? 'Across home and lists' : 'Entre inicio y listas',
+    },
+    {
+      label: isEnglish ? 'Manga shelves' : 'Estantes manga',
+      value: continueReadingCards.length + planningCards.length + onHoldCards.length + recommendationCards.length,
+      note: isEnglish ? 'Reading, planning, and recs' : 'Lectura, planeado y recs',
+    },
+    {
+      label: isEnglish ? 'Featured rows' : 'Filas destacadas',
+      value: primaryAnimeRows.length + genreAnimeRows.length,
+      note: isEnglish ? 'Live discovery sections' : 'Secciones en vivo',
+    },
+  ]
+  const featuredAnimeRows = primaryAnimeRows.slice(0, 2)
+  const discoveryAnimeRows = genreAnimeRows.slice(0, 1)
+  const featuredHero = heroSlides[heroIndex % Math.max(heroSlides.length, 1)]
+    ?? featuredAnimeRows[0]?.items?.[0]
+    ?? discoveryAnimeRows[0]?.items?.[0]
+    ?? null
+  const heroSummary = featuredHero ? buildHomeHeroSummary(featuredHero, isEnglish) : { meta: '', summary: '' }
+  const heroTitle = featuredHero ? getAniListTitle(featuredHero, isEnglish).toUpperCase() : ''
+  const continueWatchingTiles = resumeAnimeEntries.length > 0
+    ? resumeAnimeEntries.slice(0, 4).map((entry) => ({
+        key: entry.key,
+        title: entry.animeTitle,
+        image: entry.image,
+        meta: entry.metaLine,
+        onClick: entry.onOpen,
+        actionLabel: entry.badge,
+      }))
+    : heroSlides.slice(0, 4).map((media) => ({
+        key: `hero-${media.id}`,
+        title: getAniListTitle(media, isEnglish),
+        image: media.bannerImage || media.coverImage?.extraLarge || media.coverImage?.large || media.coverImage?.medium || '',
+        meta: getAniListMeta(media).join(' / '),
+        onClick: () => handleOpenAniListMedia(media),
+        actionLabel: isEnglish ? 'Open now' : 'Abrir ahora',
+      }))
+  const recentAnimeRail = uniqueMedia([
+    ...(featuredAnimeRows.find((row) => row.key === 'new')?.items ?? []),
+    ...(featuredAnimeRows.find((row) => row.key === 'popular')?.items ?? []),
+    ...(discoveryAnimeRows.flatMap((row) => row.items ?? [])),
+  ])
+    .filter((item) => item && item.id !== featuredHero?.id)
+    .slice(0, 5)
+  const mangaPreviewTiles = recentMangaUpdates.slice(0, 4)
 
   const userAnimeSlot = hasUserAnimeContent ? (
     <div className="home-user-band home-user-band-anime">
@@ -1202,9 +1356,9 @@ export default function Home() {
           )}
           customTrack
         >
-          <ShelfScroller showArrows className="home-shelf-track-arrows home-crunchy-rail-track">
-            {resumeAnimeEntries.map((entry) => (
-              <ContinueWatchingRailCard key={entry.key} entry={entry} />
+          <ShelfScroller showArrows className="home-shelf-track-arrows home-shelf-track-premium">
+            {homeResumePreview.map((entry) => (
+              <ContinueCard key={entry.key} item={entry} onClick={entry.onOpen} />
             ))}
           </ShelfScroller>
         </ShelfSection>
@@ -1324,28 +1478,13 @@ export default function Home() {
 
   return (
     <div className="fade-in home-catalog-page">
-      <div className="home-catalog-body">
+      <div className="home-catalog-body home-dashboard-layout">
+        <div className="home-dashboard-main">
 
         {/* ── Anime / Manga top tab switcher ── */}
-        <div className="home-main-tabs">
-          <button
-            type="button"
-            className={`home-main-tab${homeTab === 'anime' ? ' active' : ''}`}
-            onClick={() => setHomeTab('anime')}
-          >
-            Anime
-          </button>
-          <button
-            type="button"
-            className={`home-main-tab${homeTab === 'manga' ? ' active' : ''}`}
-            onClick={() => setHomeTab('manga')}
-          >
-            Manga
-          </button>
-        </div>
+
 
         {/* ── Anime tab ── */}
-        {homeTab === 'anime' && (
           <>
             {heroSlides.length > 0 ? (
               <SpotlightHero
@@ -1365,7 +1504,7 @@ export default function Home() {
 
             {userAnimeSlot}
 
-            {primaryAnimeRows.map((row) => (
+            {featuredAnimeRows.map((row) => (
               <ShelfSection key={row.key} title={row.title} subtitle={row.subtitle} customTrack>
                 <ShelfScroller showArrows className="home-shelf-track-arrows">
                   {row.items.map((item) => (
@@ -1383,7 +1522,7 @@ export default function Home() {
               </ShelfSection>
             ))}
 
-            {genreAnimeRows.map((row) => (
+            {discoveryAnimeRows.map((row) => (
               <ShelfSection key={row.key} title={row.title} subtitle={row.subtitle} customTrack>
                 <ShelfScroller showArrows className="home-shelf-track-arrows">
                   {row.items.map((item) => (
@@ -1401,7 +1540,53 @@ export default function Home() {
               </ShelfSection>
             ))}
 
-            {!heroSlides.length && !primaryAnimeRows.length && !genreAnimeRows.length && homeAniListUnavailable ? (
+            {continueReadingCards.length > 0 ? (
+              <ShelfSection
+                title={isEnglish ? 'Manga picks for tonight' : 'Manga para esta noche'}
+                subtitle={isEnglish ? 'Continue reading without leaving the home workspace' : 'Sigue leyendo sin salir del inicio'}
+                customTrack
+              >
+                <ShelfScroller showArrows className="home-shelf-track-premium">
+                  {continueReadingCards.map((item) => (
+                    <HomeRailCard
+                      key={item.key}
+                      item={item}
+                      title={item.title}
+                      meta={item.meta}
+                      image={item.image}
+                      badge={item.badge}
+                      onClick={item.onClick}
+                      className={item.className || ''}
+                    />
+                  ))}
+                </ShelfScroller>
+              </ShelfSection>
+            ) : null}
+
+            {recommendationCards.length > 0 ? (
+              <ShelfSection
+                title={isEnglish ? 'Recommended manga' : 'Manga recomendado'}
+                subtitle={isEnglish ? 'A cleaner second rail, just like the reference layout' : 'Un segundo carril mas limpio, igual que en la referencia'}
+                customTrack
+              >
+                <ShelfScroller showArrows className="home-shelf-track-premium">
+                  {recommendationCards.map((item) => (
+                    <HomeRailCard
+                      key={item.key}
+                      item={item}
+                      title={item.title}
+                      meta={item.meta}
+                      image={item.image}
+                      badge={item.badge}
+                      onClick={item.onClick}
+                      className={item.className || ''}
+                    />
+                  ))}
+                </ShelfScroller>
+              </ShelfSection>
+            ) : null}
+
+            {!heroSlides.length && !featuredAnimeRows.length && !discoveryAnimeRows.length && homeAniListUnavailable ? (
               <section className="home-shelf">
                 <div className="home-shelf-header">
                   <div className="home-shelf-copy">
@@ -1420,11 +1605,10 @@ export default function Home() {
               </section>
             ) : null}
 
-            {!heroSlides.length && !primaryAnimeRows.length && !genreAnimeRows.length && !homeAniListUnavailable && !homeCatalogQuery.isLoading && !homeCatalogQuery.isFetching ? (
+            {!heroSlides.length && !featuredAnimeRows.length && !discoveryAnimeRows.length && !homeAniListUnavailable && !homeCatalogQuery.isLoading && !homeCatalogQuery.isFetching ? (
               <HomeDiscoverFallback isEnglish={isEnglish} />
             ) : null}
           </>
-        )}
 
         {/* ── Manga tab ── */}
         {homeTab === 'manga' && (() => {
@@ -1504,6 +1688,61 @@ export default function Home() {
           )
         })()}
 
+        </div>
+
+        <aside className="home-dashboard-side">
+          <section className="nipah-side-panel">
+            <div className="nipah-side-panel-head">
+              <div>
+                <div className="nipah-side-panel-title">{isEnglish ? 'Recently updated anime' : 'Anime actualizado'}</div>
+                <div className="nipah-side-panel-copy">
+                  {isEnglish ? 'Only titles that are actively airing right now.' : 'Solo series que estan en emision ahora mismo.'}
+                </div>
+              </div>
+            </div>
+            <div className="home-side-list home-side-list-updates">
+              {recentAnimeUpdates.length > 0 ? recentAnimeUpdates.map((entry) => (
+                <button key={entry.key} type="button" className="home-side-list-item" onClick={entry.onOpen}>
+                  <div className="home-side-list-copy">
+                    <span className="home-side-list-title">{entry.title}</span>
+                    <span className="home-side-list-meta">{entry.meta}</span>
+                  </div>
+                  <span className="home-side-list-badge">{entry.badge}</span>
+                </button>
+              )) : (
+                <div className="home-side-empty-copy">
+                  {isEnglish ? 'No airing titles are available right now.' : 'No hay series en emision disponibles ahora mismo.'}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="nipah-side-panel">
+            <div className="nipah-side-panel-head">
+              <div>
+                <div className="nipah-side-panel-title">{isEnglish ? 'Recently updated manga' : 'Manga actualizado'}</div>
+                <div className="nipah-side-panel-copy">
+                  {isEnglish ? 'Recent catalog motion, ready to open without leaving Home.' : 'Lo mas reciente del catalogo, listo para abrir sin salir de Inicio.'}
+                </div>
+              </div>
+            </div>
+            <div className="home-side-list home-side-list-updates">
+              {recentMangaUpdates.length > 0 ? recentMangaUpdates.map((entry) => (
+                <button key={entry.key} type="button" className="home-side-list-item" onClick={entry.onOpen}>
+                  <div className="home-side-list-copy">
+                    <span className="home-side-list-title">{entry.title}</span>
+                    <span className="home-side-list-meta">{entry.meta}</span>
+                  </div>
+                  <span className="home-side-list-badge">{entry.badge}</span>
+                </button>
+              )) : (
+                <div className="home-side-empty-copy">
+                  {isEnglish ? 'Sync AniList or open Manga Online to start filling this rail.' : 'Sincroniza AniList o abre Manga online para empezar a llenar este panel.'}
+                </div>
+              )}
+            </div>
+          </section>
+        </aside>
       </div>
 
       <WatchHistoryDrawer

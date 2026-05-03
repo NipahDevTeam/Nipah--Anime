@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { wails } from '../lib/wails'
+import { useQuery } from '@tanstack/react-query'
+import { proxyImage, wails } from '../lib/wails'
 import { toastError, toastSuccess } from '../components/ui/Toast'
 import BlurhashImage from '../components/ui/BlurhashImage'
 import { useI18n } from '../lib/i18n'
@@ -56,6 +57,32 @@ function buildEpisodeGroups(episodes) {
   }
 }
 
+function translateStatus(status, isEnglish) {
+  const map = isEnglish ? {
+    FINISHED: 'Finished',
+    RELEASING: 'Currently airing',
+    NOT_YET_RELEASED: 'Upcoming',
+    CANCELLED: 'Cancelled',
+    HIATUS: 'Hiatus',
+  } : {
+    FINISHED: 'Finalizado',
+    RELEASING: 'En emision',
+    NOT_YET_RELEASED: 'Proximamente',
+    CANCELLED: 'Cancelado',
+    HIATUS: 'En pausa',
+  }
+  return map[status] ?? status
+}
+
+function stripHTML(str = '') {
+  return String(str).replace(/<[^>]*>/g, '').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function progressPercent(watchedCount, totalCount) {
+  if (!totalCount) return 0
+  return Math.max(0, Math.min(100, Math.round((watchedCount / totalCount) * 100)))
+}
+
 function EpisodeRow({ ep, onPlay, isEnglish }) {
   const progress = ep.progress_s && ep.duration_s
     ? Math.min(100, (ep.progress_s / ep.duration_s) * 100)
@@ -102,16 +129,68 @@ function FolderCard({ folder, onOpen, isEnglish }) {
   const watchedCount = folder.episodes.filter((episode) => episode.watched).length
 
   return (
-    <button type="button" className="anime-folder-card" onClick={() => onOpen(folder.name)}>
-      <div className="anime-folder-card-copy">
-        <div className="anime-folder-card-title">{folder.name}</div>
-        <div className="anime-folder-card-meta">
+    <button type="button" className="media-detail-folder-card" onClick={() => onOpen(folder.name)}>
+      <div className="media-detail-folder-copy">
+        <div className="media-detail-folder-title">{folder.name}</div>
+        <div className="media-detail-folder-meta">
           {folder.episodes.length} {isEnglish ? 'episodes' : 'episodios'}
           {watchedCount > 0 ? ` · ${watchedCount} ${isEnglish ? 'watched' : 'vistos'}` : ''}
         </div>
       </div>
-      <div className="anime-folder-card-arrow">{'>'}</div>
+      <div className="media-detail-folder-arrow">{'>'}</div>
     </button>
+  )
+}
+
+function DetailInfoCard({ title, rows }) {
+  if (!rows?.length) return null
+
+  return (
+    <section className="media-detail-panel">
+      <div className="media-detail-panel-title">{title}</div>
+      <div className="media-detail-fact-list">
+        {rows.map((row) => (
+          <div key={row.label} className="media-detail-fact-row">
+            <span className="media-detail-fact-label">{row.label}</span>
+            <span className="media-detail-fact-value">{row.value}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function CharacterPanel({ title, subtitle, characters = [], loading, emptyLabel }) {
+  return (
+    <section className="media-detail-panel">
+      <div className="media-detail-panel-title">{title}</div>
+      {subtitle ? <p className="media-detail-panel-copy">{subtitle}</p> : null}
+
+      {loading ? (
+        <div className="media-detail-empty-copy">{emptyLabel.loading}</div>
+      ) : characters.length > 0 ? (
+        <div className="media-detail-cast-list">
+          {characters.map((character) => (
+            <article key={`${character.id || character.name}-${character.role || ''}`} className="media-detail-cast-card">
+              {character.image ? (
+                <img src={proxyImage(character.image)} alt={character.name} className="media-detail-cast-avatar" />
+              ) : (
+                <div className="media-detail-cast-avatar media-detail-cast-avatar-placeholder">
+                  {character.name?.slice(0, 1) || '?'}
+                </div>
+              )}
+              <div className="media-detail-cast-body">
+                <div className="media-detail-cast-role">{character.role === 'MAIN' ? emptyLabel.mainRole : emptyLabel.supportingRole}</div>
+                <div className="media-detail-cast-name">{character.name}</div>
+                {character.name_native ? <div className="media-detail-cast-native">{character.name_native}</div> : null}
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="media-detail-empty-copy">{emptyLabel.empty}</div>
+      )}
+    </section>
   )
 }
 
@@ -135,7 +214,7 @@ export default function AnimeDetail() {
     playbackError: isEnglish ? 'Playback error' : 'Error al reproducir',
     confirmDelete: isEnglish
       ? `Remove "${anime?.display_title ?? ''}" from the local library?\n\nThis only removes the entry inside Nipah. It does not delete your files or your remote AniList entry.`
-      : `¿Quitar "${anime?.display_title ?? ''}" de la biblioteca local?\n\nEsto solo elimina la entrada dentro de Nipah. No borra tus archivos ni tu entrada remota de AniList.`,
+      : `Quitar "${anime?.display_title ?? ''}" de la biblioteca local?\n\nEsto solo elimina la entrada dentro de Nipah. No borra tus archivos ni tu entrada remota de AniList.`,
     removed: isEnglish ? 'Anime removed from the local library.' : 'Anime eliminado de la biblioteca local.',
     removeFailed: isEnglish ? 'Could not remove it' : 'No se pudo eliminar',
     unknownError: isEnglish ? 'unknown error' : 'error desconocido',
@@ -147,7 +226,27 @@ export default function AnimeDetail() {
     goBack: isEnglish ? 'Go Back' : 'Volver',
     noSubfolderEpisodes: isEnglish ? 'No episodes were found in this subfolder.' : 'No se encontraron episodios en esta subcarpeta.',
     noRootEpisodes: isEnglish ? 'No main episodes were found in this folder.' : 'No se encontraron episodios principales en esta carpeta.',
-  }), [isEnglish, anime?.display_title])
+    continueWatching: isEnglish ? 'Continue watching' : 'Continuar viendo',
+    startWatching: isEnglish ? 'Start watching' : 'Empezar a ver',
+    localCollection: isEnglish ? 'Local collection' : 'Coleccion local',
+    libraryStatus: isEnglish ? 'Library status' : 'Estado local',
+    airingInfo: isEnglish ? 'Airing information' : 'Informacion',
+    castTitle: isEnglish ? 'Cast' : 'Personajes',
+    castCopy: isEnglish ? 'AniList cast data kept close to the episode queue.' : 'Datos de personajes de AniList junto a la cola de episodios.',
+    castLoading: isEnglish ? 'Loading cast...' : 'Cargando personajes...',
+    castEmpty: isEnglish ? 'No cast metadata is available for this title yet.' : 'Todavia no hay metadatos de personajes para este titulo.',
+    supportingRole: isEnglish ? 'Supporting' : 'Secundario',
+    mainRole: isEnglish ? 'Main' : 'Principal',
+    folders: isEnglish ? 'Folders' : 'Carpetas',
+    libraryProgress: isEnglish ? 'Library progress' : 'Progreso local',
+    episodesReady: isEnglish ? 'Episodes ready' : 'Episodios listos',
+    resumeAt: isEnglish ? 'Resume at' : 'Retomar en',
+    foldersAvailable: isEnglish ? 'Folders available' : 'Carpetas detectadas',
+    source: isEnglish ? 'Source' : 'Origen',
+    score: isEnglish ? 'Score' : 'Puntuacion',
+    format: isEnglish ? 'Format' : 'Formato',
+    synopsisLabel: isEnglish ? 'Story' : 'Historia',
+  }), [anime?.display_title, isEnglish])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -175,6 +274,16 @@ export default function AnimeDetail() {
       .then((syn) => { if (syn) setSynopsisES(syn) })
       .catch(() => {})
   }, [anime])
+
+  const aniListDetailQuery = useQuery({
+    queryKey: ['local-anime-detail-anilist', Number(anime?.anilist_id || 0)],
+    enabled: Number(anime?.anilist_id || 0) > 0,
+    staleTime: 30 * 60_000,
+    gcTime: 60 * 60_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    queryFn: () => wails.getAniListAnimeByID(Number(anime?.anilist_id || 0)),
+  })
 
   const handlePlay = useCallback(async (episodeID) => {
     try {
@@ -210,11 +319,38 @@ export default function AnimeDetail() {
 
   const episodes = anime?.episodes ?? []
   const watchedCount = episodes.filter((ep) => ep.watched).length
-  const synopsis = synopsisES || anime?.synopsis_es || anime?.synopsis
-
+  const synopsis = stripHTML(synopsisES || anime?.synopsis_es || anime?.synopsis || aniListDetailQuery.data?.description || '')
   const episodeGroups = useMemo(() => buildEpisodeGroups(episodes), [episodes])
   const selectedFolder = episodeGroups.folders.find((folder) => folder.name === activeFolder) ?? null
   const visibleEpisodes = activeFolder ? (selectedFolder?.episodes ?? []) : episodeGroups.rootEpisodes
+  const foldersCount = episodeGroups.folders.length
+  const resumeEpisode = episodes.find((ep) => ep.progress_s > 0 && !ep.watched) ?? null
+  const nextEpisode = resumeEpisode ?? episodes.find((ep) => !ep.watched) ?? episodes[0] ?? null
+  const heroBackdrop = anime?.banner_image || aniListDetailQuery.data?.banner_image || anime?.cover_image || ''
+  const characters = aniListDetailQuery.data?.characters ?? []
+  const progressValue = progressPercent(watchedCount, episodes.length)
+
+  const airingRows = [
+    anime?.status || aniListDetailQuery.data?.status ? { label: text.airingInfo === 'Airing information' ? 'Status' : 'Estado', value: translateStatus(anime?.status || aniListDetailQuery.data?.status, isEnglish) } : null,
+    anime?.year || aniListDetailQuery.data?.year ? { label: isEnglish ? 'Year' : 'Ano', value: String(anime?.year || aniListDetailQuery.data?.year) } : null,
+    anime?.episodes_total || aniListDetailQuery.data?.episodes ? { label: text.episodes, value: String(anime?.episodes_total || aniListDetailQuery.data?.episodes) } : null,
+    aniListDetailQuery.data?.score ? { label: text.score, value: String(aniListDetailQuery.data.score) } : null,
+    aniListDetailQuery.data?.source ? { label: text.source, value: aniListDetailQuery.data.source } : null,
+  ].filter(Boolean)
+
+  const libraryRows = [
+    { label: text.libraryProgress, value: `${watchedCount}/${episodes.length || 0}` },
+    { label: text.foldersAvailable, value: String(foldersCount) },
+    nextEpisode ? { label: text.episodesReady, value: `${isEnglish ? 'Ep.' : 'Ep.'} ${formatEpisodeLabel(nextEpisode.episode_num)}` } : null,
+    resumeEpisode ? { label: text.resumeAt, value: formatTime(resumeEpisode.progress_s) } : null,
+  ].filter(Boolean)
+
+  const headlineFacts = [
+    anime?.year || aniListDetailQuery.data?.year ? String(anime?.year || aniListDetailQuery.data?.year) : null,
+    anime?.episodes_total || aniListDetailQuery.data?.episodes ? `${anime?.episodes_total || aniListDetailQuery.data?.episodes} ${isEnglish ? 'Episodes' : 'Episodios'}` : null,
+    anime?.status || aniListDetailQuery.data?.status ? translateStatus(anime?.status || aniListDetailQuery.data?.status, isEnglish) : null,
+    aniListDetailQuery.data?.genres?.length ? aniListDetailQuery.data.genres.slice(0, 3).join(', ') : null,
+  ].filter(Boolean)
 
   if (loading) {
     return (
@@ -238,120 +374,152 @@ export default function AnimeDetail() {
   if (!anime) return null
 
   return (
-    <div className="fade-in anime-detail">
-      <div className="detail-hero" style={anime.cover_image ? {
-        backgroundImage: `linear-gradient(to bottom, rgba(10,10,14,0) 0%, rgba(10,10,14,0.15) 40%, rgba(10,10,14,0.7) 75%, rgba(10,10,14,0.95) 100%), url(${anime.cover_image})`,
-      } : {}}>
-        <div className="detail-back" style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-ghost" onClick={() => navigate('/local?tab=anime')}>
+    <div className="fade-in media-detail-page media-detail-page--local">
+      <section
+        className="media-detail-hero"
+        style={heroBackdrop ? {
+          backgroundImage: `linear-gradient(180deg, rgba(7,7,10,0.18) 0%, rgba(7,7,10,0.72) 40%, rgba(7,7,10,0.94) 78%, rgba(7,7,10,0.98) 100%), radial-gradient(circle at top right, rgba(245,166,35,0.14) 0%, rgba(245,166,35,0) 34%), url(${heroBackdrop})`,
+        } : {}}
+      >
+        <div className="media-detail-toolbar">
+          <button className="btn btn-ghost media-detail-back-btn" onClick={() => navigate('/local?tab=anime')}>
             {`< ${text.back}`}
           </button>
-          <button className="btn btn-danger" onClick={handleDelete} disabled={deleting}>
-            {deleting ? text.removing : text.removeLocal}
-          </button>
+          <div className="media-detail-toolbar-actions">
+            {nextEpisode ? (
+              <button className="btn btn-primary media-detail-primary-btn" onClick={() => handlePlay(nextEpisode.id)}>
+                {resumeEpisode ? text.continueWatching : text.startWatching}
+              </button>
+            ) : null}
+            <button className="btn btn-ghost media-detail-danger-btn" onClick={handleDelete} disabled={deleting}>
+              {deleting ? text.removing : text.removeLocal}
+            </button>
+          </div>
         </div>
 
-        <div className="detail-hero-content">
-          {anime.cover_image && (
+        <div className="media-detail-hero-grid">
+          {anime.cover_image ? (
             <BlurhashImage
               src={anime.cover_image}
               blurhash={anime.cover_blurhash}
               alt={anime.display_title}
-              imgClassName="detail-cover"
+              imgClassName="media-detail-cover"
             />
-          )}
-          <div className="detail-info">
-            <h1 className="detail-title">{anime.display_title}</h1>
-            {anime.title_romaji && anime.title_spanish && (
-              <div className="detail-subtitle">{anime.title_romaji}</div>
-            )}
-            <div className="detail-tags">
-              {anime.year && <span className="badge badge-muted">{anime.year}</span>}
-              {anime.status && <span className="badge badge-muted">{translateStatus(anime.status, isEnglish)}</span>}
-              {anime.episodes_total > 0 && (
-                <span className="badge badge-muted">{anime.episodes_total} eps</span>
-              )}
-              {watchedCount > 0 && (
-                <span className="badge badge-green">{watchedCount} {text.watched}</span>
+          ) : null}
+
+          <div className="media-detail-hero-copy">
+            <div className="media-detail-kicker">{text.localCollection}</div>
+            <h1 className="media-detail-title">{anime.display_title}</h1>
+            {anime.title_romaji && anime.title_romaji !== anime.display_title ? (
+              <div className="media-detail-subtitle">{anime.title_romaji}</div>
+            ) : null}
+            {headlineFacts.length > 0 ? (
+              <div className="media-detail-facts-strip">
+                {headlineFacts.map((fact) => <span key={fact} className="media-detail-fact-chip">{fact}</span>)}
+              </div>
+            ) : null}
+            {synopsis ? (
+              <div className="media-detail-story-block">
+                <div className="media-detail-story-label">{text.synopsisLabel}</div>
+                <p className="media-detail-synopsis">{synopsis}</p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      <div className="media-detail-content-grid">
+        <div className="media-detail-main">
+          <section className="media-detail-panel media-detail-progress-panel">
+            <div className="media-detail-progress-head">
+              <div>
+                <div className="media-detail-panel-title">{text.libraryProgress}</div>
+                <p className="media-detail-panel-copy">
+                  {watchedCount}/{episodes.length || 0} {text.watched}
+                </p>
+              </div>
+              <div className="media-detail-progress-value">{progressValue}%</div>
+            </div>
+            <div className="media-detail-progress-track">
+              <div className="media-detail-progress-fill" style={{ width: `${progressValue}%` }} />
+            </div>
+            {nextEpisode ? (
+              <div className="media-detail-resume-card">
+                <div className="media-detail-resume-copy">
+                  <div className="media-detail-resume-label">{resumeEpisode ? text.continueWatching : text.startWatching}</div>
+                  <div className="media-detail-resume-title">
+                    {nextEpisode.title || `${isEnglish ? 'Episode' : 'Episodio'} ${formatEpisodeLabel(nextEpisode.episode_num)}`}
+                  </div>
+                  {resumeEpisode?.progress_s ? (
+                    <div className="media-detail-resume-meta">{text.resumeAt} {formatTime(resumeEpisode.progress_s)}</div>
+                  ) : null}
+                </div>
+                <button className="btn btn-primary media-detail-primary-btn" onClick={() => handlePlay(nextEpisode.id)}>
+                  {resumeEpisode ? text.continueWatching : text.startWatching}
+                </button>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="media-detail-panel">
+            <div className="media-detail-section-head">
+              <div className="media-detail-panel-title">
+                {activeFolder ? activeFolder : text.episodes}
+                <span className="media-detail-count-pill">{visibleEpisodes.length}</span>
+              </div>
+              {activeFolder ? (
+                <button type="button" className="btn btn-ghost media-detail-inline-btn" onClick={() => setActiveFolder('')}>
+                  {`< ${text.goBack}`}
+                </button>
+              ) : (
+                watchedCount > 0 ? <div className="media-detail-panel-note">{watchedCount}/{episodes.length} {text.watched}</div> : null
               )}
             </div>
-            {synopsis && (
-              <p className="detail-synopsis">{stripHTML(synopsis)}</p>
-            )}
-          </div>
-        </div>
-      </div>
 
-      <div className="episode-list-section">
-        <div className="section-header">
-          <div className="anime-folder-heading">
-            {activeFolder ? (
-              <button type="button" className="btn btn-ghost btn-sm anime-folder-back-btn" onClick={() => setActiveFolder('')}>
-                {`< ${text.goBack}`}
-              </button>
+            {!activeFolder && episodeGroups.folders.length > 0 ? (
+              <div className="media-detail-folder-grid">
+                {episodeGroups.folders.map((folder) => (
+                  <FolderCard key={folder.name} folder={folder} onOpen={setActiveFolder} isEnglish={isEnglish} />
+                ))}
+              </div>
             ) : null}
-            <span className="section-title">
-              {activeFolder ? activeFolder : text.episodes}
-              <span className="badge badge-muted" style={{ marginLeft: 8 }}>
-                {visibleEpisodes.length}
-              </span>
-            </span>
-          </div>
-          <div className="anime-folder-toolbar">
-            {watchedCount > 0 && (
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                {watchedCount}/{episodes.length} {text.watched}
-              </span>
+
+            {visibleEpisodes.length === 0 ? (
+              <div className="media-detail-empty-copy">
+                {activeFolder ? text.noSubfolderEpisodes : text.noRootEpisodes}
+              </div>
+            ) : (
+              <div className="episode-list media-detail-episode-list">
+                {visibleEpisodes.map((ep) => (
+                  <EpisodeRow
+                    key={ep.id}
+                    ep={ep}
+                    onPlay={handlePlay}
+                    isEnglish={isEnglish}
+                  />
+                ))}
+              </div>
             )}
-          </div>
+          </section>
         </div>
 
-        {!activeFolder && episodeGroups.folders.length > 0 ? (
-          <div className="anime-folder-grid">
-            {episodeGroups.folders.map((folder) => (
-              <FolderCard key={folder.name} folder={folder} onOpen={setActiveFolder} isEnglish={isEnglish} />
-            ))}
-          </div>
-        ) : null}
-
-        {visibleEpisodes.length === 0 ? (
-          <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '16px 0' }}>
-            {activeFolder ? text.noSubfolderEpisodes : text.noRootEpisodes}
-          </div>
-        ) : (
-          <div className="episode-list">
-            {visibleEpisodes.map((ep) => (
-              <EpisodeRow
-                key={ep.id}
-                ep={ep}
-                onPlay={handlePlay}
-                isEnglish={isEnglish}
-              />
-            ))}
-          </div>
-        )}
+        <aside className="media-detail-aside">
+          <DetailInfoCard title={text.libraryStatus} rows={libraryRows} />
+          <DetailInfoCard title={text.airingInfo} rows={airingRows} />
+          <CharacterPanel
+            title={text.castTitle}
+            subtitle={text.castCopy}
+            characters={characters}
+            loading={aniListDetailQuery.isLoading}
+            emptyLabel={{
+              loading: text.castLoading,
+              empty: text.castEmpty,
+              mainRole: text.mainRole,
+              supportingRole: text.supportingRole,
+            }}
+          />
+        </aside>
       </div>
     </div>
   )
-}
-
-function translateStatus(status, isEnglish) {
-  const map = isEnglish ? {
-    FINISHED: 'Finished',
-    RELEASING: 'Releasing',
-    NOT_YET_RELEASED: 'Upcoming',
-    CANCELLED: 'Cancelled',
-    HIATUS: 'Hiatus',
-  } : {
-    FINISHED: 'Finalizado',
-    RELEASING: 'En emision',
-    NOT_YET_RELEASED: 'Proximamente',
-    CANCELLED: 'Cancelado',
-    HIATUS: 'En pausa',
-  }
-  return map[status] ?? status
-}
-
-function stripHTML(str) {
-  return str.replace(/<[^>]*>/g, '').replace(/&[a-z]+;/gi, ' ').trim()
 }

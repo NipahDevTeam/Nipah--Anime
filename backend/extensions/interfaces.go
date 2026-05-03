@@ -100,6 +100,12 @@ type AnimeSource interface {
 	GetStreamSources(episodeID string) ([]StreamSource, error)
 }
 
+// AnimeAudioVariantSource is an optional capability for anime providers that
+// can report whether a title exposes subbed and/or dubbed playback variants.
+type AnimeAudioVariantSource interface {
+	GetAudioVariants(animeID string, episodeID string) (map[string]bool, error)
+}
+
 // MangaSource is the interface all manga extensions must implement.
 type MangaSource interface {
 	ID() string

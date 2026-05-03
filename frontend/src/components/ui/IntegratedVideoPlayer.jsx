@@ -29,6 +29,7 @@ export default function IntegratedVideoPlayer({
   audioOptions = [],
   audioSwitching = false,
   onAudioChange = null,
+  presentation = 'overlay',
   onClose,
 }) {
   const videoRef = useRef(null)
@@ -38,6 +39,7 @@ export default function IntegratedVideoPlayer({
   const [error, setError] = useState('')
   const [awaitingInteraction, setAwaitingInteraction] = useState(false)
   const [showFallbackActions, setShowFallbackActions] = useState(false)
+  const isPagePresentation = presentation === 'gui2-page'
 
   const emitDiagnostic = (event, extra = {}) => {
     const payload = {
@@ -291,55 +293,98 @@ export default function IntegratedVideoPlayer({
 
   if (!open) return null
 
+  const retryButtons = (
+    <>
+      <button
+        className="btn btn-primary integrated-player-retry-btn"
+        onClick={() => {
+          const video = videoRef.current
+          if (video?.__nipahRetryPlay) {
+            video.__nipahRetryPlay()
+          }
+        }}
+        type="button"
+      >
+        Click to play
+      </button>
+      <button
+        className="btn btn-ghost integrated-player-external-btn"
+        onClick={() => onUseExternalPlayer?.()}
+        type="button"
+      >
+        Open in MPV
+      </button>
+    </>
+  )
+
+  const audioSwitch = onAudioChange && audioOptions.length > 0 ? (
+    <div className="integrated-player-toolbar-group integrated-player-audio-group">
+      <span className="integrated-player-audio-label">{audioLabel}</span>
+      <div className="episode-playback-switch integrated-player-audio-switch">
+        {audioOptions.map((option) => (
+          <button
+            key={option.value}
+            className={`episode-playback-pill${activeAudio === option.value ? ' active' : ''}`}
+            type="button"
+            disabled={audioSwitching}
+            onClick={() => onAudioChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  ) : null
+
+  const navButtons = (onPrev || onNext) ? (
+    <div className="integrated-player-toolbar-group">
+      {onPrev ? (
+        <button className="btn btn-ghost integrated-player-nav-btn" onClick={() => onPrev?.()} type="button">
+          {prevLabel}
+        </button>
+      ) : <span className="integrated-player-page-nav-spacer" aria-hidden="true" />}
+      {onNext ? (
+        <button className="btn btn-ghost integrated-player-nav-btn" onClick={() => onNext?.()} type="button">
+          {nextLabel}
+        </button>
+      ) : <span className="integrated-player-page-nav-spacer" aria-hidden="true" />}
+    </div>
+  ) : null
+
   return (
-    <div className="integrated-player-overlay" onClick={(event) => event.target === event.currentTarget && onClose?.()}>
-      <div className="integrated-player-shell">
-        <div className="integrated-player-header">
-          <div className="integrated-player-copy">
-            <div className="integrated-player-eyebrow">
-              {sourceLabel || 'Integrated player'}
-              <span className="integrated-player-sep">·</span>
-              {streamKind === 'hls' ? 'HLS' : 'Direct stream'}
-            </div>
-            <div className="integrated-player-title">{title || 'Integrated player'}</div>
-            {subtitle ? <div className="integrated-player-subtitle">{subtitle}</div> : null}
-          </div>
-          <button className="btn btn-ghost" onClick={onClose} type="button">×</button>
-        </div>
-
-        {(onPrev || onNext || (onAudioChange && audioOptions.length > 0)) ? (
-          <div className="integrated-player-toolbar">
-            <div className="integrated-player-toolbar-group">
-              {onPrev ? (
-                <button className="btn btn-ghost integrated-player-nav-btn" onClick={() => onPrev?.()} type="button">
-                  {prevLabel}
-                </button>
-              ) : null}
-              {onNext ? (
-                <button className="btn btn-ghost integrated-player-nav-btn" onClick={() => onNext?.()} type="button">
-                  {nextLabel}
-                </button>
-              ) : null}
-            </div>
-
-            {onAudioChange && audioOptions.length > 0 ? (
-              <div className="integrated-player-toolbar-group integrated-player-audio-group">
-                <span className="integrated-player-audio-label">{audioLabel}</span>
-                <div className="episode-playback-switch integrated-player-audio-switch">
-                  {audioOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      className={`episode-playback-pill${activeAudio === option.value ? ' active' : ''}`}
-                      type="button"
-                      disabled={audioSwitching}
-                      onClick={() => onAudioChange(option.value)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
+    <div
+      className={`integrated-player-overlay${isPagePresentation ? ' integrated-player-overlay--page' : ''}`}
+      onClick={(event) => !isPagePresentation && event.target === event.currentTarget && onClose?.()}
+    >
+      <div className={`integrated-player-shell${isPagePresentation ? ' integrated-player-shell--page' : ''}`}>
+        {!isPagePresentation ? (
+          <div className="integrated-player-header">
+            <div className="integrated-player-copy">
+              <div className="integrated-player-eyebrow">
+                {sourceLabel || 'Integrated player'}
+                <span className="integrated-player-sep">·</span>
+                {streamKind === 'hls' ? 'HLS' : 'Direct stream'}
               </div>
-            ) : null}
+              <div className="integrated-player-title">{title || 'Integrated player'}</div>
+              {subtitle ? <div className="integrated-player-subtitle">{subtitle}</div> : null}
+            </div>
+            <button className="btn btn-ghost" onClick={onClose} type="button">×</button>
+          </div>
+        ) : (
+          <button
+            className="btn btn-ghost integrated-player-corner-btn"
+            onClick={onClose}
+            type="button"
+            aria-label="Close player"
+          >
+            ×
+          </button>
+        )}
+
+        {!isPagePresentation && (navButtons || audioSwitch) ? (
+          <div className="integrated-player-toolbar">
+            {navButtons}
+            {audioSwitch}
           </div>
         ) : null}
 
@@ -347,30 +392,23 @@ export default function IntegratedVideoPlayer({
           <video ref={videoRef} className="integrated-player-video" controls playsInline />
           {awaitingInteraction || showFallbackActions ? (
             <div className="integrated-player-retry">
-              <div className="integrated-player-retry-actions">
-                <button
-                  className="btn btn-primary integrated-player-retry-btn"
-                  onClick={() => {
-                    const video = videoRef.current
-                    if (video?.__nipahRetryPlay) {
-                      video.__nipahRetryPlay()
-                    }
-                  }}
-                  type="button"
-                >
-                  Click to play
-                </button>
-                <button
-                  className="btn btn-ghost integrated-player-external-btn"
-                  onClick={() => onUseExternalPlayer?.()}
-                  type="button"
-                >
-                  Open in MPV
-                </button>
-              </div>
+              <div className="integrated-player-retry-actions">{retryButtons}</div>
             </div>
           ) : null}
         </div>
+
+        {isPagePresentation && (navButtons || audioSwitch) ? (
+          <div className="integrated-player-page-actions">
+            <div className="integrated-player-page-nav">
+              {navButtons}
+            </div>
+            {audioSwitch ? (
+              <div className="integrated-player-audio-group integrated-player-audio-group--page">
+                {audioSwitch}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="integrated-player-footer">
           <div className="integrated-player-note">
@@ -378,25 +416,7 @@ export default function IntegratedVideoPlayer({
           </div>
           {awaitingInteraction || showFallbackActions ? (
             <div className="integrated-player-footer-actions">
-              <button
-                className="btn btn-primary integrated-player-retry-btn"
-                onClick={() => {
-                  const video = videoRef.current
-                  if (video?.__nipahRetryPlay) {
-                    video.__nipahRetryPlay()
-                  }
-                }}
-                type="button"
-              >
-                Click to play
-              </button>
-              <button
-                className="btn btn-ghost integrated-player-external-btn"
-                onClick={() => onUseExternalPlayer?.()}
-                type="button"
-              >
-                Open in MPV
-              </button>
+              {retryButtons}
             </div>
           ) : null}
         </div>

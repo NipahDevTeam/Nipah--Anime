@@ -41,12 +41,16 @@ export default function AnimeLibrary({ embedded = false }) {
         setScanResult(result)
         await refetch()
       }
-    } catch (e) {
-      toastError(isEnglish ? `Scan error: ${e?.message ?? 'unknown error'}` : `Error al escanear: ${e?.message ?? 'error desconocido'}`)
+    } catch (error) {
+      toastError(
+        isEnglish
+          ? `Scan error: ${error?.message ?? 'unknown error'}`
+          : `Error al escanear: ${error?.message ?? 'error desconocido'}`
+      )
     } finally {
       setScanning(false)
     }
-  }, [refetch, isEnglish])
+  }, [isEnglish, refetch])
 
   useEffect(() => {
     if (!(typeof window !== 'undefined' && window?.runtime?.EventsOnMultiple)) {
@@ -60,13 +64,15 @@ export default function AnimeLibrary({ embedded = false }) {
     }
   }, [refetch])
 
-  if (loading) return (
-    <div className="empty-state">
-      <div style={{ display: 'flex', gap: 6 }}>
-        <span className="loading-dot" /><span className="loading-dot" /><span className="loading-dot" />
+  if (loading) {
+    return (
+      <div className="empty-state">
+        <div style={{ display: 'flex', gap: 6 }}>
+          <span className="loading-dot" /><span className="loading-dot" /><span className="loading-dot" />
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div className={`fade-in${embedded ? ' local-section-embedded' : ''}`}>
@@ -105,7 +111,9 @@ export default function AnimeLibrary({ embedded = false }) {
           <div className="empty-state-icon">{'>'}</div>
           <h2 className="empty-state-title">{isEnglish ? 'No anime yet' : 'Sin anime aun'}</h2>
           <p className="empty-state-desc">
-            {t('Modo online')}
+            {isEnglish
+              ? 'Add a folder to scan your local collection, or jump into online search when you want to watch immediately.'
+              : 'Agrega una carpeta para escanear tu coleccion local, o entra al modo online si quieres ver algo al instante.'}
           </p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 12 }}>
             <button className="btn btn-primary" onClick={handleScan} disabled={scanning}>
@@ -124,13 +132,12 @@ export default function AnimeLibrary({ embedded = false }) {
             <div key={item.id} className="media-card" onClick={() => navigate(`/anime/${item.id}`)}>
               {item.cover_image
                 ? <BlurhashImage src={item.cover_image} blurhash={item.cover_blurhash} alt={item.display_title} imgClassName="media-card-cover" />
-                : <div className="media-card-cover-placeholder">{isEnglish ? 'no cover' : 'sin portada'}</div>
-              }
+                : <div className="media-card-cover-placeholder">{isEnglish ? 'no cover' : 'sin portada'}</div>}
               <div className="media-card-overlay" />
               <div className="media-card-body">
                 <div className="media-card-title">{item.display_title || (isEnglish ? 'Untitled' : 'Sin titulo')}</div>
                 <div className="media-card-meta">
-                  {item.year ? `${item.year} · ` : ''}
+                  {item.year ? `${item.year} - ` : ''}
                   {item.episodes_total ? `${item.episodes_total} eps` : (isEnglish ? 'unknown eps' : 'eps desconocidos')}
                 </div>
               </div>

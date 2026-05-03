@@ -6,6 +6,10 @@ export const MANGA_SOURCE_FALLBACK_EARLY_EXIT_SCORE = 96
 const MANGA_CHAPTER_CACHE_TTL_MS = 15 * 60 * 1000
 const mangaChapterCache = new Map()
 
+function sourceManagesMangaChapterHydration(sourceID) {
+  return false
+}
+
 function buildFallbackHitKey(hit) {
   return [
     String(hit?.direct_source_id || hit?.source_id || '').trim(),
@@ -69,6 +73,9 @@ function readMangaChapterCache(sourceID, mangaID, lang = 'es') {
 }
 
 export async function getCachedMangaChapters(sourceID, mangaID, lang = 'es', loader) {
+  if (sourceManagesMangaChapterHydration(sourceID)) {
+    return (await loader()) ?? []
+  }
   const cached = readMangaChapterCache(sourceID, mangaID, lang)
   if (cached) return cached
   const chapters = await loader()
@@ -77,4 +84,8 @@ export async function getCachedMangaChapters(sourceID, mangaID, lang = 'es', loa
     expiresAt: Date.now() + MANGA_CHAPTER_CACHE_TTL_MS,
   })
   return chapters ?? []
+}
+
+export function __resetMangaChapterCacheForTests() {
+  mangaChapterCache.clear()
 }

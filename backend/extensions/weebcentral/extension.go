@@ -29,12 +29,11 @@ const (
 	maxSearchResults = 12
 	maxHydratedItems = 2
 	chapterCacheTTL  = 20 * time.Minute
-	partialCacheTTL  = 12 * time.Second
-	fastFullWait     = 3 * time.Second
 )
 
 var (
 	log = logger.For("WeebCentral")
+	fetchHTMLFn = sourceaccess.FetchHTML
 
 	quickResultRe = regexp.MustCompile(`(?is)<a[^>]+href="https://weebcentral\.com/series/([^"]+)"[^>]*>(.*?)</a>`)
 	seriesLocRe   = regexp.MustCompile(`https://weebcentral\.com/series/([^/]+)/([^<]+)`)
@@ -256,18 +255,14 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 				Bool("hydrating", hydrating).
 				Int("result_count", len(chapters)).
 				Dur("took", time.Since(started)).
-				Msg("weebcentral chapters")
+			Msg("weebcentral chapters")
 			return chapters, nil
-		}
-		mode := "cache_hit_full"
-		if partial {
-			mode = "cache_hit_partial"
 		}
 		log.Debug().
 			Str("source_id", sourceID).
 			Str("operation", "chapters").
 			Str("series_id", seriesID).
-			Str("mode", mode).
+			Str("mode", "cache_hit_partial_retry").
 			Bool("partial", partial).
 			Bool("hydrating", hydrating).
 			Int("result_count", len(chapters)).
@@ -278,11 +273,11 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 	seriesURL := fmt.Sprintf("%s/series/%s", baseURL, seriesID)
 	listURL := fmt.Sprintf("%s/full-chapter-list", seriesURL)
 
-	body, err := sourceaccess.FetchHTML(sourceID, seriesURL, sourceaccess.RequestOptions{})
+	body, err := fetchHTMLFn(sourceID, seriesURL, sourceaccess.RequestOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("weebcentral chapters: %w", err)
 	}
-	teaserChapters := parseWeebCentralChapters(body)
+	teaserChapters := bestContiguousTeaserSlice(parseWeebCentralChapters(body))
 
 	showAllURL := ""
 	if match := showAllChRe.FindStringSubmatch(body); len(match) >= 2 {
@@ -292,36 +287,39 @@ func (e *Extension) GetChapters(mangaID string, lang extensions.Language) ([]ext
 		showAllURL = listURL
 	}
 	if showAllURL != "" {
-		if ready := startFullChapterHydration(seriesID, seriesURL, showAllURL, teaserChapters); ready != nil {
-			if hydrated, ok, waited := awaitHydratedSeriesChapters(ready, fastFullWait); ok {
-				mode := "fast_full_list"
-				if waited {
-					mode = "full_list_waited"
-				}
-				log.Debug().
-					Str("source_id", sourceID).
-					Str("operation", "chapters").
-					Str("series_id", seriesID).
-					Str("mode", mode).
-					Bool("partial", false).
-					Bool("hydrating", false).
-					Int("teaser_count", len(teaserChapters)).
-					Int("result_count", len(hydrated)).
-					Dur("took", time.Since(started)).
-					Msg("weebcentral chapters")
-				return hydrated, nil
-			}
+		fullChapters, fullErr := loadFullChapterList(seriesID, seriesURL, showAllURL, teaserChapters)
+		if fullErr == nil && len(fullChapters) > 0 {
+			log.Debug().
+				Str("source_id", sourceID).
+				Str("operation", "chapters").
+				Str("series_id", seriesID).
+				Str("mode", "full_list_sync").
+				Bool("partial", false).
+				Bool("hydrating", false).
+				Int("teaser_count", len(teaserChapters)).
+				Int("result_count", len(fullChapters)).
+				Dur("took", time.Since(started)).
+				Msg("weebcentral chapters")
+			return fullChapters, nil
+		}
+		if len(teaserChapters) > 0 {
+			return nil, fmt.Errorf("weebcentral: full chapter list unavailable for %s", seriesID)
 		}
 	}
 	if len(teaserChapters) > 0 {
+		storeSeriesChapters(seriesID, teaserChapters)
 		log.Debug().
 			Str("source_id", sourceID).
 			Str("operation", "chapters").
 			Str("series_id", seriesID).
-			Str("mode", "teaser_rejected").
+			Str("mode", "teaser_full").
+			Bool("partial", false).
+			Bool("hydrating", false).
 			Int("teaser_count", len(teaserChapters)).
+			Int("result_count", len(teaserChapters)).
 			Dur("took", time.Since(started)).
 			Msg("weebcentral chapters")
+		return teaserChapters, nil
 	}
 	return nil, fmt.Errorf("weebcentral: full chapter list unavailable for %s", seriesID)
 }
@@ -574,13 +572,70 @@ func GetChapterCacheState(mangaID string) (bool, bool) {
 	return partial, hydrating
 }
 
+func loadFullChapterList(seriesID, seriesURL, showAllURL string, teaserChapters []extensions.Chapter) ([]extensions.Chapter, error) {
+	value, err, _ := chapterWarm.Do(seriesID, func() (interface{}, error) {
+		listBody, listErr := fetchHTMLFn(sourceID, showAllURL, sourceaccess.RequestOptions{Referer: seriesURL})
+		if listErr != nil {
+			return nil, listErr
+		}
+
+		fullChapters := parseWeebCentralChapters(listBody)
+		if len(fullChapters) == 0 {
+			return nil, fmt.Errorf("weebcentral: empty full chapter list for %s", seriesID)
+		}
+
+		mergedChapters := mergeWeebCentralChapters(fullChapters, teaserChapters)
+		if len(teaserChapters) > 0 && (sameChapterSet(mergedChapters, teaserChapters) || looksLikeBoundaryOnlyChapterSet(mergedChapters)) {
+			return nil, fmt.Errorf("weebcentral: full chapter list still matches teaser for %s", seriesID)
+		}
+		storeSeriesChapters(seriesID, mergedChapters)
+		return mergedChapters, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	chapters, _ := value.([]extensions.Chapter)
+	if len(chapters) == 0 {
+		return nil, fmt.Errorf("weebcentral: no chapters found for %s", seriesID)
+	}
+	return chapters, nil
+}
+
+func sameChapterSet(primary, secondary []extensions.Chapter) bool {
+	if len(primary) == 0 || len(primary) != len(secondary) {
+		return false
+	}
+	seen := make(map[string]bool, len(primary))
+	for _, chapter := range primary {
+		seen[chapter.ID] = true
+	}
+	for _, chapter := range secondary {
+		if !seen[chapter.ID] {
+			return false
+		}
+	}
+	return true
+}
+
+func looksLikeBoundaryOnlyChapterSet(chapters []extensions.Chapter) bool {
+	if len(chapters) < 4 {
+		return false
+	}
+	first := chapters[0].Number
+	last := chapters[len(chapters)-1].Number
+	if first <= 0 || last <= first || first > 3.1 {
+		return false
+	}
+	return last-first > float64(len(chapters)*8)
+}
+
 func startFullChapterHydration(seriesID, seriesURL, showAllURL string, teaserChapters []extensions.Chapter) <-chan []extensions.Chapter {
 	ready := make(chan []extensions.Chapter, 1)
 	go func() {
 		defer close(ready)
 		value, _, _ := chapterWarm.Do(seriesID, func() (interface{}, error) {
 			started := time.Now()
-			listBody, listErr := sourceaccess.FetchHTML(sourceID, showAllURL, sourceaccess.RequestOptions{Referer: seriesURL})
+			listBody, listErr := fetchHTMLFn(sourceID, showAllURL, sourceaccess.RequestOptions{Referer: seriesURL})
 			if listErr != nil {
 				updateSeriesHydrating(seriesID, false)
 				log.Warn().Err(listErr).
@@ -635,9 +690,8 @@ func awaitHydratedSeriesChapters(ready <-chan []extensions.Chapter, fastWait tim
 	case hydrated, ok := <-ready:
 		return hydrated, ok && len(hydrated) > 0, false
 	case <-time.After(fastWait):
+		return nil, false, true
 	}
-	hydrated, ok := <-ready
-	return hydrated, ok && len(hydrated) > 0, true
 }
 
 func normalizeChapterURL(raw string) string {

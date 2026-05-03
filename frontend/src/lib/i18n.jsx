@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { wails } from '../lib/wails'
+import { mirrorLocaleQueryCache } from './localeQueryCache.js'
 
 const translations = {
   es: {
@@ -314,6 +316,7 @@ const normalizedTranslations = normalizeTranslations(translations)
 const I18nContext = createContext({ t: (s) => s, lang: 'es', setLang: () => {} })
 
 export function I18nProvider({ children }) {
+  const queryClient = useQueryClient()
   const [lang, setLangState] = useState(getSystemLanguage())
 
   useEffect(() => {
@@ -326,11 +329,12 @@ export function I18nProvider({ children }) {
 
   const setLang = useCallback(async (newLang) => {
     const nextLang = newLang === 'en' ? 'en' : 'es'
+    mirrorLocaleQueryCache(queryClient, lang, nextLang)
     setLangState(nextLang)
     try {
       await wails.saveSettings({ language: nextLang })
     } catch {}
-  }, [])
+  }, [lang, queryClient])
 
   const t = useCallback((key) => {
     const normalizedKey = repairText(key)

@@ -6,6 +6,8 @@
 
 # === Go Build Cache ===
 .gocache/
+.gocache-release/
+gocache/
 build/
 
 # === Frontend Dependencies & Artifacts ===
@@ -13,6 +15,11 @@ frontend/node_modules/
 frontend/dist/
 frontend/wailsjs/
 frontend/package.json.md5
+frontend/artifacts/
+frontend/.edge-home-verify*/
+frontend/tmp-preview-*.err
+frontend/tmp-preview-*.log
+frontend/tmp-preview-*.out
 
 # === Database Files ===
 *.db
@@ -28,9 +35,17 @@ frontend/package.json.md5
 
 # === Temporary & Scrape Cache Files ===
 .tmp_*
+.tmp-cdp-client/
 *.tmp
 tmp_*.html
+tmp_*.go
+tmp_*.log
+tmp_*.png
+tmp-preview.*
 ERROR.txt
+wails-live.*
+wailsreport.txt
+gitprogress.txt
 
 # === Build Outputs ===
 *.exe
@@ -39,9 +54,15 @@ ERROR.txt
 *.dylib
 *.a
 
+# === Browser QA Profiles ===
+.chrome-headless/
+.edge-profile*/
+artifacts/
+
 
 # === Personal / Internal Files ===
 backup/
+backups/
 PROJECT_HANDOFF*.md
 RELEASE_README_DRAFT*.md
 GUI_HANDOFF_*.md
@@ -49,6 +70,7 @@ HANDOFF_*.md
 PHASE_HANDOFF_*.md
 Nipah_*.docx
 docs/README_GITHUB_*.md
+docs/superpowers/
 docs/performance/
 frontend/src/_backup_*/
 tools/windows-build/

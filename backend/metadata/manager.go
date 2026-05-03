@@ -31,7 +31,7 @@ const (
 	anilistEndpoint  = "https://graphql.anilist.co"
 	mangadexEndpoint = "https://api.mangadex.org"
 	defaultUserAgent = "NipahAnime/1.1.0 (+https://github.com/NipahDevTeam/Nipah--Anime)"
-	aniListTurnDelay = 650 * time.Millisecond
+	aniListTurnDelay = 320 * time.Millisecond
 )
 
 // Manager handles all external metadata API calls.
@@ -39,6 +39,7 @@ type Manager struct {
 	mu                 sync.Mutex
 	active             map[string]*inFlightCall
 	lastAniListRequest time.Time
+	aniListCooldownEnd time.Time
 }
 
 type inFlightCall struct {
@@ -74,9 +75,33 @@ type AnimeMetadata struct {
 	Episodes          int                `json:"episodes"`
 	Status            string             `json:"status"`
 	Score             float64            `json:"score"`
+	AverageScore      float64            `json:"average_score"`
+	CountryOfOrigin   string             `json:"country_of_origin"`
+	Source            string             `json:"source"`
+	Season            string             `json:"season"`
+	SeasonYear        int                `json:"season_year"`
+	StartDate         AniListDate        `json:"start_date"`
+	EndDate           AniListDate        `json:"end_date"`
+	NextAiringEpisode *AniListAiringInfo `json:"next_airing_episode,omitempty"`
+	Studios           []AniListStudio    `json:"studios,omitempty"`
 	Genres            []string           `json:"genres"`
 	StreamingEpisodes []StreamingEpisode `json:"streamingEpisodes"`
 	Characters        []AnimeCharacter   `json:"characters,omitempty"`
+}
+
+type AniListDate struct {
+	Year  int `json:"year"`
+	Month int `json:"month"`
+	Day   int `json:"day"`
+}
+
+type AniListAiringInfo struct {
+	Episode  int `json:"episode"`
+	AiringAt int `json:"airing_at"`
+}
+
+type AniListStudio struct {
+	Name string `json:"name"`
 }
 
 type StreamingEpisode struct {
@@ -265,6 +290,11 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 		Media(id: $id, type: ANIME) {
 			id
 			idMal
+			format
+			season
+			seasonYear
+			countryOfOrigin
+			source
 			title { romaji english native }
 			synonyms
 			coverImage { large medium }
@@ -273,10 +303,15 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 			averageScore
 			episodes
 			status
-			startDate { year }
+			startDate { year month day }
+			endDate { year month day }
+			nextAiringEpisode { episode airingAt }
 			genres
 			streamingEpisodes { title thumbnail url site }
-			characters(perPage: 6, sort: [ROLE, RELEVANCE]) {
+			studios(isMain: true) {
+				nodes { name }
+			}
+			characters(perPage: 12, sort: [ROLE, RELEVANCE]) {
 				edges {
 					role
 					node {
@@ -302,9 +337,14 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 	var resp struct {
 		Data struct {
 			Media struct {
-				ID    int `json:"id"`
-				IDMal int `json:"idMal"`
-				Title struct {
+				ID              int    `json:"id"`
+				IDMal           int    `json:"idMal"`
+				Format          string `json:"format"`
+				Season          string `json:"season"`
+				SeasonYear      int    `json:"seasonYear"`
+				CountryOfOrigin string `json:"countryOfOrigin"`
+				Source          string `json:"source"`
+				Title           struct {
 					Romaji  string `json:"romaji"`
 					English string `json:"english"`
 					Native  string `json:"native"`
@@ -314,14 +354,17 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 					Large  string `json:"large"`
 					Medium string `json:"medium"`
 				} `json:"coverImage"`
-				BannerImage  string  `json:"bannerImage"`
-				Description  string  `json:"description"`
-				AverageScore float64 `json:"averageScore"`
-				Episodes     int     `json:"episodes"`
-				Status       string  `json:"status"`
-				StartDate    struct {
-					Year int `json:"year"`
-				} `json:"startDate"`
+				BannerImage       string      `json:"bannerImage"`
+				Description       string      `json:"description"`
+				AverageScore      float64     `json:"averageScore"`
+				Episodes          int         `json:"episodes"`
+				Status            string      `json:"status"`
+				StartDate         AniListDate `json:"startDate"`
+				EndDate           AniListDate `json:"endDate"`
+				NextAiringEpisode *struct {
+					Episode  int `json:"episode"`
+					AiringAt int `json:"airingAt"`
+				} `json:"nextAiringEpisode"`
 				Genres            []string `json:"genres"`
 				StreamingEpisodes []struct {
 					Title     string `json:"title"`
@@ -329,6 +372,11 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 					URL       string `json:"url"`
 					Site      string `json:"site"`
 				} `json:"streamingEpisodes"`
+				Studios struct {
+					Nodes []struct {
+						Name string `json:"name"`
+					} `json:"nodes"`
+				} `json:"studios"`
 				Characters struct {
 					Edges []struct {
 						Role string `json:"role"`
@@ -353,23 +401,49 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 	}
 
 	med := resp.Data.Media
+	studios := make([]AniListStudio, 0, len(med.Studios.Nodes))
+	for _, item := range med.Studios.Nodes {
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			continue
+		}
+		studios = append(studios, AniListStudio{Name: name})
+	}
+
+	var nextAiring *AniListAiringInfo
+	if med.NextAiringEpisode != nil {
+		nextAiring = &AniListAiringInfo{
+			Episode:  med.NextAiringEpisode.Episode,
+			AiringAt: med.NextAiringEpisode.AiringAt,
+		}
+	}
+
 	return &AnimeMetadata{
-		AniListID:    med.ID,
-		MalID:        med.IDMal,
-		TitleRomaji:  med.Title.Romaji,
-		TitleEnglish: med.Title.English,
-		TitleNative:  med.Title.Native,
-		TitleSpanish: extractSpanishTitle(med.Synonyms),
-		Synonyms:     med.Synonyms,
-		CoverLarge:   med.CoverImage.Large,
-		CoverMedium:  med.CoverImage.Medium,
-		BannerImage:  med.BannerImage,
-		Description:  med.Description,
-		Year:         med.StartDate.Year,
-		Episodes:     med.Episodes,
-		Status:       med.Status,
-		Score:        med.AverageScore,
-		Genres:       med.Genres,
+		AniListID:         med.ID,
+		MalID:             med.IDMal,
+		TitleRomaji:       med.Title.Romaji,
+		TitleEnglish:      med.Title.English,
+		TitleNative:       med.Title.Native,
+		TitleSpanish:      extractSpanishTitle(med.Synonyms),
+		Synonyms:          med.Synonyms,
+		CoverLarge:        med.CoverImage.Large,
+		CoverMedium:       med.CoverImage.Medium,
+		BannerImage:       med.BannerImage,
+		Description:       med.Description,
+		Year:              med.StartDate.Year,
+		Episodes:          med.Episodes,
+		Status:            med.Status,
+		Score:             med.AverageScore,
+		AverageScore:      med.AverageScore,
+		CountryOfOrigin:   med.CountryOfOrigin,
+		Source:            med.Source,
+		Season:            med.Season,
+		SeasonYear:        med.SeasonYear,
+		StartDate:         med.StartDate,
+		EndDate:           med.EndDate,
+		NextAiringEpisode: nextAiring,
+		Studios:           studios,
+		Genres:            med.Genres,
 		StreamingEpisodes: func() []StreamingEpisode {
 			out := make([]StreamingEpisode, 0, len(med.StreamingEpisodes))
 			for _, item := range med.StreamingEpisodes {
@@ -433,95 +507,107 @@ func (m *Manager) GetTrending(lang string) (interface{}, error) {
 }
 
 // DiscoverAnime fetches anime from AniList with genre/season/sort/status filters.
-// This powers the Descubrir page's category browsing.
-func (m *Manager) DiscoverAnime(genre, season string, year int, sort, status string, page int) (interface{}, error) {
-	if page < 1 {
-		page = 1
+// Multi-genre requests are expanded into a local union so the catalog can show
+// all matching anime instead of AniList's default intersection semantics.
+func (m *Manager) DiscoverAnime(genre, season string, year int, sort, status, format string, page int) (interface{}, error) {
+	safePage := normalizeCatalogPage(page)
+	requests := buildAnimeCatalogFetchRequests(genre, season, year, sort, status, format, safePage)
+	if len(requests) == 1 {
+		return m.fetchAnimeCatalogEnvelope(requests[0])
 	}
 
-	// Build dynamic GraphQL variables
-	vars := map[string]interface{}{
-		"page":    page,
-		"perPage": 24,
-		"type":    "ANIME",
-	}
+	items := make([]aniListAnimeCatalogNode, 0, len(requests)*aniListCatalogPerPage)
+	seen := make(map[int]struct{}, len(requests)*aniListCatalogPerPage)
+	hasMore := false
 
-	// Build filter arguments dynamically
-	varDecls := []string{"$page: Int", "$perPage: Int", "$type: MediaType"}
-	filterArgs := []string{"page: $page, perPage: $perPage", "type: $type"}
-
-	if genre != "" {
-		// Support comma-separated genres → genre_in: [String]
-		genres := strings.Split(genre, ",")
-		for i := range genres {
-			genres[i] = strings.TrimSpace(genres[i])
+	for _, request := range requests {
+		payload, err := m.fetchAnimeCatalogEnvelope(request)
+		if err != nil {
+			return nil, err
 		}
-		varDecls = append(varDecls, "$genre_in: [String]")
-		filterArgs = append(filterArgs, "genre_in: $genre_in")
-		vars["genre_in"] = genres
-	}
-	if season != "" {
-		varDecls = append(varDecls, "$season: MediaSeason")
-		filterArgs = append(filterArgs, "season: $season")
-		vars["season"] = season
-	}
-	if year > 0 {
-		varDecls = append(varDecls, "$seasonYear: Int")
-		filterArgs = append(filterArgs, "seasonYear: $seasonYear")
-		vars["seasonYear"] = year
-	}
-	if status != "" {
-		varDecls = append(varDecls, "$status: MediaStatus")
-		filterArgs = append(filterArgs, "status: $status")
-		vars["status"] = status
+		if request.Page == safePage && payload.Data.Page.PageInfo.HasNextPage {
+			hasMore = true
+		}
+		for _, media := range payload.Data.Page.Media {
+			if media.ID <= 0 {
+				continue
+			}
+			if _, ok := seen[media.ID]; ok {
+				continue
+			}
+			seen[media.ID] = struct{}{}
+			items = append(items, media)
+		}
 	}
 
-	// Sort — default to TRENDING_DESC
-	sortVal := "TRENDING_DESC"
-	switch sort {
-	case "POPULARITY_DESC", "SCORE_DESC", "FAVOURITES_DESC", "START_DATE_DESC", "TRENDING_DESC":
-		sortVal = sort
-	}
-	filterArgs = append(filterArgs, "sort: "+sortVal)
+	sortAnimeCatalogItems(items, sort)
+	return paginateAnimeCatalogUnion(items, safePage, hasMore), nil
+}
 
-	gql := fmt.Sprintf(`
-	query (%s) {
+func (m *Manager) fetchAnimeCatalogEnvelope(request catalogFetchRequest) (*aniListAnimeCatalogEnvelope, error) {
+	body, err := m.postJSON(anilistEndpoint, buildAnimeCatalogPayload(request))
+	if err != nil {
+		return nil, err
+	}
+
+	var result aniListAnimeCatalogEnvelope
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func buildAnimeCatalogPayload(request catalogFetchRequest) map[string]interface{} {
+	variables := map[string]interface{}{
+		"page":    normalizeCatalogPage(request.Page),
+		"perPage": aniListCatalogPerPage,
+		"sort":    []string{normalizeAniListCatalogSort(request.Sort)},
+	}
+	if value := strings.TrimSpace(request.Genre); value != "" {
+		variables["genre"] = value
+	}
+	if value := strings.TrimSpace(request.Season); value != "" {
+		variables["season"] = value
+	}
+	if request.Year > 0 {
+		variables["seasonYear"] = request.Year
+	}
+	if value := strings.TrimSpace(request.Status); value != "" {
+		variables["status"] = value
+	}
+	if value := strings.TrimSpace(request.Format); value != "" {
+		variables["format"] = value
+	}
+
+	return map[string]interface{}{
+		"query": `
+	query ($page: Int, $perPage: Int, $genre: String, $season: MediaSeason, $seasonYear: Int, $status: MediaStatus, $format: MediaFormat, $sort: [MediaSort]) {
 		Page(page: $page, perPage: $perPage) {
 			pageInfo { total currentPage lastPage hasNextPage }
-			media(%s) {
+			media(type: ANIME, genre: $genre, season: $season, seasonYear: $seasonYear, status: $status, format: $format, sort: $sort) {
 				id
+				idMal
+				format
 				title { romaji english native }
 				synonyms
 				coverImage { large extraLarge }
 				bannerImage
 				description(asHtml: false)
 				averageScore
+				popularity
+				trending
+				favourites
 				episodes
 				season
 				seasonYear
-				startDate { year month }
+				startDate { year month day }
 				genres
 				status
 			}
 		}
-	}`, strings.Join(varDecls, ", "),
-		strings.Join(filterArgs[1:], ", "), // skip page/perPage (used in Page args above)
-	)
-
-	payload := map[string]interface{}{
-		"query":     gql,
-		"variables": vars,
+	}`,
+		"variables": variables,
 	}
-
-	body, err := m.postJSON(anilistEndpoint, payload)
-	if err != nil {
-		return nil, err
-	}
-	var result interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 // SearchAniList is the raw search used by the frontend search bar.
@@ -1218,7 +1304,9 @@ func (m *Manager) requestBytes(method, endpoint string, body []byte, contentType
 	staleKey := staleRequestCacheKey(key)
 
 	if cached, ok := cachepkg.Global().GetBytes(key); ok {
-		return cached, nil
+		if endpoint != anilistEndpoint || aniListGraphQLError(cached) == nil {
+			return cached, nil
+		}
 	}
 
 	call, leader := m.beginRequest(key)
@@ -1252,6 +1340,9 @@ func (m *Manager) requestBytes(method, endpoint string, body []byte, contentType
 		}
 		if statusCode == 429 || statusCode >= 500 {
 			lastErr = metadataHTTPError(endpoint, statusCode, respBody)
+			if statusCode == 429 && endpoint == anilistEndpoint {
+				m.noteAniListRateLimit(attempt)
+			}
 			time.Sleep(time.Duration(attempt+1) * 900 * time.Millisecond)
 			continue
 		}
@@ -1259,18 +1350,33 @@ func (m *Manager) requestBytes(method, endpoint string, body []byte, contentType
 			lastErr = metadataHTTPError(endpoint, statusCode, respBody)
 			break
 		}
+		if endpoint == anilistEndpoint {
+			if gqlErr := aniListGraphQLError(respBody); gqlErr != nil {
+				lastErr = gqlErr
+				if isAniListRateLimitError(gqlErr) {
+					m.noteAniListRateLimit(attempt)
+				}
+				time.Sleep(time.Duration(attempt+1) * 900 * time.Millisecond)
+				continue
+			}
+		}
 
 		freshTTL := metadataRequestTTL(endpoint, body)
 		cachepkg.Global().SetBytes(key, respBody, freshTTL)
 		cachepkg.Global().SetBytes(staleKey, respBody, staleMetadataRequestTTL(endpoint, body, freshTTL))
+		if endpoint == anilistEndpoint {
+			m.clearAniListRateLimitCooldown()
+		}
 		m.finishRequest(call, respBody, nil)
 		return respBody, nil
 	}
 
 	if endpoint == anilistEndpoint {
 		if stale, ok := cachepkg.Global().GetBytes(staleKey); ok {
-			m.finishRequest(call, stale, nil)
-			return stale, nil
+			if aniListGraphQLError(stale) == nil {
+				m.finishRequest(call, stale, nil)
+				return stale, nil
+			}
 		}
 	}
 	if lastErr == nil {
@@ -1278,6 +1384,45 @@ func (m *Manager) requestBytes(method, endpoint string, body []byte, contentType
 	}
 	m.finishRequest(call, nil, lastErr)
 	return nil, lastErr
+}
+
+func aniListGraphQLError(body []byte) error {
+	if len(body) == 0 {
+		return nil
+	}
+
+	var payload struct {
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil
+	}
+	if len(payload.Errors) == 0 {
+		return nil
+	}
+
+	message := ""
+	for _, item := range payload.Errors {
+		if msg := strings.TrimSpace(item.Message); msg != "" {
+			message = msg
+			break
+		}
+	}
+	if message == "" {
+		message = "unknown AniList GraphQL error"
+	}
+
+	return fmt.Errorf("AniList API unavailable: %s", message)
+}
+
+func isAniListRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "too many requests") || strings.Contains(message, "rate limit")
 }
 
 func performMetadataRequest(method, endpoint string, body []byte, contentType string) ([]byte, int, error) {
@@ -1376,6 +1521,9 @@ func (m *Manager) waitAniListTurn(endpoint string) {
 
 	m.mu.Lock()
 	wait := time.Until(m.lastAniListRequest.Add(aniListTurnDelay))
+	if cooldownWait := time.Until(m.aniListCooldownEnd); cooldownWait > wait {
+		wait = cooldownWait
+	}
 	m.mu.Unlock()
 
 	if wait > 0 {
@@ -1384,6 +1532,28 @@ func (m *Manager) waitAniListTurn(endpoint string) {
 
 	m.mu.Lock()
 	m.lastAniListRequest = time.Now()
+	m.mu.Unlock()
+}
+
+func aniListRateLimitBackoff(attempt int) time.Duration {
+	if attempt < 0 {
+		attempt = 0
+	}
+	return time.Duration(6+(attempt*4)) * time.Second
+}
+
+func (m *Manager) noteAniListRateLimit(attempt int) {
+	until := time.Now().Add(aniListRateLimitBackoff(attempt))
+	m.mu.Lock()
+	if until.After(m.aniListCooldownEnd) {
+		m.aniListCooldownEnd = until
+	}
+	m.mu.Unlock()
+}
+
+func (m *Manager) clearAniListRateLimitCooldown() {
+	m.mu.Lock()
+	m.aniListCooldownEnd = time.Time{}
 	m.mu.Unlock()
 }
 
@@ -1503,11 +1673,11 @@ func IsRetryableAniListError(err error) bool {
 	if IsAniListUnavailableError(err) {
 		return false
 	}
-	message := err.Error()
-	if strings.Contains(message, "metadata request failed: 409") {
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "metadata request failed: 409") || strings.Contains(message, "metadata request failed:409") {
 		return true
 	}
-	if strings.Contains(message, "metadata request failed: 429") {
+	if strings.Contains(message, "metadata request failed: 429") || strings.Contains(message, "metadata request failed:429") {
 		return true
 	}
 	return strings.Contains(message, "timeout") || strings.Contains(message, "fetch")

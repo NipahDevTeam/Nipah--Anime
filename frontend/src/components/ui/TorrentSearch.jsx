@@ -6,18 +6,18 @@ import { useI18n } from '../../lib/i18n'
 
 const SPANISH_GROUPS = [
   'donatello', 'shiro', 'subsplease-es', 'subses', 'animeblue', 'fenix-fansub',
-  'nkid', 'animeid', 'animelatino', 'español', 'castellano', 'latino', 'latam',
-  'sub español', 'sub-español', 'multi-lang', 'multilang', 'multi lang',
+  'nkid', 'animeid', 'animelatino', 'espanol', 'español', 'castellano', 'latino', 'latam',
+  'sub espanol', 'sub español', 'sub-espanol', 'sub-español', 'multi-lang', 'multilang', 'multi lang',
 ]
 
 const SOURCES = [
-  { value: 'animetosho', label: 'AnimeTosho', noteEn: 'Batch-focused index', noteEs: 'Índice orientado a packs' },
+  { value: 'animetosho', label: 'AnimeTosho', noteEn: 'Batch-focused index', noteEs: 'Indice orientado a packs' },
   { value: 'nyaa', label: 'Nyaa', noteEn: 'Episode and fansub torrents', noteEs: 'Torrents de episodios y fansubs' },
 ]
 
 function isES(title) {
-  const t = (title ?? '').toLowerCase()
-  return SPANISH_GROUPS.some((group) => t.includes(group))
+  const normalizedTitle = (title ?? '').toLowerCase()
+  return SPANISH_GROUPS.some((group) => normalizedTitle.includes(group))
 }
 
 function magnetResult(rawMagnet) {
@@ -90,8 +90,8 @@ export default function TorrentSearch({ onClose }) {
         const response = await wails.searchTorrents(trimmed, source, 0)
         setResults(response ?? [])
       }
-    } catch (e) {
-      toastError(`${isEnglish ? 'Search error' : 'Error al buscar'}: ${e?.message ?? (isEnglish ? 'unknown error' : 'error desconocido')}`)
+    } catch (error) {
+      toastError(`${isEnglish ? 'Search error' : 'Error al buscar'}: ${error?.message ?? (isEnglish ? 'unknown error' : 'error desconocido')}`)
     } finally {
       setLoading(false)
       setSearched(true)
@@ -102,8 +102,8 @@ export default function TorrentSearch({ onClose }) {
     try {
       await wails.openMagnet(magnet)
       toastSuccess(`${isEnglish ? 'Opening magnet' : 'Abriendo magnet'}: ${(title ?? '').slice(0, 48)}...`)
-    } catch (e) {
-      toastError(`${isEnglish ? 'Error opening magnet' : 'Error al abrir magnet'}: ${e?.message ?? (isEnglish ? 'unknown error' : 'error desconocido')}`)
+    } catch (error) {
+      toastError(`${isEnglish ? 'Error opening magnet' : 'Error al abrir magnet'}: ${error?.message ?? (isEnglish ? 'unknown error' : 'error desconocido')}`)
     }
   }, [isEnglish])
 
@@ -112,8 +112,8 @@ export default function TorrentSearch({ onClose }) {
     try {
       await wails.streamTorrentMagnet(magnet, title ?? '', 'mpv')
       toastSuccess(`${isEnglish ? 'Opening in MPV' : 'Abriendo en MPV'}: ${(title ?? '').slice(0, 48)}...`)
-    } catch (e) {
-      toastError(`${isEnglish ? 'Error streaming torrent' : 'Error al reproducir torrent'}: ${e?.message ?? (isEnglish ? 'unknown error' : 'error desconocido')}`)
+    } catch (error) {
+      toastError(`${isEnglish ? 'Error streaming torrent' : 'Error al reproducir torrent'}: ${error?.message ?? (isEnglish ? 'unknown error' : 'error desconocido')}`)
     } finally {
       setStreaming('')
     }
@@ -138,13 +138,17 @@ export default function TorrentSearch({ onClose }) {
                 : 'Busca packs, abre un magnet manual o manda un torrent directo a MPV usando el puente local.'}
             </div>
           </div>
-          <button className="btn btn-ghost" onClick={onClose} type="button" aria-label={isEnglish ? 'Close' : 'Cerrar'}>×</button>
+          <button className="btn btn-ghost" onClick={onClose} type="button" aria-label={isEnglish ? 'Close' : 'Cerrar'}>X</button>
         </div>
 
         <div className="torrent-rich-meta">
           <div className="torrent-rich-meta-card">
             <span className="torrent-rich-meta-label">{isEnglish ? 'Default folder' : 'Carpeta por defecto'}</span>
             <span className="torrent-rich-meta-value" title={dlPath || 'Auto'}>{formatFolderPath(dlPath)}</span>
+          </div>
+          <div className="torrent-rich-meta-card">
+            <span className="torrent-rich-meta-label">{isEnglish ? 'Playback' : 'Reproduccion'}</span>
+            <span className="torrent-rich-meta-value">MPV</span>
           </div>
           <div className="torrent-rich-meta-card">
             <span className="torrent-rich-meta-label">{isEnglish ? 'Best use' : 'Uso ideal'}</span>
@@ -195,12 +199,12 @@ export default function TorrentSearch({ onClose }) {
 
           {!loading && !searched ? (
             <div className="torrent-empty-panel">
-              <div className="torrent-empty-icon">◎</div>
-              <div className="torrent-empty-title">{isEnglish ? 'Start with a title or a magnet' : 'Empieza con un título o un magnet'}</div>
+              <div className="torrent-empty-icon">O</div>
+              <div className="torrent-empty-title">{isEnglish ? 'Start with a title or a magnet' : 'Empieza con un titulo o un magnet'}</div>
               <div className="torrent-empty-copy">
                 {isEnglish
                   ? 'Use AnimeTosho for cleaner complete packs, or Nyaa when you want episode-by-episode releases.'
-                  : 'Usa AnimeTosho para packs más limpios, o Nyaa si buscas lanzamientos episodio por episodio.'}
+                  : 'Usa AnimeTosho para packs mas limpios, o Nyaa si buscas lanzamientos episodio por episodio.'}
               </div>
             </div>
           ) : null}
@@ -211,7 +215,7 @@ export default function TorrentSearch({ onClose }) {
               <div className="torrent-empty-copy">
                 {isEnglish
                   ? 'Try the romaji title, another source, or paste a direct magnet link.'
-                  : 'Prueba con el título en romaji, otra fuente, o pega un magnet directo.'}
+                  : 'Prueba con el titulo en romaji, otra fuente, o pega un magnet directo.'}
               </div>
             </div>
           ) : null}
@@ -259,8 +263,8 @@ export default function TorrentSearch({ onClose }) {
                       <div className="torrent-card-meta">
                         {result.group ? <span>[{result.group}]</span> : null}
                         {result.size ? <span>{result.size}</span> : null}
-                        {result.seeders > 0 ? <span className="up">▲ {result.seeders}</span> : null}
-                        {result.leechers > 0 ? <span className="down">▼ {result.leechers}</span> : null}
+                        {result.seeders > 0 ? <span className="up">Up {result.seeders}</span> : null}
+                        {result.leechers > 0 ? <span className="down">Down {result.leechers}</span> : null}
                         <span>{result.source}</span>
                       </div>
                     </div>
@@ -293,7 +297,7 @@ export default function TorrentSearch({ onClose }) {
                   <div className="torrent-empty-copy">
                     {isEnglish
                       ? `There are no ${filter === 'batch' ? 'complete batches' : 'single episode'} entries for this search.`
-                      : `No hay entradas de ${filter === 'batch' ? 'packs completos' : 'episodios sueltos'} para esta búsqueda.`}
+                      : `No hay entradas de ${filter === 'batch' ? 'packs completos' : 'episodios sueltos'} para esta busqueda.`}
                   </div>
                 </div>
               ) : null}

@@ -143,7 +143,7 @@ export default function UpdateChecker({ t, isEnglish }) {
             <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)' }}>
               {isEnglish
                 ? 'Download the new .deb or .AppImage from the release page above.'
-                : 'Descarga el nuevo .deb o .AppImage desde la pagina de la version arriba.'}
+                : 'Descarga el nuevo .deb o .AppImage desde la pagina de la version de arriba.'}
             </div>
           )}
         </div>

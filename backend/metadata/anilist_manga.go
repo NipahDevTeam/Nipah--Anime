@@ -8,23 +8,29 @@ import (
 
 // AniListMangaMetadata is the canonical AniList manga payload used by online manga flows.
 type AniListMangaMetadata struct {
-	AniListID       int      `json:"anilist_id"`
-	MalID           int      `json:"mal_id"`
-	Format          string   `json:"format"`
-	CountryOfOrigin string   `json:"country_of_origin"`
-	TitleRomaji     string   `json:"title_romaji"`
-	TitleEnglish    string   `json:"title_english"`
-	TitleNative     string   `json:"title_native"`
-	CoverLarge      string   `json:"cover_large"`
-	CoverMedium     string   `json:"cover_medium"`
-	BannerImage     string   `json:"banner_image"`
-	Description     string   `json:"description"`
-	Year            int      `json:"year"`
-	Status          string   `json:"status"`
-	Chapters        int      `json:"chapters"`
-	Volumes         int      `json:"volumes"`
-	Genres          []string `json:"genres"`
-	Synonyms        []string `json:"synonyms"`
+	AniListID       int                     `json:"anilist_id"`
+	MalID           int                     `json:"mal_id"`
+	Format          string                  `json:"format"`
+	CountryOfOrigin string                  `json:"country_of_origin"`
+	Source          string                  `json:"source"`
+	TitleRomaji     string                  `json:"title_romaji"`
+	TitleEnglish    string                  `json:"title_english"`
+	TitleNative     string                  `json:"title_native"`
+	CoverLarge      string                  `json:"cover_large"`
+	CoverMedium     string                  `json:"cover_medium"`
+	BannerImage     string                  `json:"banner_image"`
+	Description     string                  `json:"description"`
+	Year            int                     `json:"year"`
+	PublicationYear int                     `json:"publication_year"`
+	SeasonYear      int                     `json:"season_year"`
+	StartDate       AniListDate             `json:"start_date"`
+	EndDate         AniListDate             `json:"end_date"`
+	Status          string                  `json:"status"`
+	AverageScore    float64                 `json:"average_score"`
+	Chapters        int                     `json:"chapters"`
+	Volumes         int                     `json:"volumes"`
+	Genres          []string                `json:"genres"`
+	Synonyms        []string                `json:"synonyms"`
 	Characters      []AniListMangaCharacter `json:"characters,omitempty"`
 }
 
@@ -41,6 +47,7 @@ type aniListMangaNode struct {
 	IDMal           int    `json:"idMal"`
 	Format          string `json:"format"`
 	CountryOfOrigin string `json:"countryOfOrigin"`
+	Source          string `json:"source"`
 	Title           struct {
 		Romaji  string `json:"romaji"`
 		English string `json:"english"`
@@ -51,15 +58,18 @@ type aniListMangaNode struct {
 		Large  string `json:"large"`
 		Medium string `json:"medium"`
 	} `json:"coverImage"`
-	BannerImage string `json:"bannerImage"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	Chapters    int    `json:"chapters"`
-	Volumes     int    `json:"volumes"`
-	Genres      []string `json:"genres"`
-	StartDate   struct {
-		Year int `json:"year"`
-	} `json:"startDate"`
+	BannerImage  string      `json:"bannerImage"`
+	Description  string      `json:"description"`
+	Status       string      `json:"status"`
+	AverageScore float64     `json:"averageScore"`
+	Popularity   int         `json:"popularity"`
+	Trending     int         `json:"trending"`
+	Favourites   int         `json:"favourites"`
+	Chapters     int         `json:"chapters"`
+	Volumes      int         `json:"volumes"`
+	Genres       []string    `json:"genres"`
+	StartDate    AniListDate `json:"startDate"`
+	EndDate      AniListDate `json:"endDate"`
 }
 
 func mapAniListMangaMetadataSlice(items []aniListMangaNode) []AniListMangaMetadata {
@@ -70,6 +80,7 @@ func mapAniListMangaMetadataSlice(items []aniListMangaNode) []AniListMangaMetada
 			MalID:           media.IDMal,
 			Format:          media.Format,
 			CountryOfOrigin: media.CountryOfOrigin,
+			Source:          media.Source,
 			TitleRomaji:     media.Title.Romaji,
 			TitleEnglish:    media.Title.English,
 			TitleNative:     media.Title.Native,
@@ -78,10 +89,15 @@ func mapAniListMangaMetadataSlice(items []aniListMangaNode) []AniListMangaMetada
 			BannerImage:     media.BannerImage,
 			Description:     media.Description,
 			Status:          media.Status,
+			AverageScore:    media.AverageScore,
 			Chapters:        media.Chapters,
 			Volumes:         media.Volumes,
 			Genres:          media.Genres,
 			Year:            media.StartDate.Year,
+			PublicationYear: media.StartDate.Year,
+			SeasonYear:      media.StartDate.Year,
+			StartDate:       media.StartDate,
+			EndDate:         media.EndDate,
 			Synonyms:        media.Synonyms,
 		})
 	}
@@ -97,16 +113,19 @@ func (m *Manager) SearchAniListMangaEntries(query string) ([]AniListMangaMetadat
 				idMal
 				format
 				countryOfOrigin
+				source
 				title { romaji english native }
 				synonyms
 				coverImage { large medium }
 				bannerImage
 				description(asHtml: false)
 				status
+				averageScore
 				chapters
 				volumes
 				genres
-				startDate { year }
+				startDate { year month day }
+				endDate { year month day }
 			}
 		}
 	}`
@@ -129,6 +148,7 @@ func (m *Manager) SearchAniListMangaEntries(query string) ([]AniListMangaMetadat
 					IDMal           int    `json:"idMal"`
 					Format          string `json:"format"`
 					CountryOfOrigin string `json:"countryOfOrigin"`
+					Source          string `json:"source"`
 					Title           struct {
 						Romaji  string `json:"romaji"`
 						English string `json:"english"`
@@ -139,15 +159,15 @@ func (m *Manager) SearchAniListMangaEntries(query string) ([]AniListMangaMetadat
 						Large  string `json:"large"`
 						Medium string `json:"medium"`
 					} `json:"coverImage"`
-					BannerImage string `json:"bannerImage"`
-					Description string `json:"description"`
-					Status      string `json:"status"`
-					Chapters    int    `json:"chapters"`
-					Volumes     int    `json:"volumes"`
-					Genres      []string `json:"genres"`
-					StartDate   struct {
-						Year int `json:"year"`
-					} `json:"startDate"`
+					BannerImage  string      `json:"bannerImage"`
+					Description  string      `json:"description"`
+					Status       string      `json:"status"`
+					AverageScore float64     `json:"averageScore"`
+					Chapters     int         `json:"chapters"`
+					Volumes      int         `json:"volumes"`
+					Genres       []string    `json:"genres"`
+					StartDate    AniListDate `json:"startDate"`
+					EndDate      AniListDate `json:"endDate"`
 				} `json:"media"`
 			} `json:"Page"`
 		} `json:"data"`
@@ -164,6 +184,7 @@ func (m *Manager) SearchAniListMangaEntries(query string) ([]AniListMangaMetadat
 			MalID:           media.IDMal,
 			Format:          media.Format,
 			CountryOfOrigin: media.CountryOfOrigin,
+			Source:          media.Source,
 			TitleRomaji:     media.Title.Romaji,
 			TitleEnglish:    media.Title.English,
 			TitleNative:     media.Title.Native,
@@ -172,7 +193,12 @@ func (m *Manager) SearchAniListMangaEntries(query string) ([]AniListMangaMetadat
 			BannerImage:     media.BannerImage,
 			Description:     media.Description,
 			Year:            media.StartDate.Year,
+			PublicationYear: media.StartDate.Year,
+			SeasonYear:      media.StartDate.Year,
+			StartDate:       media.StartDate,
+			EndDate:         media.EndDate,
 			Status:          media.Status,
+			AverageScore:    media.AverageScore,
 			Chapters:        media.Chapters,
 			Volumes:         media.Volumes,
 			Genres:          media.Genres,
@@ -190,17 +216,20 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 			idMal
 			format
 			countryOfOrigin
+			source
 			title { romaji english native }
 			synonyms
 			coverImage { large medium }
 			bannerImage
 			description(asHtml: false)
 			status
+			averageScore
 			chapters
 			volumes
 			genres
-			startDate { year }
-			characters(perPage: 6, sort: [ROLE, RELEVANCE]) {
+			startDate { year month day }
+			endDate { year month day }
+			characters(perPage: 12, sort: [ROLE, RELEVANCE]) {
 				edges {
 					role
 					node {
@@ -230,6 +259,7 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 				IDMal           int    `json:"idMal"`
 				Format          string `json:"format"`
 				CountryOfOrigin string `json:"countryOfOrigin"`
+				Source          string `json:"source"`
 				Title           struct {
 					Romaji  string `json:"romaji"`
 					English string `json:"english"`
@@ -240,21 +270,21 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 					Large  string `json:"large"`
 					Medium string `json:"medium"`
 				} `json:"coverImage"`
-				BannerImage string `json:"bannerImage"`
-				Description string `json:"description"`
-				Status      string `json:"status"`
-				Chapters    int    `json:"chapters"`
-				Volumes     int    `json:"volumes"`
-				Genres      []string `json:"genres"`
-				StartDate   struct {
-					Year int `json:"year"`
-				} `json:"startDate"`
-				Characters struct {
+				BannerImage  string      `json:"bannerImage"`
+				Description  string      `json:"description"`
+				Status       string      `json:"status"`
+				AverageScore float64     `json:"averageScore"`
+				Chapters     int         `json:"chapters"`
+				Volumes      int         `json:"volumes"`
+				Genres       []string    `json:"genres"`
+				StartDate    AniListDate `json:"startDate"`
+				EndDate      AniListDate `json:"endDate"`
+				Characters   struct {
 					Edges []struct {
 						Role string `json:"role"`
 						Node struct {
-							ID    int `json:"id"`
-							Name  struct {
+							ID   int `json:"id"`
+							Name struct {
 								Full   string `json:"full"`
 								Native string `json:"native"`
 							} `json:"name"`
@@ -295,6 +325,7 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 		MalID:           media.IDMal,
 		Format:          media.Format,
 		CountryOfOrigin: media.CountryOfOrigin,
+		Source:          media.Source,
 		TitleRomaji:     media.Title.Romaji,
 		TitleEnglish:    media.Title.English,
 		TitleNative:     media.Title.Native,
@@ -303,7 +334,12 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 		BannerImage:     media.BannerImage,
 		Description:     media.Description,
 		Year:            media.StartDate.Year,
+		PublicationYear: media.StartDate.Year,
+		SeasonYear:      media.StartDate.Year,
+		StartDate:       media.StartDate,
+		EndDate:         media.EndDate,
 		Status:          media.Status,
+		AverageScore:    media.AverageScore,
 		Chapters:        media.Chapters,
 		Volumes:         media.Volumes,
 		Genres:          media.Genres,
@@ -476,7 +512,7 @@ func (m *Manager) DiscoverMangaEntries(genre string, year int, sort string, page
 
 	vars := map[string]interface{}{
 		"page":    page,
-		"perPage": 24,
+		"perPage": 48,
 		"type":    "MANGA",
 	}
 
@@ -493,9 +529,10 @@ func (m *Manager) DiscoverMangaEntries(genre string, year int, sort string, page
 		vars["genre_in"] = genres
 	}
 	if year > 0 {
-		varDecls = append(varDecls, "$startDate_like: FuzzyDateInt")
-		filterArgs = append(filterArgs, "startDate_like: $startDate_like")
-		vars["startDate_like"] = year * 10000
+		varDecls = append(varDecls, "$startDate_greater: FuzzyDateInt", "$startDate_lesser: FuzzyDateInt")
+		filterArgs = append(filterArgs, "startDate_greater: $startDate_greater", "startDate_lesser: $startDate_lesser")
+		vars["startDate_greater"] = year * 10000
+		vars["startDate_lesser"] = (year + 1) * 10000
 	}
 
 	sortVal := "TRENDING_DESC"
@@ -553,51 +590,85 @@ func (m *Manager) DiscoverMangaEntries(genre string, year int, sort string, page
 	return mapAniListMangaMetadataSlice(resp.Data.Page.Media), resp.Data.Page.PageInfo.HasNextPage, nil
 }
 
-func (m *Manager) DiscoverManga(genre string, year int, sort string, page int) (interface{}, error) {
-	if page < 1 {
-		page = 1
+func (m *Manager) DiscoverManga(genre string, year int, sort, status, format string, page int) (interface{}, error) {
+	safePage := normalizeCatalogPage(page)
+	requests := buildMangaCatalogFetchRequests(genre, year, sort, status, format, safePage)
+	if len(requests) == 1 {
+		return m.fetchMangaCatalogEnvelope(requests[0])
 	}
 
-	vars := map[string]interface{}{
-		"page":    page,
-		"perPage": 24,
-		"type":    "MANGA",
-	}
+	items := make([]aniListMangaNode, 0, len(requests)*aniListCatalogPerPage)
+	seen := make(map[int]struct{}, len(requests)*aniListCatalogPerPage)
+	hasMore := false
 
-	varDecls := []string{"$page: Int", "$perPage: Int", "$type: MediaType"}
-	filterArgs := []string{"type: $type", "isAdult: false"}
-
-	if genre != "" {
-		genres := strings.Split(genre, ",")
-		for i := range genres {
-			genres[i] = strings.TrimSpace(genres[i])
+	for _, request := range requests {
+		payload, err := m.fetchMangaCatalogEnvelope(request)
+		if err != nil {
+			return nil, err
 		}
-		varDecls = append(varDecls, "$genre_in: [String]")
-		filterArgs = append(filterArgs, "genre_in: $genre_in")
-		vars["genre_in"] = genres
-	}
-	if year > 0 {
-		varDecls = append(varDecls, "$startDate_like: FuzzyDateInt")
-		filterArgs = append(filterArgs, "startDate_like: $startDate_like")
-		vars["startDate_like"] = year * 10000
+		if request.Page == safePage && payload.Data.Page.PageInfo.HasNextPage {
+			hasMore = true
+		}
+		for _, media := range payload.Data.Page.Media {
+			if media.ID <= 0 {
+				continue
+			}
+			if _, ok := seen[media.ID]; ok {
+				continue
+			}
+			seen[media.ID] = struct{}{}
+			items = append(items, media)
+		}
 	}
 
-	sortVal := "TRENDING_DESC"
-	switch sort {
-	case "POPULARITY_DESC", "SCORE_DESC", "FAVOURITES_DESC", "START_DATE_DESC", "TRENDING_DESC":
-		sortVal = sort
-	}
-	filterArgs = append(filterArgs, "sort: "+sortVal)
+	sortMangaCatalogItems(items, sort)
+	return paginateMangaCatalogUnion(items, safePage, hasMore), nil
+}
 
-	gql := fmt.Sprintf(`
-	query (%s) {
+func (m *Manager) fetchMangaCatalogEnvelope(request catalogFetchRequest) (*aniListMangaCatalogEnvelope, error) {
+	body, err := m.postJSON(anilistEndpoint, buildMangaCatalogPayload(request))
+	if err != nil {
+		return nil, err
+	}
+
+	var result aniListMangaCatalogEnvelope
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func buildMangaCatalogPayload(request catalogFetchRequest) map[string]interface{} {
+	variables := map[string]interface{}{
+		"page":    normalizeCatalogPage(request.Page),
+		"perPage": aniListCatalogPerPage,
+		"sort":    []string{normalizeAniListCatalogSort(request.Sort)},
+	}
+	if value := strings.TrimSpace(request.Genre); value != "" {
+		variables["genre"] = value
+	}
+	if request.Year > 0 {
+		variables["startDateGreater"] = request.Year * 10000
+		variables["startDateLesser"] = (request.Year + 1) * 10000
+	}
+	if value := strings.TrimSpace(request.Status); value != "" {
+		variables["status"] = value
+	}
+	if value := strings.TrimSpace(request.Format); value != "" {
+		variables["format"] = value
+	}
+
+	return map[string]interface{}{
+		"query": `
+	query ($page: Int, $perPage: Int, $genre: String, $startDateGreater: FuzzyDateInt, $startDateLesser: FuzzyDateInt, $status: MediaStatus, $format: MediaFormat, $sort: [MediaSort]) {
 		Page(page: $page, perPage: $perPage) {
 			pageInfo { total currentPage lastPage hasNextPage }
-			media(%s) {
+			media(type: MANGA, isAdult: false, genre: $genre, startDate_greater: $startDateGreater, startDate_lesser: $startDateLesser, status: $status, format: $format, sort: $sort) {
 				id
 				idMal
 				format
 				countryOfOrigin
+				source
 				title { romaji english native }
 				synonyms
 				coverImage { large medium extraLarge }
@@ -608,22 +679,14 @@ func (m *Manager) DiscoverManga(genre string, year int, sort string, page int) (
 				volumes
 				averageScore
 				popularity
+				trending
+				favourites
 				genres
-				startDate { year month }
+				startDate { year month day }
+				endDate { year month day }
 			}
 		}
-	}`, strings.Join(varDecls, ", "), strings.Join(filterArgs, ", "))
-
-	body, err := m.postJSON(anilistEndpoint, map[string]interface{}{
-		"query":     gql,
-		"variables": vars,
-	})
-	if err != nil {
-		return nil, err
+	}`,
+		"variables": variables,
 	}
-	var result interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
 }

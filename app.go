@@ -211,6 +211,10 @@ func rememberMangaChaptersWithPolicy(key string, loader func() ([]extensions.Cha
 	return nil, "", err
 }
 
+func sourceManagesMangaChapterHydration(sourceID string) bool {
+	return false
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
@@ -349,6 +353,28 @@ func (a *App) shutdown(ctx context.Context) {
 func (a *App) domReady(ctx context.Context) {
 	a.ctx = ctx
 	log.Info().Msg("dom ready signaled")
+	runtime.WindowSetDarkTheme(ctx)
+	go func() {
+		time.Sleep(120 * time.Millisecond)
+		runtime.WindowCenter(ctx)
+	}()
+}
+
+func (a *App) CompleteStartupLaunch() error {
+	if a.ctx == nil {
+		return fmt.Errorf("window context not ready")
+	}
+	runtime.WindowSetDarkTheme(a.ctx)
+	runtime.WindowSetMinSize(a.ctx, 1100, 700)
+	runtime.WindowShow(a.ctx)
+	runtime.WindowUnminimise(a.ctx)
+	runtime.WindowSetSize(a.ctx, 1400, 900)
+	runtime.WindowCenter(a.ctx)
+	time.Sleep(160 * time.Millisecond)
+	runtime.WindowShow(a.ctx)
+	runtime.WindowUnminimise(a.ctx)
+	runtime.WindowMaximise(a.ctx)
+	return nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -829,16 +855,16 @@ func (a *App) GetTrending(lang string) (interface{}, error) {
 }
 
 // DiscoverAnime returns filtered anime from AniList for Descubrir browsing.
-func (a *App) DiscoverAnime(genre, season string, year int, sort, status string, page int) (interface{}, error) {
+func (a *App) DiscoverAnime(genre, season string, year int, sort, status, format string, page int) (interface{}, error) {
 	started := time.Now()
 	if a.metadata == nil {
 		return nil, fmt.Errorf("metadata not initialized")
 	}
-	cacheKey := fmt.Sprintf("anilist:discover:anime:%s|%s|%d|%s|%s|%d", strings.TrimSpace(genre), strings.TrimSpace(season), year, strings.TrimSpace(sort), strings.TrimSpace(status), page)
+	cacheKey := fmt.Sprintf("anilist:discover:anime:v3:%s|%s|%d|%s|%s|%s|%d", strings.TrimSpace(genre), strings.TrimSpace(season), year, strings.TrimSpace(sort), strings.TrimSpace(status), strings.TrimSpace(format), page)
 	result, origin, err := rememberJSONWithStale[interface{}](cacheKey, 20*time.Minute, 4*time.Hour, func() (interface{}, error) {
-		return a.metadata.DiscoverAnime(genre, season, year, sort, status, page)
+		return a.metadata.DiscoverAnime(genre, season, year, sort, status, format, page)
 	})
-	log.Debug().Str("genre", genre).Str("season", season).Int("year", year).Str("sort", sort).Str("status", status).Int("page", page).Str("cache", origin).Dur("took", time.Since(started)).Msg("DiscoverAnime")
+	log.Debug().Str("genre", genre).Str("season", season).Int("year", year).Str("sort", sort).Str("status", status).Str("format", format).Int("page", page).Str("cache", origin).Dur("took", time.Since(started)).Msg("DiscoverAnime")
 	return result, err
 }
 
@@ -894,16 +920,16 @@ func (a *App) GetAniListMangaCatalogHome(lang string) (map[string][]metadata.Ani
 	return result, err
 }
 
-func (a *App) DiscoverManga(genre string, year int, sort string, page int) (interface{}, error) {
+func (a *App) DiscoverManga(genre string, year int, sort, status, format string, page int) (interface{}, error) {
 	started := time.Now()
 	if a.metadata == nil {
 		return nil, fmt.Errorf("metadata not initialized")
 	}
-	cacheKey := fmt.Sprintf("anilist:discover:manga:%s|%d|%s|%d", strings.TrimSpace(genre), year, strings.TrimSpace(sort), page)
+	cacheKey := fmt.Sprintf("anilist:discover:manga:v2:%s|%d|%s|%s|%s|%d", strings.TrimSpace(genre), year, strings.TrimSpace(sort), strings.TrimSpace(status), strings.TrimSpace(format), page)
 	result, origin, err := rememberJSONWithStale[interface{}](cacheKey, 20*time.Minute, 4*time.Hour, func() (interface{}, error) {
-		return a.metadata.DiscoverManga(genre, year, sort, page)
+		return a.metadata.DiscoverManga(genre, year, sort, status, format, page)
 	})
-	log.Debug().Str("genre", genre).Int("year", year).Str("sort", sort).Int("page", page).Str("cache", origin).Dur("took", time.Since(started)).Msg("DiscoverManga")
+	log.Debug().Str("genre", genre).Int("year", year).Str("sort", sort).Str("status", status).Str("format", format).Int("page", page).Str("cache", origin).Dur("took", time.Since(started)).Msg("DiscoverManga")
 	return result, err
 }
 
@@ -1311,20 +1337,16 @@ func (a *App) GetOnlineAudioVariants(sourceID string, animeID string, episodeID 
 	if a.registry == nil {
 		return result, fmt.Errorf("registry not initialized")
 	}
-	if sourceID != "animegg-en" {
-		return result, nil
-	}
-
 	src, err := a.registry.GetAnime(sourceID)
 	if err != nil {
 		return result, fmt.Errorf("source '%s' not found", sourceID)
 	}
-	gg, ok := src.(*animegg.Extension)
+	audioSource, ok := src.(extensions.AnimeAudioVariantSource)
 	if !ok {
-		return result, fmt.Errorf("source '%s' does not support audio variants", sourceID)
+		return result, nil
 	}
 
-	variants, err := gg.GetAudioVariants(animeID, episodeID)
+	variants, err := audioSource.GetAudioVariants(animeID, episodeID)
 	if err != nil {
 		return result, err
 	}
@@ -1613,17 +1635,20 @@ func (a *App) playbackMode(mode string) string {
 	}
 }
 
-func mediaProxyURL(rawURL, referer string) string {
+func mediaProxyURL(rawURL, referer, cookie string) string {
 	params := url.Values{}
 	params.Set("url", rawURL)
 	if strings.TrimSpace(referer) != "" {
 		params.Set("referer", referer)
 	}
+	if strings.TrimSpace(cookie) != "" {
+		params.Set("cookie", cookie)
+	}
 	return internalServerBaseURL + "/proxy/media?" + params.Encode()
 }
 
-func integratedPlaybackPayload(streamURL, referer, streamKind, title string) map[string]interface{} {
-	proxyURL := mediaProxyURL(streamURL, referer)
+func integratedPlaybackPayload(streamURL, referer, cookie, streamKind, title string) map[string]interface{} {
+	proxyURL := mediaProxyURL(streamURL, referer, cookie)
 	return map[string]interface{}{
 		"launched":      false,
 		"fallback_type": "integrated",
@@ -1634,6 +1659,7 @@ func integratedPlaybackPayload(streamURL, referer, streamKind, title string) map
 		"stream_host":   hostFromURL(streamURL),
 		"referer":       referer,
 		"referer_host":  hostFromURL(referer),
+		"has_cookie":    strings.TrimSpace(cookie) != "",
 		"stream_kind":   firstNonEmptyString(streamKind, inferStreamKind(streamURL)),
 		"title":         title,
 	}
@@ -1782,6 +1808,31 @@ func loadCachedAniListAnimeMetadata(anilistID int) (*metadata.AnimeMetadata, boo
 		return cached, true
 	}
 	if stale, ok := readAppCachedJSON[*metadata.AnimeMetadata](staleAppCacheKey(cacheKey)); ok && stale != nil {
+		return stale, true
+	}
+	return nil, false
+}
+
+func (a *App) loadAniListMangaMetadata(anilistID int) (*metadata.AniListMangaMetadata, error) {
+	if a.metadata == nil || anilistID <= 0 {
+		return nil, nil
+	}
+	cacheKey := fmt.Sprintf("anilist:manga:id:%d", anilistID)
+	result, _, err := rememberJSONWithStale[*metadata.AniListMangaMetadata](cacheKey, 2*time.Hour, 12*time.Hour, func() (*metadata.AniListMangaMetadata, error) {
+		return a.metadata.GetAniListMangaByID(anilistID)
+	})
+	return result, err
+}
+
+func loadCachedAniListMangaMetadata(anilistID int) (*metadata.AniListMangaMetadata, bool) {
+	if anilistID <= 0 {
+		return nil, false
+	}
+	cacheKey := fmt.Sprintf("anilist:manga:id:%d", anilistID)
+	if cached, ok := readAppCachedJSON[*metadata.AniListMangaMetadata](cacheKey); ok && cached != nil {
+		return cached, true
+	}
+	if stale, ok := readAppCachedJSON[*metadata.AniListMangaMetadata](staleAppCacheKey(cacheKey)); ok && stale != nil {
 		return stale, true
 	}
 	return nil, false
@@ -2028,7 +2079,7 @@ func (a *App) OpenOnlineEpisode(sourceID, episodeID, animeID, animeTitle, coverU
 	a.ensurePassiveAnimeTracked(anilistID, malID, animeTitle, "", resolvedCover, 0, 0, "")
 
 	if playbackCtx.PlayerMode == "integrated" {
-		payload := integratedPlaybackPayload(best.URL, best.Referer, streamKind, playbackCtx.EpisodeTitle)
+		payload := integratedPlaybackPayload(best.URL, best.Referer, best.Cookie, streamKind, playbackCtx.EpisodeTitle)
 		payload["resume_sec"] = playbackCtx.ProgressSec
 		payload["duration_sec"] = playbackCtx.DurationSec
 		payload["episode_thumbnail"] = playbackCtx.EpisodeThumb
@@ -2167,7 +2218,7 @@ func (a *App) DiagnoseOnlinePlaybackSource(sourceID, animeID, episodeID string) 
 		return result, nil
 	}
 
-	proxyProbe, proxyErr := server.ProbeMediaProxy(best.URL, best.Referer)
+	proxyProbe, proxyErr := server.ProbeMediaProxy(best.URL, best.Referer, best.Cookie)
 	if proxyProbe != nil {
 		result["proxy_probe"] = proxyProbe
 	}
@@ -2213,13 +2264,13 @@ func (a *App) StreamTorrentMagnet(magnet, displayTitle, playerMode string) (map[
 	}
 	localURL := internalServerBaseURL + "/torrent/stream?id=" + url.QueryEscape(session.ID)
 	if a.playbackMode(playerMode) == "integrated" {
-		return integratedPlaybackPayload(localURL, "", "torrent", session.DisplayTitle), nil
+		return integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle), nil
 	}
 	if a.player == nil {
-		return integratedPlaybackPayload(localURL, "", "torrent", session.DisplayTitle), nil
+		return integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle), nil
 	}
 	if err := a.player.OpenEpisode(localURL, -1, 0, session.DisplayTitle, session.FileName, 0); err != nil {
-		return integratedPlaybackPayload(localURL, "", "torrent", session.DisplayTitle), nil
+		return integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle), nil
 	}
 	return map[string]interface{}{
 		"launched":    true,
@@ -2945,14 +2996,22 @@ func (a *App) GetMangaChaptersSource(sourceID, mangaID, lang string) ([]map[stri
 		log.Error().Err(err).Msg("manga source not found")
 		return nil, err
 	}
+	partial, hydrating := mangaChapterLoadState(sourceID, mangaID)
+	var (
+		chapters []extensions.Chapter
+		origin   string
+	)
 	cacheKey := mangaSourceChapterCacheKey(sourceID, mangaID, normalizedLang)
-	chapters, origin, err := rememberMangaChaptersWithPolicy(cacheKey, func() ([]extensions.Chapter, error) {
+	loaded, cacheOrigin, loadErr := rememberMangaChaptersWithPolicy(cacheKey, func() ([]extensions.Chapter, error) {
 		return src.GetChapters(mangaID, extensions.Language(normalizedLang))
 	})
-	if err != nil {
-		log.Error().Err(err).Str("source", sourceID).Str("manga", mangaID).Str("lang", normalizedLang).Msg("GetChapters error")
-		return nil, fmt.Errorf("failed to load chapters: %w", err)
+	if loadErr != nil {
+		log.Error().Err(loadErr).Str("source", sourceID).Str("manga", mangaID).Str("lang", normalizedLang).Msg("GetChapters error")
+		return nil, fmt.Errorf("failed to load chapters: %w", loadErr)
 	}
+	chapters = loaded
+	origin = cacheOrigin
+	partial, hydrating = mangaChapterLoadState(sourceID, mangaID)
 	out := make([]map[string]interface{}, 0, len(chapters))
 	for _, ch := range chapters {
 		out = append(out, map[string]interface{}{
@@ -2967,6 +3026,8 @@ func (a *App) GetMangaChaptersSource(sourceID, mangaID, lang string) ([]map[stri
 		Str("manga", mangaID).
 		Str("lang", normalizedLang).
 		Str("cache_origin", origin).
+		Bool("partial", partial).
+		Bool("hydrating", hydrating).
 		Int("result_count", len(out)).
 		Dur("took", time.Since(started)).
 		Msg("GetMangaChaptersSource")

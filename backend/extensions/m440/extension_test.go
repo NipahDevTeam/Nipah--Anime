@@ -2,6 +2,7 @@ package m440
 
 import (
 	"testing"
+	"time"
 
 	"miruro/backend/extensions"
 )
@@ -64,6 +65,18 @@ func TestAssessHTMLChapterCompletenessRejectsTeaserMarkers(t *testing.T) {
 	}
 }
 
+func TestAssessHTMLChapterCompletenessRejectsSingletonLatestOnly(t *testing.T) {
+	chapters := []extensions.Chapter{
+		{Number: 69},
+	}
+	body := `<div class="chapter-list"><a href="/manga/returners-magic/69-hz3n8">Capitulo 69</a></div>`
+
+	result := assessHTMLChapterCompleteness(body, chapters)
+	if !result.requiresBrowser || result.mode != "html_truncated" {
+		t.Fatalf("expected singleton latest chapter to require browser fallback, got %#v", result)
+	}
+}
+
 func TestAssessHTMLChapterCompletenessAcceptsDenseSmallSet(t *testing.T) {
 	chapters := []extensions.Chapter{
 		{Number: 1},
@@ -75,6 +88,23 @@ func TestAssessHTMLChapterCompletenessAcceptsDenseSmallSet(t *testing.T) {
 	result := assessHTMLChapterCompleteness(body, chapters)
 	if result.requiresBrowser || result.mode != "html_complete" {
 		t.Fatalf("expected dense chapter set to stay on HTML path, got %#v", result)
+	}
+}
+
+func TestAwaitHydratedChapterListFastBudgetCoversTypicalBrowserHydration(t *testing.T) {
+	ready := make(chan []extensions.Chapter, 1)
+	go func() {
+		time.Sleep(900 * time.Millisecond)
+		ready <- []extensions.Chapter{{ID: "/manga/returners-magic/69-hz3n8", Number: 69}}
+		close(ready)
+	}()
+
+	chapters, ok, waited := awaitHydratedChapterList(ready, fastBrowserWait)
+	if waited {
+		t.Fatalf("expected fast browser wait budget to cover typical hydration")
+	}
+	if !ok || len(chapters) != 1 || chapters[0].Number != 69 {
+		t.Fatalf("expected hydrated chapter list, got ok=%v waited=%v chapters=%#v", ok, waited, chapters)
 	}
 }
 
@@ -138,6 +168,41 @@ func TestGetChapterCacheStateReturnsPartialHydratingFlags(t *testing.T) {
 	partial, hydrating := GetChapterCacheState("/manga/" + slug)
 	if !partial || !hydrating {
 		t.Fatalf("expected partial hydrating cache state, got partial=%v hydrating=%v", partial, hydrating)
+	}
+}
+
+func TestGetChaptersPromotesPartialCacheViaBrowserRetry(t *testing.T) {
+	const slug = "partial-cache-series"
+	storeChapterCacheWithState(slug, []extensions.Chapter{{ID: "/manga/partial-cache-series/9-a", Number: 9}}, partialChapterCacheTTL, true, false)
+	storeBrowserRequirement(slug, browserRequiredCacheTTL)
+	t.Cleanup(func() {
+		chapterCacheMu.Lock()
+		delete(chapterCache, slug)
+		chapterCacheMu.Unlock()
+		browserCacheMu.Lock()
+		delete(browserRequired, slug)
+		browserCacheMu.Unlock()
+	})
+	originalLoadBrowserChapters := loadBrowserChaptersFn
+	loadCalls := 0
+	loadBrowserChaptersFn = func(pageURL, currentSlug string, started time.Time, cacheMiss bool) ([]extensions.Chapter, time.Duration, browserChapterMetrics, error) {
+		loadCalls++
+		return []extensions.Chapter{
+			{ID: "/manga/partial-cache-series/1-a", Number: 1},
+			{ID: "/manga/partial-cache-series/2-b", Number: 2},
+		}, 10 * time.Millisecond, browserChapterMetrics{}, nil
+	}
+	t.Cleanup(func() { loadBrowserChaptersFn = originalLoadBrowserChapters })
+
+	chapters, err := New().GetChapters("/manga/"+slug, extensions.LangSpanish)
+	if err != nil {
+		t.Fatalf("expected stale partial cache to be promotable, got error %v", err)
+	}
+	if loadCalls == 0 {
+		t.Fatalf("expected stale partial cache to trigger browser promotion")
+	}
+	if len(chapters) != 2 || chapters[0].Number != 1 || chapters[1].Number != 2 {
+		t.Fatalf("expected promoted full chapter list, got %#v", chapters)
 	}
 }
 

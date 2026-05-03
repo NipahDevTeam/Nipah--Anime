@@ -46,6 +46,22 @@ func TestPlayerProbeLive(t *testing.T) {
 		{sourceID: "animeav1-es", query: firstEnv("NIPAH_PLAYER_PROBE_QUERY_ANIMEAV1", "Sousou no Frieren"), lang: extensions.LangSpanish},
 		{sourceID: "animeheaven-en", query: firstEnv("NIPAH_PLAYER_PROBE_QUERY_ANIMEHEAVEN", "Frieren"), lang: extensions.LangEnglish},
 	}
+	if only := strings.ToLower(strings.TrimSpace(os.Getenv("NIPAH_PLAYER_PROBE_ONLY"))); only != "" {
+		filtered := make([]struct {
+			sourceID string
+			query    string
+			lang     extensions.Language
+		}, 0, len(providers))
+		for _, provider := range providers {
+			if provider.sourceID == only {
+				filtered = append(filtered, provider)
+			}
+		}
+		if len(filtered) == 0 {
+			t.Fatalf("no live probe provider configured for %q", only)
+		}
+		providers = filtered
+	}
 
 	report := playerProbeReport{
 		GeneratedAt: firstEnv("NIPAH_PLAYER_PROBE_GENERATED_AT", ""),

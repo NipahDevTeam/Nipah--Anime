@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { wails, proxyImage } from '../lib/wails'
 import OnlineAnimeDetail from '../components/ui/OnlineAnimeDetail'
@@ -10,11 +10,22 @@ import {
   rankOnlineSourceHits,
   resolveAniListToJKAnime,
 } from '../lib/onlineAnimeResolver'
+import { extractAniListAnimeSearchMedia } from '../lib/anilistSearch'
+import { normalizeAnimeSourceID } from '../lib/animeSources'
+import { buildPendingAniListSelectedAnime, getInitialSelectedAnimePayload, normalizeSelectedAnimePayload } from '../lib/mediaNavigation'
+import {
+  buildPreferredSourceSettingsPatch,
+  cachePreferredSourcePreference,
+  resolveSavedOnlineSourcePreference,
+} from '../lib/onlineSourcePreferences'
 import { buildExpandedTitleVariants } from '../lib/titleMatching'
 import { isAniListUnavailableErrorMessage } from '../lib/anilistStatus'
+import { buildAnimeCatalogFetchArgs } from '../lib/catalogFilters'
+import { useStableLoadingGate } from '../lib/useStableLoadingGate'
 import VirtualMediaGrid from '../components/ui/VirtualMediaGrid'
 import { useI18n } from '../lib/i18n'
 import { perfEnd, perfMark, perfStart } from '../lib/perfTrace'
+import Gui2OnlineCatalogSurface, { CatalogIcon, Gui2CatalogPaginationControls, PageArrowButton } from '../gui-v2/routes/catalog/Gui2OnlineCatalogSurface'
 
 // Spanish sources: purple family  |  English sources: blue family
 const SOURCE_META = {
@@ -68,6 +79,22 @@ const GENRE_LABELS = {
 }
 
 const GENRES = Object.keys(GENRE_LABELS)
+const CATALOG_PAGE_SIZE = 48
+const ANIME_FORMAT_OPTIONS = [
+  { value: '', label: 'All Types' },
+  { value: 'TV', label: 'TV' },
+  { value: 'MOVIE', label: 'Movie' },
+  { value: 'OVA', label: 'OVA' },
+  { value: 'ONA', label: 'ONA' },
+  { value: 'SPECIAL', label: 'Special' },
+]
+const ANIME_STATUS_OPTIONS = [
+  { value: '', label: 'All Status' },
+  { value: 'RELEASING', label: 'Airing' },
+  { value: 'FINISHED', label: 'Finished' },
+  { value: 'NOT_YET_RELEASED', label: 'Upcoming' },
+  { value: 'HIATUS', label: 'Hiatus' },
+]
 
 function buildYearOptions(lang) {
   const currentYear = new Date().getFullYear()
@@ -79,12 +106,20 @@ function buildYearOptions(lang) {
 }
 
 const YEAR_OPTIONS = buildYearOptions()
+const ANIME_SOURCE_OPTIONS = [
+  { value: 'animeav1-es', label: 'AnimeAV1' },
+  { value: 'jkanime-es', label: 'JKAnime' },
+  { value: 'animeflv-es', label: 'AnimeFLV' },
+  { value: 'animepahe-en', label: 'AnimePahe' },
+  { value: 'animeheaven-en', label: 'AnimeHeaven' },
+  { value: 'animegg-en', label: 'AnimeGG' },
+]
 
 function SourceBadge({ sourceID = 'jkanime-es' }) {
   const meta = SOURCE_META[sourceID] ?? { label: sourceID, color: '#9090a8' }
   return (
     <span
-      className="online-source-badge"
+      className="gui2-catalog-source-badge"
       style={{
         background: `${meta.color}22`,
         color: meta.color,
@@ -122,6 +157,14 @@ function OnlinePosterSkeletonGrid({ count = 10 }) {
   )
 }
 
+function ChevronDownIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path d="M2.5 4.5 6 8l3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 function CustomSelect({ value, onChange, options, placeholder }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -141,10 +184,10 @@ function CustomSelect({ value, onChange, options, placeholder }) {
   const label = selected?.label ?? placeholder ?? ''
 
   return (
-    <div className={`custom-select online-custom-select${open ? ' open' : ''}`} ref={ref}>
+    <div className={`custom-select gui2-catalog-select${open ? ' open' : ''}`} ref={ref}>
       <button className="custom-select-trigger" onClick={() => setOpen(prev => !prev)} type="button">
         <span>{label}</span>
-        <span className="custom-select-arrow">v</span>
+        <span className="custom-select-arrow"><ChevronDownIcon /></span>
       </button>
       {open && (
         <div className="custom-select-dropdown">
@@ -166,27 +209,87 @@ function CustomSelect({ value, onChange, options, placeholder }) {
   )
 }
 
+function GenreMultiSelect({ value, onToggle, options, placeholder, selectionLabel }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (event) => {
+      if (ref.current && !ref.current.contains(event.target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div className={`gui2-catalog-multi-select${open ? ' open' : ''}`} ref={ref}>
+      <button className="custom-select-trigger gui2-catalog-multi-trigger" onClick={() => setOpen((prev) => !prev)} type="button">
+        <span>{value.length > 0 ? selectionLabel : placeholder}</span>
+        <span className="custom-select-arrow"><ChevronDownIcon /></span>
+      </button>
+      {value.length > 0 ? (
+        <div className="gui2-catalog-multi-values">
+          {value.map((genre) => (
+            <button
+              key={genre}
+              type="button"
+              className="gui2-catalog-multi-value"
+              onClick={(event) => {
+                event.stopPropagation()
+                onToggle(genre)
+              }}
+            >
+              <span>{genre}</span>
+              <span className="gui2-catalog-multi-remove" aria-hidden="true">×</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {open ? (
+        <div className="gui2-catalog-multi-dropdown">
+          {options.map((option) => {
+            const active = value.includes(option.value)
+            return (
+              <button
+                key={option.value}
+                type="button"
+                className={`gui2-catalog-multi-option${active ? ' selected' : ''}`}
+                onClick={() => onToggle(option.value)}
+              >
+                <span>{option.label}</span>
+                <span className="gui2-catalog-multi-option-mark" aria-hidden="true">{active ? '✓' : ''}</span>
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function OnlinePosterCard({ cover, title, meta, onClick, badge, busy = false, noCoverLabel = 'no cover' }) {
   return (
     <button
       type="button"
-      className={`online-result-card${busy ? ' busy' : ''}`}
+      className={`gui2-catalog-card${busy ? ' busy' : ''}`}
       onClick={onClick}
       disabled={busy}
       title={title}
     >
       {cover ? (
-        <img src={proxyImage(cover)} alt={title} className="online-result-cover" />
+        <img src={proxyImage(cover)} alt={title} className="gui2-catalog-card-cover" />
       ) : (
-        <div className="online-result-cover online-result-cover-placeholder">{noCoverLabel}</div>
+        <div className="gui2-catalog-card-cover gui2-catalog-card-cover-placeholder">{noCoverLabel}</div>
       )}
-      <div className="online-result-overlay" />
-      <div className="online-result-topline">
+      <div className="gui2-catalog-card-topline">
         {badge}
       </div>
-      <div className="online-result-body">
-        <div className="online-result-title">{title}</div>
-        {meta?.length ? <div className="online-result-meta">{meta}</div> : null}
+      <div className="gui2-catalog-card-body">
+        <div className="gui2-catalog-card-title">{title}</div>
+        {meta?.length ? <div className="gui2-catalog-card-meta">{meta}</div> : null}
       </div>
     </button>
   )
@@ -204,21 +307,22 @@ function getCatalogMeta(media) {
   return parts
 }
 
-async function fetchCatalogPage({ sort, page, genres, season, year }) {
+async function fetchCatalogPage({ sort, page, genres, season, year, format, status }) {
+  const request = buildAnimeCatalogFetchArgs({ sort, page, genres, season, year, format, status })
   let lastError = null
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await wails.discoverAnime(genres.join(','), season, year, sort, '', page)
-    } catch (error) {
-      lastError = error
-      if (attempt === 0) {
-        await new Promise(resolve => setTimeout(resolve, 250))
+  return await (async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await wails.discoverAnime(request.genres, request.season, request.year, request.sort, request.status, request.format, request.page)
+      } catch (error) {
+        lastError = error
+        if (attempt === 0) {
+          await new Promise(resolve => setTimeout(resolve, 250))
+        }
       }
     }
-  }
-
-  throw lastError
+    throw lastError
+  })()
 }
 
 async function fetchCatalogFallback(page, lang = 'es') {
@@ -230,7 +334,7 @@ async function fetchCatalogFallback(page, lang = 'es') {
       Page: {
         media,
         pageInfo: {
-          hasNextPage: page === 1 ? (media.length >= 20) : false,
+          hasNextPage: page === 1 ? (media.length >= CATALOG_PAGE_SIZE) : false,
         },
       },
     },
@@ -246,47 +350,10 @@ function pushAnimeSearchCandidate(list, seen, value) {
 }
 
 function createCatalogSelectedAnime(media, sourceID, selectionToken, perfToken) {
-  const title = getCatalogTitle(media)
-  const coverURL = media?.coverImage?.extraLarge || media?.coverImage?.large || media?.coverImage?.medium || ''
-  return {
-    ...media,
+  return buildPendingAniListSelectedAnime(media, sourceID, {
     selection_token: selectionToken,
     perf_token: perfToken,
-    pending_resolve: true,
-    source_id: sourceID,
-    id: 0,
-    title,
-    anime_title: title,
-    cover_url: coverURL,
-    anilist_id: Number(media?.id || 0),
-    mal_id: Number(media?.idMal || 0),
-    year: Number(media?.seasonYear || media?.startDate?.year || 0),
-    anilistDescription: media?.description || '',
-    anilistBannerImage: media?.bannerImage || '',
-    anilistCoverImage: coverURL,
-    source_resolve_error: '',
-  }
-}
-
-function normalizeSelectedAnimePayload(anime, fallbackSourceID = '') {
-  if (!anime) return anime
-  const sourceID = anime.source_id || fallbackSourceID || ''
-  const sourceAnimeID = anime.id ?? anime.anime_id ?? anime.animeID ?? ''
-  const title = anime.title || anime.anime_title || anime.title_english || anime.title_romaji || anime.title_native || ''
-  const providerCoverURL = anime.cover_url || anime.cover_image || ''
-  const anilistCoverURL = anime.anilistCoverImage || ''
-  const coverURL = (isStrictEnglishAnimeSource(sourceID) && sourceID !== 'animekai-en')
-    ? (anilistCoverURL || providerCoverURL)
-    : (providerCoverURL || anilistCoverURL)
-  return {
-    ...anime,
-    source_id: sourceID,
-    id: sourceAnimeID,
-    anime_id: anime.anime_id ?? sourceAnimeID,
-    title,
-    anime_title: anime.anime_title || title,
-    cover_url: coverURL,
-  }
+  })
 }
 
 function buildAniListSeededAnimeCandidates(query, alt, meta) {
@@ -350,11 +417,14 @@ export default function Search() {
     year: isEnglish ? 'Year' : 'Año',
     genres: isEnglish ? 'Genres' : 'Géneros',
     combineGenres: isEnglish ? 'You can combine multiple genres.' : 'Puedes combinar varios a la vez.',
+    genreSelectionCount: (count) => isEnglish
+      ? `${count} genre${count !== 1 ? 's' : ''} selected`
+      : `${count} genero${count !== 1 ? 's' : ''} seleccionado${count !== 1 ? 's' : ''}`,
     clearFilters: isEnglish ? 'Clear filters' : 'Limpiar filtros',
     sourceSearching: (name) => isEnglish ? `Searching in ${name}...` : `Buscando en ${name}...`,
     noResults: isEnglish ? 'No results' : 'Sin resultados',
     noResultsSource: (query, sourceName, altCount) => isEnglish
-      ? `Could not find "${query}" on ${sourceName}. Try the Japanese or English title.${altCount > 0 ? ` (${altCount} result${altCount !== 1 ? 's' : ''} on another source)` : ''}`
+      ? `Could not find "${query}" in AniList metadata for ${sourceName}. Try the Japanese or English title.`
       : `No se encontró "${query}" en ${sourceName}. Intenta con el título en japonés o en inglés.${altCount > 0 ? ` (${altCount} resultado${altCount !== 1 ? 's' : ''} en otra fuente)` : ''}`,
     foundResults: isEnglish ? 'Search results' : 'Resultados encontrados',
     readyToOpen: (count) => isEnglish
@@ -372,9 +442,12 @@ export default function Search() {
       : 'No se pudieron cargar animes para explorar. Ajusta los filtros o intenta de nuevo en unos segundos.',
     catalogUnavailableTitle: isEnglish ? 'AniList catalog temporarily unavailable' : 'Catálogo de AniList temporalmente no disponible',
     catalogUnavailableDesc: isEnglish
-      ? 'AniList is having upstream API problems right now. You can still search directly in the streaming sources from this page.'
+      ? 'AniList is having upstream API problems right now. Search and catalog browsing will resume after AniList recovers.'
       : 'AniList está teniendo problemas con su API en este momento. Igual puedes buscar directo en las fuentes de streaming desde esta página.',
     loadMore: isEnglish ? 'Load more' : 'Cargar más',
+    previousPage: isEnglish ? 'Previous page' : 'Pagina anterior',
+    nextPage: isEnglish ? 'Next page' : 'Siguiente pagina',
+    pageLabel: isEnglish ? 'Page' : 'Pagina',
     noCover: isEnglish ? 'no cover' : 'sin portada',
     animeOnline: 'Anime',
     findSomething: isEnglish ? 'Find something to watch' : 'Encuentra algo para ver',
@@ -383,14 +456,19 @@ export default function Search() {
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
-  const [selected, setSelected] = useState(() => location.state?.selectedAnime ?? null)
+  const defaultSourceID = appLang === 'en' ? 'animeheaven-en' : 'animeav1-es'
+  const [activeSource, setActiveSource] = useState(defaultSourceID)
+  const [selected, setSelected] = useState(() => getInitialSelectedAnimePayload(location.state, defaultSourceID))
+  const [sourceSettingsReady, setSourceSettingsReady] = useState(false)
   const [detailReturnMode, setDetailReturnMode] = useState('catalog')
   const [resolvingKey, setResolvingKey] = useState('')
-  const [activeSource, setActiveSource] = useState(() => (appLang === 'en' ? 'animeheaven-en' : 'animeav1-es'))
   const [catalogSort, setCatalogSort] = useState('TRENDING_DESC')
   const [catalogGenres, setCatalogGenres] = useState([])
   const [catalogSeason, setCatalogSeason] = useState('')
   const [catalogYear, setCatalogYear] = useState(0)
+  const [catalogFormat, setCatalogFormat] = useState('')
+  const [catalogStatus, setCatalogStatus] = useState('')
+  const [catalogPage, setCatalogPage] = useState(1)
   const [preferredAudio, setPreferredAudio] = useState('sub')
   const inputRef = useRef(null)
   const searchRequestRef = useRef(0)
@@ -398,6 +476,7 @@ export default function Search() {
   const catalogPerfTokenRef = useRef('')
   const hasPendingNavigationIntent = Boolean(
     location.state?.selectedAnime ||
+    location.state?.seedAniListMedia ||
     location.state?.autoOpen ||
     location.state?.preSearch ||
     Number(location.state?.preferredAnilistID || 0) > 0
@@ -412,9 +491,24 @@ export default function Search() {
     selectionTaskRef.current += 1
   }, [])
 
+  const persistAnimeSourcePreference = useCallback(async (nextSourceID) => {
+    const normalizedSourceID = normalizeAnimeSourceID(nextSourceID)
+    if (!normalizedSourceID) return
+
+    setActiveSource(normalizedSourceID)
+    cachePreferredSourcePreference('anime', appLang, normalizedSourceID)
+    await wails.saveSettings(
+      buildPreferredSourceSettingsPatch('anime', appLang, normalizedSourceID),
+    ).catch(() => {})
+  }, [appLang])
+
   const openResolvedHit = useCallback(async (hit, options = {}) => {
     cancelPendingSearches()
     cancelPendingSelectionTasks()
+    const aniListID = Number(hit?.anilist_id || 0)
+    if (aniListID > 0) {
+      void wails.getAniListAnimeByID(aniListID).catch(() => {})
+    }
     const selectionToken = selectionTaskRef.current
     const perfToken = perfStart('anime-detail', `${hit?.source_id || activeSource}:${hit?.id || 'direct'}:${selectionToken}`, {
       source_id: hit?.source_id || activeSource,
@@ -451,146 +545,20 @@ export default function Search() {
     }
   }, [activeSource, appLang, cancelPendingSearches, cancelPendingSelectionTasks, ui.enrichError])
 
-  const performSearch = useCallback(async (rawQuery, opts = {}) => {
-    const {
-      alt = '',
-      clearSelected = true,
-      openFirst = false,
-      preferredAnilistID = 0,
-      silent = false,
-      returnMode = 'results',
-    } = opts
-
-    const term = rawQuery?.trim()
-    if (!term) return []
-    const requestID = ++searchRequestRef.current
-
-    setQuery(term)
-    setLoading(true)
-    setSearched(false)
-    if (clearSelected) setSelected(null)
-
-    try {
-      let candidates = buildAniListSeededAnimeCandidates(term, alt, null)
-      try {
-        const aniListSearch = await wails.searchAniList(term, appLang)
-        const media = aniListSearch?.data?.Page?.media ?? []
-        const seeded = buildAniListSearchMediaCandidates(term, alt, media)
-        if (seeded.length > 0) {
-          candidates = seeded
-        }
-      } catch {}
-      candidates = candidates.slice(0, preferredAnilistID > 0 ? 10 : 8)
-      const aggregateResults = []
-      const seen = new Set()
-      let preferredMatch = null
-      let lastSourceError = null
-
-      for (const candidate of candidates) {
-        let res
-        try {
-          res = await wails.searchOnline(candidate, activeSource)
-        } catch (error) {
-          lastSourceError = error
-          continue
-        }
-        if (requestID !== searchRequestRef.current) return []
-        const currentResults = res ?? []
-
-        for (const item of currentResults) {
-          const key = `${item.source_id ?? activeSource}:${item.id}`
-          if (!seen.has(key)) {
-            seen.add(key)
-            aggregateResults.push(item)
-          }
-        }
-
-        if (preferredAnilistID > 0) {
-          const rankedCurrentResults = rankOnlineSourceHits(currentResults, candidates, {
-            strictSeason: isStrictEnglishAnimeSource(activeSource),
-            preferredAudio,
-          }).slice(0, 6)
-          for (const item of rankedCurrentResults) {
-            try {
-              const enriched = await enrichJKAnimeHit(item, wails, appLang)
-              if (requestID !== searchRequestRef.current) return []
-              if (Number(enriched?.anilist_id || 0) === preferredAnilistID) {
-                preferredMatch = enriched
-                break
-              }
-            } catch {}
-          }
-          if (preferredMatch) break
-        }
-      }
-
-      if (!preferredMatch && aggregateResults.length === 0 && lastSourceError) {
-        throw lastSourceError
-      }
-
-      const finalResults = rankOnlineSourceHits(aggregateResults, candidates, {
-        strictSeason: isStrictEnglishAnimeSource(activeSource),
-        preferredAudio,
-      })
-      if (requestID !== searchRequestRef.current) return []
-      setResults(finalResults)
-
-      if (preferredMatch) {
-        setDetailReturnMode(returnMode)
-        setSelected(normalizeSelectedAnimePayload(preferredMatch, activeSource))
-      } else if (openFirst && finalResults.length > 0) {
-        await openResolvedHit(finalResults[0], { returnMode })
-      }
-
-      if (!silent && finalResults.length === 0) {
-        toastError(ui.notFoundAny(term))
-      }
-
-      return finalResults
-    } catch (e) {
-      if (requestID !== searchRequestRef.current) return []
-      setResults([])
-      const msg = e?.message ?? String(e)
-      if (msg.includes('network') || msg.includes('timeout') || msg.includes('fetch')) {
-        toastError(ui.offline)
-      } else {
-        toastError(ui.searchError(msg))
-      }
-      return []
-    } finally {
-      if (requestID === searchRequestRef.current) {
-        setLoading(false)
-        setSearched(true)
-      }
-    }
-  }, [activeSource, appLang, openResolvedHit, preferredAudio])
-
-  useEffect(() => {
-    let cancelled = false
-    wails.getSettings()
-      .then((settings) => {
-        if (cancelled) return
-        const value = String(settings?.preferred_audio ?? 'sub').trim().toLowerCase()
-        setPreferredAudio(value === 'dub' ? 'dub' : 'sub')
-      })
-      .catch(() => {
-        if (!cancelled) setPreferredAudio('sub')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const resolveAniListMedia = useCallback(async (media, key) => {
+  const resolveAniListMedia = useCallback(async (media, key, options = {}) => {
     cancelPendingSearches()
     cancelPendingSelectionTasks()
+    const aniListID = Number(media?.id || media?.anilist_id || 0)
+    if (aniListID > 0) {
+      void wails.getAniListAnimeByID(aniListID).catch(() => {})
+    }
     const selectionToken = selectionTaskRef.current
     const perfToken = perfStart('anime-detail', `catalog:${media?.id || key}:${selectionToken}`, {
       anilist_id: Number(media?.id || 0),
       source_id: activeSource,
     })
     setResolvingKey(key)
-    setDetailReturnMode('catalog')
+    setDetailReturnMode(options.returnMode ?? 'catalog')
     setSelected(createCatalogSelectedAnime(media, activeSource, selectionToken, perfToken))
     perfMark(perfToken, 'selected-shell', {
       anilist_id: Number(media?.id || 0),
@@ -603,7 +571,7 @@ export default function Search() {
       if (hit) {
         setSelected((current) => {
           if (!current || current.selection_token !== selectionToken) return current
-        return {
+          return {
             ...normalizeSelectedAnimePayload(current, activeSource),
             ...normalizeSelectedAnimePayload(hit, activeSource),
             selection_token: selectionToken,
@@ -632,67 +600,165 @@ export default function Search() {
     }
   }, [activeSource, appLang, cancelPendingSearches, cancelPendingSelectionTasks, ui])
 
-  const hasCatalogFilters = catalogGenres.length > 0 || Boolean(catalogSeason) || Boolean(catalogYear)
+  const performSearch = useCallback(async (rawQuery, opts = {}) => {
+    const {
+      alt = '',
+      clearSelected = true,
+      openFirst = false,
+      preferredAnilistID = 0,
+      silent = false,
+      returnMode = 'results',
+    } = opts
 
-  const starterFeedQuery = useQuery({
-    queryKey: ['anime-starter-feed', appLang],
-    queryFn: async () => {
-      const res = await wails.getTrending(appLang)
-      return res?.data?.Page?.media ?? []
-    },
-    staleTime: 10 * 60_000,
-    gcTime: 30 * 60_000,
-    placeholderData: previousData => previousData,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    retry: 1,
-    enabled: isCatalogBrowseMode && !hasCatalogFilters,
-  })
+    const term = rawQuery?.trim()
+    if (!term) return []
+    const requestID = ++searchRequestRef.current
+
+    setQuery(term)
+    setLoading(true)
+    setSearched(false)
+    if (clearSelected) setSelected(null)
+
+    try {
+      const aniListSearch = await wails.searchAniList(term, appLang)
+      const media = extractAniListAnimeSearchMedia(aniListSearch)
+      const seen = new Set()
+      const finalResults = media
+        .filter((item) => {
+          const id = Number(item?.id || item?.anilist_id || 0)
+          if (id <= 0 || seen.has(id)) return false
+          seen.add(id)
+          return true
+        })
+        .slice(0, preferredAnilistID > 0 ? 12 : 10)
+      if (requestID !== searchRequestRef.current) return []
+      setResults(finalResults)
+
+      const preferredMatch = preferredAnilistID > 0
+        ? finalResults.find((item) => Number(item?.id || item?.anilist_id || 0) === preferredAnilistID) || null
+        : null
+
+      if (preferredMatch) {
+        await resolveAniListMedia(preferredMatch, `search-${preferredAnilistID}`, { returnMode })
+      } else if (openFirst && finalResults.length > 0) {
+        await resolveAniListMedia(finalResults[0], `search-${finalResults[0]?.id || 0}`, { returnMode })
+      }
+
+      if (!silent && finalResults.length === 0) {
+        toastError(ui.notFoundAny(term))
+      }
+
+      return finalResults
+    } catch (e) {
+      if (requestID !== searchRequestRef.current) return []
+      setResults([])
+      const msg = e?.message ?? String(e)
+      if (isAniListUnavailableErrorMessage(e)) {
+        toastError(ui.catalogUnavailableDesc)
+      } else if (msg.includes('network') || msg.includes('timeout') || msg.includes('fetch')) {
+        toastError(ui.offline)
+      } else {
+        toastError(ui.searchError(msg))
+      }
+      return []
+    } finally {
+      if (requestID === searchRequestRef.current) {
+        setLoading(false)
+        setSearched(true)
+      }
+    }
+  }, [appLang, resolveAniListMedia, ui])
 
   useEffect(() => {
-    setActiveSource((current) => {
-      const esSourceIDs = ['jkanime-es', 'animeflv-es', 'animeav1-es']
-      const enSourceIDs = ['animepahe-en', 'animeheaven-en', 'animegg-en']
-      if (appLang === 'en') {
-        if (esSourceIDs.includes(current) || current === 'animekai-en') return 'animegg-en'
-        return current
-      }
-      return enSourceIDs.includes(current) ? 'animeav1-es' : current
-    })
-  }, [appLang])
+    let cancelled = false
+    setSourceSettingsReady(false)
 
-  const catalogQuery = useInfiniteQuery({
-    queryKey: ['anime-catalog', appLang, catalogSort, catalogGenres.join(','), catalogSeason, catalogYear],
-    initialPageParam: 1,
-    queryFn: async ({ pageParam }) => {
+    wails.getSettings()
+      .then((settings) => {
+        if (cancelled) return
+        const preferredAudioValue = String(settings?.preferred_audio ?? 'sub').trim().toLowerCase()
+        const preferredSourceID = resolveSavedOnlineSourcePreference({
+          mediaType: 'anime',
+          lang: appLang,
+          settings,
+          fallbackSourceID: defaultSourceID,
+          normalizeSourceID: normalizeAnimeSourceID,
+        })
+        setPreferredAudio(preferredAudioValue === 'dub' ? 'dub' : 'sub')
+        setActiveSource(preferredSourceID)
+        cachePreferredSourcePreference('anime', appLang, preferredSourceID)
+        setSourceSettingsReady(true)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setPreferredAudio('sub')
+        setActiveSource(defaultSourceID)
+        setSourceSettingsReady(true)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [appLang, defaultSourceID])
+
+  const hasCatalogFilters = catalogGenres.length > 0 || Boolean(catalogSeason) || Boolean(catalogYear) || Boolean(catalogFormat) || Boolean(catalogStatus)
+
+  useEffect(() => {
+    setSelected((current) => {
+      if (!current?.pending_resolve || current.source_id === activeSource) return current
+      return {
+        ...current,
+        source_id: activeSource,
+      }
+    })
+  }, [activeSource])
+
+  useEffect(() => {
+    setCatalogPage(1)
+  }, [appLang, catalogFormat, catalogGenres, catalogSeason, catalogSort, catalogStatus, catalogYear])
+
+  const catalogQuery = useQuery({
+    queryKey: ['anime-catalog', appLang, catalogSort, catalogGenres.join(','), catalogSeason, catalogYear, catalogPage, catalogFormat, catalogStatus],
+    queryFn: async () => {
       try {
         const res = await fetchCatalogPage({
           sort: catalogSort,
-          page: pageParam,
+          page: catalogPage,
           genres: catalogGenres,
           season: catalogSeason,
           year: catalogYear,
+          format: catalogFormat,
+          status: catalogStatus,
         })
         const pageData = res?.data?.Page
+        const media = pageData?.media ?? []
+        if (catalogPage === 1 && catalogGenres.length === 0 && !catalogSeason && !catalogYear && !catalogFormat && !catalogStatus && media.length === 0) {
+          const fallback = await fetchCatalogFallback(catalogPage, appLang)
+          const fallbackPage = fallback?.data?.Page
+          return {
+            media: fallbackPage?.media ?? [],
+            hasNextPage: fallbackPage?.pageInfo?.hasNextPage ?? false,
+            page: catalogPage,
+          }
+        }
         return {
-          media: pageData?.media ?? [],
+          media,
           hasNextPage: pageData?.pageInfo?.hasNextPage ?? false,
-          page: pageParam,
+          page: catalogPage,
         }
       } catch (error) {
-        if (pageParam !== 1 || catalogGenres.length || catalogSeason || catalogYear) {
+        if (catalogPage !== 1 || catalogGenres.length || catalogSeason || catalogYear || catalogFormat || catalogStatus) {
           throw error
         }
-        const res = await fetchCatalogFallback(pageParam, appLang)
+        const res = await fetchCatalogFallback(catalogPage, appLang)
         const pageData = res?.data?.Page
         return {
           media: pageData?.media ?? [],
           hasNextPage: pageData?.pageInfo?.hasNextPage ?? false,
-          page: pageParam,
+          page: catalogPage,
         }
       }
     },
-    getNextPageParam: (lastPage, allPages) => lastPage?.hasNextPage ? allPages.length + 1 : undefined,
     staleTime: 20 * 60_000,
     gcTime: 45 * 60_000,
     placeholderData: previousData => previousData,
@@ -710,22 +776,24 @@ export default function Search() {
     }
   }, [catalogAniListUnavailable, catalogQuery.error, ui.catalogError])
 
-  const catalog = useMemo(
-    () => (catalogQuery.data?.pages ?? []).flatMap((page) => page.media ?? []),
-    [catalogQuery.data],
-  )
-  const starterCatalog = starterFeedQuery.data ?? []
-  const displayedCatalog = catalog.length > 0 ? catalog : (!hasCatalogFilters ? starterCatalog : [])
+  const catalogItems = catalogQuery.data?.media ?? []
+  const displayedCatalog = useMemo(() => catalogItems, [catalogItems])
   const catalogLoading = displayedCatalog.length === 0 && (
     catalogQuery.isLoading
     || catalogQuery.isFetching
-    || (!hasCatalogFilters && starterFeedQuery.isLoading)
   )
-  const catalogFetchingMore = catalogQuery.isFetchingNextPage
-  const catalogHasNext = Boolean(catalogQuery.hasNextPage)
+  const catalogHasNext = Boolean(catalogQuery.data?.hasNextPage)
+  const showSearchSkeleton = useStableLoadingGate(
+    loading || hasPendingNavigationIntent,
+    { delayMs: 0, minVisibleMs: 320 },
+  )
+  const showCatalogSkeleton = useStableLoadingGate(
+    isCatalogBrowseMode && catalogLoading,
+    { delayMs: 0, minVisibleMs: 280 },
+  )
 
   useEffect(() => {
-    const perfKey = [appLang, catalogSort, catalogGenres.join(','), catalogSeason, catalogYear].join(':')
+    const perfKey = [appLang, catalogSort, catalogGenres.join(','), catalogSeason, catalogYear, catalogFormat, catalogStatus].join(':')
     if (!isCatalogBrowseMode) {
       if (catalogPerfTokenRef.current) {
         perfEnd(catalogPerfTokenRef.current, 'cancelled')
@@ -743,30 +811,54 @@ export default function Search() {
         genres: catalogGenres.length,
         season: catalogSeason || '',
         year: catalogYear || 0,
+        page: catalogPage,
+        format: catalogFormat || '',
+        status: catalogStatus || '',
       })
       catalogPerfTokenRef.current = nextToken
       perfMark(nextToken, 'initial-paint')
     }
-  }, [appLang, catalogGenres, catalogSeason, catalogSort, catalogYear, isCatalogBrowseMode])
+  }, [appLang, catalogFormat, catalogGenres, catalogPage, catalogSeason, catalogSort, catalogStatus, catalogYear, isCatalogBrowseMode])
 
   useEffect(() => {
     if (!catalogPerfTokenRef.current || displayedCatalog.length === 0) return
     perfEnd(catalogPerfTokenRef.current, 'catalog-ready', {
       items: displayedCatalog.length,
-      starter_feed: catalog.length === 0,
+      page: catalogPage,
     })
     catalogPerfTokenRef.current = ''
-  }, [catalog.length, displayedCatalog.length])
+  }, [catalogPage, displayedCatalog.length])
 
   useEffect(() => {
     const navState = location.state
     if (!navState) return
+    if (!sourceSettingsReady && (navState.seedAniListMedia || navState.preSearch)) return
 
     navigate(location.pathname, { replace: true, state: null })
 
     if (navState.selectedAnime) {
       setDetailReturnMode('catalog')
       setSelected(normalizeSelectedAnimePayload(navState.selectedAnime, activeSource))
+      return
+    }
+
+    if (navState.seedAniListMedia) {
+      void (async () => {
+        const aniListID = Number(
+          navState.seedAniListMedia?.id
+          || navState.seedAniListMedia?.anilist_id
+          || navState.preferredAnilistID
+          || 0,
+        )
+        const hydratedMedia = aniListID > 0 ? await wails.getAniListAnimeByID(aniListID).catch(() => null) : null
+        await resolveAniListMedia(
+          hydratedMedia || {
+            ...navState.seedAniListMedia,
+            ...(aniListID > 0 ? { id: aniListID, anilist_id: aniListID } : {}),
+          },
+          `nav-seed-${aniListID || navState.seedAniListMedia?.id || 'anime'}`,
+        )
+      })()
       return
     }
 
@@ -784,7 +876,22 @@ export default function Search() {
         silent: true,
       })
     }
-  }, [location.pathname, location.state, navigate, openResolvedHit, performSearch])
+  }, [activeSource, location.pathname, location.state, navigate, openResolvedHit, performSearch, resolveAniListMedia, sourceSettingsReady])
+
+  const handleActiveSourceChange = useCallback((nextSourceID) => {
+    const normalizedSourceID = normalizeAnimeSourceID(nextSourceID)
+    if (!normalizedSourceID || normalizedSourceID === activeSource) return
+    void persistAnimeSourcePreference(normalizedSourceID)
+  }, [activeSource, persistAnimeSourcePreference])
+
+  const handleAnimeChange = useCallback((nextAnime) => {
+    if (!nextAnime) return
+    const nextSourceID = normalizeAnimeSourceID(nextAnime?.source_id || activeSource)
+    setSelected(normalizeSelectedAnimePayload(nextAnime, nextSourceID))
+    if (nextSourceID && nextSourceID !== activeSource) {
+      void persistAnimeSourcePreference(nextSourceID)
+    }
+  }, [activeSource, persistAnimeSourcePreference])
 
   const handleBackFromDetail = useCallback(() => {
     cancelPendingSearches()
@@ -839,41 +946,128 @@ export default function Search() {
     setCatalogYear(Number(value) || 0)
   }, [])
 
+  const handleFormatChange = useCallback((value) => {
+    setCatalogFormat(value)
+  }, [])
+
+  const handleStatusChange = useCallback((value) => {
+    setCatalogStatus(value)
+  }, [])
+
   const clearCatalogFilters = useCallback(() => {
     setCatalogGenres([])
     setCatalogSeason('')
     setCatalogYear(0)
+    setCatalogFormat('')
+    setCatalogStatus('')
     setCatalogSort('TRENDING_DESC')
   }, [])
 
-  const handleLoadMore = useCallback(() => {
-    if (catalogFetchingMore || !catalogHasNext) return
-    void catalogQuery.fetchNextPage()
-  }, [catalogFetchingMore, catalogHasNext, catalogQuery])
+  const handleNextPage = useCallback(() => {
+    if (!catalogHasNext || catalogQuery.isFetching) return
+    setCatalogPage((current) => current + 1)
+  }, [catalogHasNext, catalogQuery.isFetching])
+
+    const handlePreviousPage = useCallback(() => {
+      setCatalogPage((current) => Math.max(1, current - 1))
+    }, [])
+    const handlePageJump = useCallback((page) => {
+      const nextPage = Number(page) || 1
+      if (catalogQuery.isFetching || nextPage < 1 || nextPage === catalogPage) return
+      setCatalogPage(nextPage)
+    }, [catalogPage, catalogQuery.isFetching])
 
   const catalogSummary = [
-    ui.postersLoaded(displayedCatalog.length),
-    catalog.length === 0 && displayedCatalog.length > 0 && !hasCatalogFilters
-      ? ui.directExplore
-      : (hasCatalogFilters ? ui.filtersActive : ui.directExplore),
+    `${ui.pageLabel} ${catalogPage}`,
+    `${displayedCatalog.length}/${CATALOG_PAGE_SIZE}`,
+    hasCatalogFilters ? ui.filtersActive : ui.directExplore,
   ].join(' / ')
   const activeSourceLabel = SOURCE_META[activeSource]?.label ?? activeSource
+  const sourceSummaryValue = (
+    <div className="gui2-catalog-source-display">
+      <span className="gui2-catalog-source-display-icon"><CatalogIcon kind="language" /></span>
+      <span>{activeSourceLabel}</span>
+    </div>
+  )
+  const resultsSummary = searched
+    ? `${results.length} ${isEnglish ? 'results' : 'resultados'}`
+    : `${displayedCatalog.length} ${isEnglish ? 'results' : 'resultados'}`
+  const pageSummary = `${ui.pageLabel} ${catalogPage}`
+  const activeFilterTags = [
+    { label: 'Source', value: activeSourceLabel },
+    ...catalogGenres.map((genre) => ({ label: isEnglish ? 'Genre' : 'Genero', value: GENRE_LABELS[genre]?.[appLang] ?? genre })),
+    ...(catalogSeason ? [{ label: isEnglish ? 'Season' : 'Temporada', value: seasonOptions.find((item) => item.value === catalogSeason)?.label ?? catalogSeason }] : []),
+    ...(catalogYear ? [{ label: isEnglish ? 'Year' : 'Ano', value: String(catalogYear) }] : []),
+    ...(catalogFormat ? [{ label: isEnglish ? 'Format' : 'Formato', value: ANIME_FORMAT_OPTIONS.find((item) => item.value === catalogFormat)?.label ?? catalogFormat }] : []),
+    ...(catalogStatus ? [{ label: isEnglish ? 'Status' : 'Estado', value: ANIME_STATUS_OPTIONS.find((item) => item.value === catalogStatus)?.label ?? catalogStatus }] : []),
+  ]
+  const animeCatalogFilters = [
+      {
+        key: 'genre',
+        icon: 'genre',
+        label: isEnglish ? 'Genre' : 'Genero',
+        control: (
+          <GenreMultiSelect
+            value={catalogGenres}
+            onToggle={toggleGenre}
+            options={GENRES.map((genre) => ({
+              value: genre,
+              label: GENRE_LABELS[genre]?.[appLang] ?? GENRE_LABELS[genre]?.es ?? genre,
+            }))}
+            placeholder={ui.genres}
+            selectionLabel={ui.genreSelectionCount(catalogGenres.length)}
+          />
+        ),
+        wide: true,
+      },
+    {
+      key: 'season-year',
+      icon: 'season',
+      label: isEnglish ? 'Year / Season' : 'Ano / Temporada',
+      control: (
+        <div className="gui2-catalog-inline-controls">
+          <CustomSelect value={catalogYear} onChange={handleYearChange} options={yearOptions} placeholder={ui.year} />
+          <CustomSelect value={catalogSeason} onChange={handleSeasonChange} options={seasonOptions} placeholder={ui.season} />
+        </div>
+      ),
+    },
+    {
+      key: 'format',
+      icon: 'format',
+      label: isEnglish ? 'Format' : 'Formato',
+      control: <CustomSelect value={catalogFormat} onChange={handleFormatChange} options={ANIME_FORMAT_OPTIONS} placeholder={isEnglish ? 'All Types' : 'Todos'} />,
+    },
+    {
+      key: 'status',
+      icon: 'status',
+      label: isEnglish ? 'Status' : 'Estado',
+      control: <CustomSelect value={catalogStatus} onChange={handleStatusChange} options={ANIME_STATUS_OPTIONS} placeholder={isEnglish ? 'All Status' : 'Todos'} />,
+    },
+    {
+      key: 'sort',
+      icon: 'sort',
+      label: isEnglish ? 'Sort' : 'Orden',
+      control: <CustomSelect value={catalogSort} onChange={handleCatalogSort} options={sortOptions} placeholder={ui.order} />,
+    },
+    {
+      key: 'source',
+      icon: 'language',
+      label: isEnglish ? 'Language / Source' : 'Idioma / Fuente',
+      control: <CustomSelect value={activeSource} onChange={handleActiveSourceChange} options={ANIME_SOURCE_OPTIONS} placeholder={isEnglish ? 'All Sources' : 'Todas'} />,
+    },
+  ]
   const searchSummaryPills = searched
     ? [
         activeSourceLabel,
-        isEnglish ? `${results.length} source matches` : `${results.length} coincidencias`,
-        catalogAniListUnavailable
-          ? (isEnglish ? 'AniList fallback active' : 'Fallback de AniList activo')
-          : (isEnglish ? 'Direct source search' : 'Busqueda directa por fuente'),
+        isEnglish ? `${results.length} AniList result${results.length !== 1 ? 's' : ''}` : `${results.length} resultado${results.length !== 1 ? 's' : ''} de AniList`,
+        isEnglish ? 'Metadata first, source on open' : 'Metadata primero, fuente al abrir',
       ]
     : [
         activeSourceLabel,
         isEnglish ? `${displayedCatalog.length} titles visible` : `${displayedCatalog.length} titulos visibles`,
         hasCatalogFilters
           ? (isEnglish ? 'Filters shaping the feed' : 'Filtros afinando el feed')
-          : (catalog.length === 0 && displayedCatalog.length > 0
-              ? (isEnglish ? 'Starter feed ready first' : 'Feed inicial listo primero')
-              : (isEnglish ? 'Discover mode active' : 'Modo descubrir activo')),
+          : (isEnglish ? 'Discover mode active' : 'Modo descubrir activo'),
       ]
 
   if (selected) {
@@ -881,256 +1075,144 @@ export default function Search() {
       <OnlineAnimeDetail
         anime={selected}
         onBack={handleBackFromDetail}
-        onAnimeChange={(nextAnime) => setSelected(normalizeSelectedAnimePayload(nextAnime, nextAnime?.source_id || activeSource))}
+        onAnimeChange={handleAnimeChange}
       />
     )
   }
 
   return (
-    <div className="fade-in online-directory-page">
-      <section className="online-directory-shell">
-        <header className="online-directory-toolbar">
-          <div className="online-directory-titleblock">
-            <span className="online-directory-kicker">{ui.animeOnline}</span>
-          </div>
-
-          <div className="online-directory-controls">
-            <div className="online-directory-searchbar">
-              <input
-                ref={inputRef}
-                className="online-directory-searchinput"
-                placeholder={ui.searchPlaceholder}
-                value={query}
-                onChange={handleQueryChange}
-                onKeyDown={handleKey}
-                autoFocus
-              />
-              <button
-                className="btn btn-primary online-directory-searchbtn"
-                onClick={handleSearch}
-                disabled={loading || !query.trim()}
-              >
-                {loading ? ui.searching : ui.searchButton}
-              </button>
-            </div>
-
-            <div className="online-directory-meta">
-              <div className="online-directory-upper">
-                <div className="online-directory-badges">
-                  {[
-                    { id: 'jkanime-es',     label: 'JKAnime' },
-                    { id: 'animeflv-es',    label: 'AnimeFLV' },
-                  { id: 'animeav1-es',    label: 'AnimeAV1' },
-                    { id: 'animepahe-en',   label: 'AnimePahe' },
-                    { id: 'animeheaven-en', label: 'AnimeHeaven' },
-                    { id: 'animegg-en',     label: 'AnimeGG' },
-                  ].map(src => (
-                    <button
-                      key={src.id}
-                      type="button"
-                      className={`online-source-toggle${activeSource === src.id ? ' active' : ''}`}
-                      style={activeSource === src.id ? {
-                        background: `${SOURCE_META[src.id]?.color ?? '#f5a623'}33`,
-                        borderColor: SOURCE_META[src.id]?.color ?? '#f5a623',
-                        color: SOURCE_META[src.id]?.color ?? '#f5a623',
-                      } : {}}
-                      onClick={() => {
-                        cancelPendingSearches()
-                        setActiveSource(src.id)
-                      }}
-                    >
-                      {src.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="online-directory-actions">
-                  <div className="online-directory-filter-group">
-                    <span className="online-directory-sortlabel">{ui.order}</span>
-                    <CustomSelect
-                      value={catalogSort}
-                      onChange={handleCatalogSort}
-                      options={sortOptions}
-                      placeholder={ui.order}
-                    />
-                  </div>
-
-                  <div className="online-directory-filter-group">
-                    <span className="online-directory-sortlabel">{ui.season}</span>
-                    <CustomSelect
-                      value={catalogSeason}
-                      onChange={handleSeasonChange}
-                      options={seasonOptions}
-                      placeholder={ui.season}
-                    />
-                  </div>
-
-                  <div className="online-directory-filter-group">
-                    <span className="online-directory-sortlabel">{ui.year}</span>
-                    <CustomSelect
-                      value={catalogYear}
-                      onChange={handleYearChange}
-                      options={yearOptions}
-                      placeholder={ui.year}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="online-directory-genrebar">
-                <div className="online-directory-genrecopy">
-                  <span className="online-directory-sortlabel">{ui.genres}</span>
-                  <span className="online-directory-note">{ui.combineGenres}</span>
-                </div>
-
-                <div className="online-directory-genrepills">
-                  {GENRES.map((genre) => {
-                    const active = catalogGenres.includes(genre)
-                    return (
-                      <button
-                        key={genre}
-                        type="button"
-                        className={`online-genre-pill${active ? ' active' : ''}`}
-                        onClick={() => toggleGenre(genre)}
-                      >
-                        {GENRE_LABELS[genre]?.[appLang] ?? GENRE_LABELS[genre]?.es ?? genre}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {hasCatalogFilters ? (
-                  <button type="button" className="btn btn-ghost online-directory-clearbtn" onClick={clearCatalogFilters}>
-                    {ui.clearFilters}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <div className="nipah-summary-strip online-summary-strip">
-          {searchSummaryPills.map((pill) => <span key={pill} className="nipah-summary-pill">{pill}</span>)}
+    <Gui2OnlineCatalogSurface
+      title={isEnglish ? 'Anime Online' : 'Anime Online'}
+      description={isEnglish ? 'Stream thousands of anime shows and movies in high quality.' : 'Ve miles de animes y peliculas en alta calidad.'}
+      accentText={isEnglish ? 'Updated daily.' : 'Actualizado cada dia.'}
+      searchControl={(
+        <div className="gui2-catalog-query">
+          <span className="gui2-catalog-query-icon"><CatalogIcon kind="search" /></span>
+          <input
+            ref={inputRef}
+            className="gui2-catalog-query-input"
+            placeholder={ui.searchPlaceholder}
+            value={query}
+            onChange={handleQueryChange}
+            onKeyDown={handleKey}
+          />
+          <button
+            type="button"
+            className="gui2-catalog-query-btn"
+            onClick={handleSearch}
+            disabled={loading || !query.trim()}
+          >
+            {loading ? ui.searching : ui.searchButton}
+          </button>
         </div>
+      )}
+      sourceSummaryLabel={isEnglish ? 'Source' : 'Fuente'}
+      sourceSummaryValue={sourceSummaryValue}
+      resultsSummary={resultsSummary}
+      pageSummary={pageSummary}
+      topPagination={(
+        <div className="gui2-catalog-top-pagination">
+          <PageArrowButton direction="prev" onClick={handlePreviousPage} disabled={catalogPage === 1 || catalogQuery.isFetching || searched} label={ui.previousPage} />
+          <PageArrowButton direction="next" onClick={handleNextPage} disabled={!catalogHasNext || catalogQuery.isFetching || searched} label={ui.nextPage} />
+        </div>
+      )}
+      filters={animeCatalogFilters}
+      activeFilters={activeFilterTags}
+      onClearFilters={hasCatalogFilters ? clearCatalogFilters : null}
+      actionLabel={ui.clearFilters}
+      bodyTitle={searched ? ui.foundResults : ui.exploreTitle}
+      bodySubtitle={searched ? ui.readyToOpen(results.length) : catalogSummary}
+      body={(() => {
+        if (showSearchSkeleton) {
+          return <OnlinePosterSkeletonGrid count={8} />
+        }
 
-        {loading ? (
-          <section className="online-directory-results">
-            <SectionHeader
-              title={ui.foundResults}
-              subtitle={ui.sourceSearching(SOURCE_META[activeSource]?.label ?? activeSource)}
-            />
-            <OnlinePosterSkeletonGrid count={8} />
-          </section>
-        ) : null}
-
-        {(() => {
-          const filtered = results.filter(r => r.source_id === activeSource)
-          const displayed = filtered.length > 0 ? filtered : results
+        if (searched && results.length === 0) {
           return (
-            <>
-              {!loading && searched && displayed.length === 0 ? (
-                <div className="empty-state">
-                  <div className="empty-state-title">{ui.noResults}</div>
-                  <p className="empty-state-desc">
-                    {ui.noResultsSource(query, SOURCE_META[activeSource]?.label ?? activeSource, results.length - filtered.length)}
-                  </p>
-                </div>
-              ) : null}
-
-              {!loading && searched && displayed.length > 0 ? (
-                <section className="online-directory-results">
-                  <SectionHeader
-                    title={ui.foundResults}
-                    subtitle={ui.readyToOpen(displayed.length)}
-                  />
-                  <VirtualMediaGrid
-                    items={displayed}
-                    listClassName="virtuoso-online-grid"
-                    itemClassName="virtuoso-online-grid-item"
-                    itemContent={(item, index) => (
-                      <OnlinePosterCard
-                        key={`${item.source_id}-${item.id}-${index}`}
-                        cover={item.cover_url}
-                        title={item.title}
-                        meta={[SOURCE_META[item.source_id]?.label || item.source_id, item.year]
-                          .filter(Boolean)
-                          .map(value => <span key={`${item.id}-${value}`}>{value}</span>)}
-                        badge={<SourceBadge sourceID={item.source_id} />}
-                        noCoverLabel={ui.noCover}
-                        onClick={() => openResolvedHit(item)}
-                      />
-                    )}
-                  />
-                </section>
-              ) : null}
-            </>
+            <div className="empty-state">
+              <div className="empty-state-title">{ui.noResults}</div>
+              <p className="empty-state-desc">
+                {ui.noResultsSource(query, SOURCE_META[activeSource]?.label ?? activeSource, 0)}
+              </p>
+            </div>
           )
-        })()}
+        }
 
-        {!searched && !loading ? (
-          <section className="online-directory-results">
-            <SectionHeader
-              title={ui.exploreTitle}
-              subtitle={catalogSummary}
+        if (searched && results.length > 0) {
+          return (
+            <VirtualMediaGrid
+              items={results}
+              listClassName="gui2-catalog-grid"
+              itemClassName="gui2-catalog-grid-item"
+              itemContent={(item, index) => (
+                <OnlinePosterCard
+                  key={`search-${item.id || index}`}
+                  cover={item?.coverImage?.extraLarge || item?.coverImage?.large || item?.coverImage?.medium}
+                  title={getCatalogTitle(item)}
+                  meta={getCatalogMeta(item).map((value) => <span key={`${item.id}-${value}`}>{value}</span>)}
+                  badge={item?.status ? <span className="gui2-catalog-status-badge">{item.status.replace('_', ' ')}</span> : null}
+                  busy={resolvingKey === `search-${item.id || index}`}
+                  noCoverLabel={ui.noCover}
+                  onClick={() => resolveAniListMedia(item, `search-${item.id || index}`, { returnMode: 'results' })}
+                />
+              )}
             />
+          )
+        }
 
-            {catalogLoading && displayedCatalog.length === 0 ? (
-              <OnlinePosterSkeletonGrid count={12} />
-            ) : !catalogLoading && displayedCatalog.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-state-title">{catalogAniListUnavailable ? ui.catalogUnavailableTitle : ui.noCatalog}</div>
-                <p className="empty-state-desc">
-                  {catalogAniListUnavailable ? ui.catalogUnavailableDesc : ui.noCatalogDesc}
-                </p>
-              </div>
-            ) : (
-              <VirtualMediaGrid
-                items={displayedCatalog}
-                listClassName="virtuoso-online-grid"
-                itemClassName="virtuoso-online-grid-item"
-                itemContent={(media) => {
-                  const title = getCatalogTitle(media)
-                  const key = `catalog-${media.id}`
-                  return (
-                    <OnlinePosterCard
-                      key={key}
-                      cover={media?.coverImage?.extraLarge || media?.coverImage?.large || media?.coverImage?.medium}
-                      title={title}
-                      meta={getCatalogMeta(media).map(value => <span key={`${media.id}-${value}`}>{value}</span>)}
-                      badge={media?.status ? <span className="online-directory-status">{media.status.replace('_', ' ')}</span> : null}
-                      busy={resolvingKey === key}
-                      noCoverLabel={ui.noCover}
-                      onClick={() => resolveAniListMedia(media, key)}
-                    />
-                  )
-                }}
-              />
-            )}
+        if (showCatalogSkeleton && displayedCatalog.length === 0) {
+          return <OnlinePosterSkeletonGrid count={CATALOG_PAGE_SIZE} />
+        }
 
-            {!catalogLoading && isCatalogBrowseMode && catalogHasNext && catalog.length > 0 ? (
-              <div className="online-directory-loadmore">
-                <button
-                  type="button"
-                  className="btn btn-ghost online-directory-loadmore-btn"
-                  onClick={handleLoadMore}
-                  disabled={catalogFetchingMore}
-                >
-                  {catalogFetchingMore ? ui.searching : ui.loadMore}
-                </button>
-              </div>
-            ) : null}
+        if (!showCatalogSkeleton && displayedCatalog.length === 0) {
+          return (
+            <div className="empty-state">
+              <div className="empty-state-title">{catalogAniListUnavailable ? ui.catalogUnavailableTitle : ui.noCatalog}</div>
+              <p className="empty-state-desc">
+                {catalogAniListUnavailable ? ui.catalogUnavailableDesc : ui.noCatalogDesc}
+              </p>
+            </div>
+          )
+        }
 
-            {catalogLoading && displayedCatalog.length > 0 ? (
-              <div className="online-directory-loadmore">
-                <div className="skeleton-inline-row">
-                  <span className="skeleton-inline-chip" />
-                  <span className="skeleton-inline-chip short" />
-                </div>
-              </div>
-            ) : null}
-          </section>
-        ) : null}
-      </section>
-    </div>
+        return (
+          <VirtualMediaGrid
+            items={displayedCatalog}
+            listClassName="gui2-catalog-grid"
+            itemClassName="gui2-catalog-grid-item"
+            itemContent={(media) => {
+              const title = getCatalogTitle(media)
+              const key = `catalog-${media.id}`
+              return (
+                <OnlinePosterCard
+                  key={key}
+                  cover={media?.coverImage?.extraLarge || media?.coverImage?.large || media?.coverImage?.medium}
+                  title={title}
+                  meta={getCatalogMeta(media).map((value) => <span key={`${media.id}-${value}`}>{value}</span>)}
+                  badge={media?.status ? <span className="gui2-catalog-status-badge">{media.status.replace('_', ' ')}</span> : null}
+                  busy={resolvingKey === key}
+                  noCoverLabel={ui.noCover}
+                  onClick={() => resolveAniListMedia(media, key)}
+                />
+              )
+            }}
+          />
+        )
+      })()}
+      bottomPagination={!searched ? (
+          <Gui2CatalogPaginationControls
+            onPrev={handlePreviousPage}
+            onNext={handleNextPage}
+            onJumpToPage={handlePageJump}
+            canPrev={catalogPage > 1}
+            canNext={catalogHasNext}
+            currentPage={catalogPage}
+            pageSizeLabel={`${CATALOG_PAGE_SIZE} ${isEnglish ? 'per page' : 'por pagina'}`}
+            prevLabel={ui.previousPage}
+          nextLabel={ui.nextPage}
+          busy={catalogQuery.isFetching}
+        />
+      ) : null}
+    />
   )
 }
