@@ -2,392 +2,115 @@
 
 # Nipah! Anime
 
-**A bilingual desktop app for watching anime, reading manga, tracking progress, and syncing everything with AniList.**
+**A bilingual desktop app for anime and manga.**  
+**Una aplicación de escritorio bilingüe para anime y manga.**
 
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue?style=flat-square)](https://github.com/NipahDevTeam/Nipah--Anime/releases)
-[![Built with Wails](https://img.shields.io/badge/built%20with-Wails-ff3e00?style=flat-square)](https://wails.io)
-[![Sync](https://img.shields.io/badge/sync-AniList-02a9ff?style=flat-square)](https://anilist.co)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+Watch, read, organize, and track your progress from one polished desktop experience with AniList sync, local library support, and multiple online providers.  
+Mira, lee, organiza y sigue tu progreso desde una sola experiencia de escritorio, con sincronización con AniList, biblioteca local y múltiples proveedores online.
 
-<br/>
-
-<a href="#english-readme">English</a> &nbsp;|&nbsp; <a href="#readme-espanol">Español</a>
+<p>
+  <a href="#english">English</a> · <a href="#espanol">Español</a>
+</p>
 
 </div>
 
----
-
-<a id="english-readme"></a>
-
-<div align="right"><a href="#readme-espanol">Ver en Español</a></div>
-
-## What is Nipah! Anime?
-
-Nipah! Anime is a desktop client for anime and manga fans who want everything in one place: streaming, reading, progress tracking, lists, and AniList sync, without living inside a browser.
-
-Built with **Go, React, and Wails**, it aims to feel fast, native, and focused, with a bilingual UI designed for both Spanish-speaking and English-speaking users.
-
-> **Watch anime. Read manga. Track everything. Sync with AniList. All from your desktop.**
-
----
-
-## Screenshots
-
 <p align="center">
-  <img src="./docs/readme/1.png" alt="Home" width="49%" />
-  <img src="./docs/readme/2.png" alt="My Lists" width="49%" />
+  <img src="./app1.png" alt="Nipah! Anime home interface" width="100%" />
 </p>
+
 <p align="center">
-  <img src="./docs/readme/3.png" alt="Anime Online" width="49%" />
-  <img src="./docs/readme/4.png" alt="Manga Online" width="49%" />
+  <img src="./app2.png" alt="Nipah! Anime anime catalog" width="49%" />
+  <img src="./app3.png" alt="Nipah! Anime manga catalog" width="49%" />
 </p>
 
 ---
 
-## Features
+<a id="english"></a>
 
-### Anime
-- Online anime search and streaming from multiple sources
-- Direct playback through **MPV**
-- Continue Watching support on Home
-- AniList-powered title matching for difficult aliases
-- Automatic AniList progress sync while you watch
+## English
 
-### Manga
-- Online manga search with in-app reading flow
-- Multiple manga source support
-- Continue Reading support on Home
-- AniList-backed identity and cover matching
-- Manga chapter progress sync with AniList
+### Overview
 
-### Local Library
-- Import local anime and manga folders
-- Automatic scans on startup
-- Local progress persistence for offline content
+Nipah! Anime is a desktop app designed to bring anime streaming, manga reading, tracking, and library management into one place. Made for users who prefer a clean desktop workflow instead of having to juggle browser tabs, anime/manga tracking, and readers separately.
 
-### Lists and Tracking
-- Separate anime and manga list views
-- Add titles manually from AniList
-- Edit status, progress, and score
-- Local-first sync queue with retry behavior for AniList jobs
+With support for both English and Spanish users, Nipah! Anime has a practical interface for all necessary everyday tools: AniList sync, anime playback through MPV, in-app manga reading, and local library support for users who keep their own media collections with the possibility of downloading directly from providers.
 
-### UI and Experience
-- Bilingual interface: **English / Español**
-- Catalog-first Home with anime and manga sections
-- Cleaner featured hero, tighter layout, and auto-rotating spotlight
-- BlurHash support for local covers
-- Desktop notifications
-- Anime4K MPV preset support
-- Dark desktop-first visual design with black/orange direction
+### Features
 
-### Updates
-- Built-in update checker connected to GitHub Releases
-- Changelog shown inside the update flow
-- One-click installer launch for new Windows releases
+- Stream anime from multiple online providers.
+- Download episodes directly and have them be automatically tracked and managed.
+- Read manga inside the app with a dedicated manga reader.
+- Sync anime and manga progress with AniList.
+- Manage separate anime and manga lists in one desktop client.
+- Browse modern anime and manga catalog easily.
+- Keep a local library for offline or self-managed content.
+- Switch between English and Spanish.
 
----
+### Providers
 
-## Supported Platforms
+#### Anime
 
-- **Windows** via installer
-- **Linux** via:
-  - `.AppImage` bundled with **WebKit2GTK 4.1**
-  - `.deb` package for Ubuntu/Debian-based distros
-  - `PKGBUILD` for Arch-based distros
+- `JKAnime` [ES]
+- `AnimeFLV` [ES]
+- `AnimeAV1` [ES] [Dubbed Anime available] [Direct download available]
+- `AnimePahe` [EN] [Dubbed Anime available] [Direct download available]
+- `AnimeHeaven` [EN]
+- `AnimeGG` [EN]
+
+#### Manga
+
+- `M440` [ES]
+- `SenshiManga` [ES]
+- `MangaOni` [ES]
+- `MangaFire` [EN/ES]
+- `MangaPill` [EN]
+- `WeebCentral` [EN]
+- `TempleToons` [EN]
+
+Provider availability may change over time depending on upstream services.
 
 ---
 
-## Supported Sources
+<a id="espanol"></a>
 
-### Anime
-- JKAnime
-- AnimeFLV
-- AnimeAV1
-- AnimePahe
-- AnimeHeaven
-- AnimeGG
+## Español
 
-### Manga
-- M440
-- SenshiManga
-- MangaOni
-- WeebCentral
-- TempleToons
-- MangaPill
-- MangaFire
+### Descripción general
 
-Source availability may change over time depending on upstream sites.
+Nipah! Anime es una aplicación de escritorio la cual junta streaming de anime online, lectura de manga, seguimiento y gestión de biblioteca en un solo lugar. Pensada para usuarios que esten cansados de depender de múltiples pestañas, listas y lectores separados en el navegador.
 
----
+Con soporte para usuarios en inglés y español, Nipah! Anime posee una interfaz con herramientas realmente útiles para el día a día: sincronización con AniList, reproducción de anime mediante MPV, lectura de manga dentro de la app y soporte para biblioteca local para quienes conservan su propio contenido, con la posibilidad de descarga directa de episodios en varios proveedores.
 
-## AniList Integration
+### Funcionalidades
 
-Nipah! Anime uses **AniList** as its main account and sync provider.
+- Reproduce anime desde múltiples proveedores online.
+- Descarga episodios directamente y deja que sean manejados automáticamente por la app.
+- Lee manga dentro de la app con un lector dedicado.
+- Sincroniza el progreso de anime y manga con AniList.
+- Administra listas separadas de anime y manga en un solo cliente de escritorio.
+- Explora catálogos de anime y manga
+- Mantén una biblioteca local para contenido offline o gestionado por ti.
+- Cambia entre inglés y español en una experiencia bilingüe de escritorio.
 
-- AniList login
-- Anime list sync
-- Manga list sync
-- Automatic progress syncing from playback and reading
+### Proveedores
 
----
+#### Anime
 
-## Building from Source
+- `JKAnime` [ES]
+- `AnimeFLV` [ES]
+- `AnimeAV1` [ES] [Doblaje disponible] [Descarga directa disponible]
+- `AnimePahe` [EN] [Doblaje disponible] [Descarga directa disponible]
+- `AnimeHeaven` [EN]
+- `AnimeGG` [EN]
 
-OAuth credentials are not included in this repository.
+#### Manga
 
-Check `.env.example` for the environment variables needed to register and configure your own AniList app for local development.
+- `M440` [ES]
+- `SenshiManga` [ES]
+- `MangaOni` [ES]
+- `MangaFire` [EN/ES]
+- `MangaPill` [EN]
+- `WeebCentral` [EN]
+- `TempleToons` [EN]
 
-Core stack:
-- Go
-- Wails v2
-- React
-- Vite
-
----
-
-## Installation
-
-### Windows
-1. Go to the [Releases](https://github.com/NipahDevTeam/Nipah--Anime/releases) page.
-2. Download the latest Windows installer.
-3. Run the installer.
-4. Choose language correctly. This will affect source preference inside the app.
-5. Launch **Nipah! Anime** from Start Menu or desktop.
-
-### Linux
-Download the format that fits your distro from the latest release:
-- `.AppImage`
-- `.deb`
-- `PKGBUILD`
-
----
-
-## Requirements
-
-| Requirement | Details |
-|-------------|---------|
-| OS | Windows 10/11 (64-bit) or modern Linux |
-| MPV | Required for anime playback |
-| Internet | Required for online sources and AniList sync |
-
-### MPV
-
-Nipah! Anime uses **MPV** for playback.
-
-- On Windows, MPV can be bundled or configured manually
-- On Linux, install `mpv` through your package manager
-
-Official site: [mpv.io](https://mpv.io)
-
----
-
-## Updates
-
-The app includes a built-in updater for Windows releases. When a new version is available:
-
-1. A notification appears on launch.
-2. You can read the changelog directly in the popup.
-3. Click **Download & Install** to fetch and launch the new installer.
-
----
-
-## Disclaimer
-
-Nipah! Anime is a desktop client. It does not host, store, or distribute media content. Anime and manga are accessed through third-party sources whose availability may change over time.
-
-Use responsibly and according to the laws of your country.
-
----
-
-<br/>
-<br/>
-
----
-
-<a id="readme-espanol"></a>
-
-<div align="right"><a href="#english-readme">View in English</a></div>
-
-## Que es Nipah! Anime?
-
-Nipah! Anime es un cliente de escritorio para fans del anime y el manga que quieren tener todo en un solo lugar: streaming, lectura, seguimiento de progreso, listas y sincronizacion con AniList, sin depender del navegador.
-
-Construido con **Go, React y Wails**, busca sentirse rapido, nativo y enfocado, con una interfaz bilingue pensada tanto para hispanohablantes como para usuarios en ingles.
-
-> **Mira anime. Lee manga. Registra tu progreso. Sincroniza con AniList. Todo desde tu escritorio.**
-
----
-
-## Capturas de pantalla
-
-<p align="center">
-  <img src="./docs/readme/1.png" alt="Inicio" width="49%" />
-  <img src="./docs/readme/2.png" alt="Mis Listas" width="49%" />
-</p>
-<p align="center">
-  <img src="./docs/readme/3.png" alt="Anime Online" width="49%" />
-  <img src="./docs/readme/4.png" alt="Manga Online" width="49%" />
-</p>
-
----
-
-## Funcionalidades
-
-### Anime
-- Busqueda y streaming de anime en linea desde multiples fuentes
-- Reproduccion directa con **MPV**
-- Seccion de **Continuar viendo** en Inicio
-- Coincidencia de titulos con AniList para aliases dificiles
-- Sincronizacion automatica del progreso con AniList mientras ves
-
-### Manga
-- Busqueda de manga en linea con flujo de lectura dentro de la app
-- Soporte para multiples fuentes de manga
-- Seccion de **Continuar leyendo** en Inicio
-- Identidad y portadas apoyadas por AniList
-- Sincronizacion de progreso de capitulos con AniList
-
-### Biblioteca local
-- Importa carpetas locales de anime y manga
-- Escaneo automatico al iniciar
-- Persistencia de progreso para contenido offline
-
-### Listas y seguimiento
-- Vistas separadas para anime y manga
-- Agregar titulos manualmente desde AniList
-- Editar estado, progreso y puntuacion
-- Cola de sincronizacion local con reintentos para trabajos de AniList
-
-### Interfaz y experiencia
-- Interfaz bilingue: **Espanol / English**
-- Inicio orientado a catalogo con secciones de anime y manga
-- Hero destacado mas limpio, compacto y rotatorio
-- BlurHash para portadas locales
-- Notificaciones de escritorio
-- Soporte para preset Anime4K en MPV
-- Diseno oscuro con direccion visual negro/naranja
-
-### Actualizaciones
-- Verificador integrado conectado a GitHub Releases
-- Changelog visible dentro del flujo de actualizacion
-- Lanzamiento con un clic del instalador nuevo en Windows
-
----
-
-## Plataformas soportadas
-
-- **Windows** mediante instalador
-- **Linux** mediante:
-  - `.AppImage` con **WebKit2GTK 4.1** incluido
-  - paquete `.deb` para Ubuntu/Debian y derivados
-  - `PKGBUILD` para Arch y derivados
-
----
-
-## Fuentes soportadas
-
-### Anime
-- JKAnime
-- AnimeFLV
-- AnimeAV1
-- AnimePahe
-- AnimeHeaven
-- AnimeGG
-
-### Manga
-- M440
-- SenshiManga
-- MangaOni
-- WeebCentral
-- TempleToons
-- MangaPill
-- MangaFire
-
-La disponibilidad de las fuentes puede cambiar con el tiempo segun los sitios externos.
-
----
-
-## Integracion con AniList
-
-Nipah! Anime usa **AniList** como proveedor principal de cuenta y sincronizacion.
-
-- Inicio de sesion con AniList
-- Sincronizacion de lista de anime
-- Sincronizacion de lista de manga
-- Envio automatico del progreso desde reproduccion y lectura
-
----
-
-## Compilar desde el codigo fuente
-
-Las credenciales OAuth no estan incluidas en este repositorio.
-
-Consulta `.env.example` para ver las variables necesarias y configurar tu propia app de AniList para desarrollo local.
-
-Stack principal:
-- Go
-- Wails v2
-- React
-- Vite
-
----
-
-## Instalacion
-
-### Windows
-1. Ve a [Releases](https://github.com/NipahDevTeam/Nipah--Anime/releases).
-2. Descarga el instalador mas reciente para Windows.
-3. Ejecuta el instalador.
-4. Elige el idioma correctamente, esto afectara las preferencias de fuentes dentro de la app.
-5. Abre **Nipah! Anime** desde el menu Inicio o el escritorio.
-
-### Linux
-Descarga desde la ultima release el formato que mejor se adapte a tu distro:
-- `.AppImage`
-- `.deb`
-- `PKGBUILD`
-
----
-
-## Requisitos
-
-| Requisito | Detalles |
-|-----------|----------|
-| Sistema operativo | Windows 10/11 (64-bit) o Linux moderno |
-| MPV | Necesario para reproducir anime |
-| Internet | Necesario para fuentes online y sincronizacion con AniList |
-
-### MPV
-
-Nipah! Anime utiliza **MPV** como reproductor.
-
-- En Windows puede venir incluido o configurarse manualmente
-- En Linux debes instalar `mpv` desde el gestor de paquetes de tu distro
-
-Sitio oficial: [mpv.io](https://mpv.io)
-
----
-
-## Actualizaciones
-
-La app incluye un actualizador integrado para versiones de Windows. Cuando hay una nueva version disponible:
-
-1. Aparece una notificacion al iniciar.
-2. Puedes leer el changelog directamente en el popup.
-3. Haz clic en **Descargar e Instalar** para obtener y lanzar el nuevo instalador automaticamente.
-
----
-
-## Aviso legal
-
-Nipah! Anime es un cliente de escritorio. No aloja, almacena ni distribuye contenido multimedia. El anime y manga se acceden desde fuentes de terceros cuya disponibilidad puede cambiar con el tiempo.
-
-Usalo de forma responsable y de acuerdo con las leyes de tu pais.
-
----
-
-<div align="center">
-
-Made with love for anime fans everywhere · Hecho con amor para fans del anime en todo el mundo
-
-</div>
+La disponibilidad de los proveedores puede cambiar con el tiempo según los servicios externos.
