@@ -225,13 +225,6 @@ Elige el formato que mejor se adapte a tu sistema:
 - En **Linux**, `mpv` es necesario para la versión empaquetada.
 - El conjunto actual de paquetes para Linux está orientado a `x86_64`.
 
-### MPV
-
-Nipah! Anime uses **MPV** for anime playback.
-
-- On Windows, it is bundled with the installer build.
-- On Linux, `mpv` is required by the packaged release.
-
 ---
 
 ## AniList
