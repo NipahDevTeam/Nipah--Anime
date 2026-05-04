@@ -3,7 +3,8 @@
 # and produce a .deb package. Requires: wails, nfpm, npm in PATH.
 set -euo pipefail
 
-SRC="/mnt/c/Users/NICOLAS/Desktop/Nipah! Anime/miruro-phase1/miruro"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DST="$HOME/nipah-linux-build"
 
 mkdir -p "$DST"

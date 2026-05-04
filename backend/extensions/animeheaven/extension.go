@@ -42,28 +42,76 @@ func (e *Extension) Languages() []extensions.Language {
 var searchCardRe = regexp.MustCompile(`<a href=['"]anime\.php\?([a-zA-Z0-9]+)['"]>\s*<img[^>]+src=['"]image\.php\?([^"'&]+)[^>]+alt=['"]([^'"]+)['"][^>]*>\s*</a>\s*<div class=['"]similarname c['"]>\s*<a href=['"]anime\.php\?[a-zA-Z0-9]+['"][^>]*>([^<]+)</a>`)
 
 func (e *Extension) Search(query string, lang extensions.Language) ([]extensions.SearchResult, error) {
-	// Strategy 1: AJAX fast-search (returns HTML fragment)
-	url := fmt.Sprintf("%s/fastsearch.php?xhr=1&s=%s", baseURL, urlEncode(query))
-	body, err := fetchAJAX(url, baseURL)
-	if err != nil {
-		log.Warn().Err(err).Msg("AJAX search failed")
-		body = "" // fall through to full-page search
-	}
+	seen := map[string]bool{}
+	all := make([]extensions.SearchResult, 0, 24)
 
-	results := parseSearchHTML(body)
-
-	// Strategy 2: full search page if AJAX returned nothing
-	if len(results) == 0 {
-		fullURL := fmt.Sprintf("%s/search.php?s=%s", baseURL, urlEncode(query))
-		fullBody, err := fetchPage(fullURL, baseURL)
+	for _, candidate := range animeHeavenSearchQueries(query) {
+		// Strategy 1: AJAX fast-search (returns HTML fragment)
+		url := fmt.Sprintf("%s/fastsearch.php?xhr=1&s=%s", baseURL, urlEncode(candidate))
+		body, err := fetchAJAX(url, baseURL)
 		if err != nil {
-			log.Warn().Err(err).Msg("full search failed")
-			return nil, nil
+			log.Warn().Err(err).Str("query", candidate).Msg("AJAX search failed")
+			body = "" // fall through to full-page search
 		}
-		results = parseSearchHTML(fullBody)
+
+		results := parseSearchHTML(body)
+
+		// Strategy 2: full search page if AJAX returned nothing
+		if len(results) == 0 {
+			fullURL := fmt.Sprintf("%s/search.php?s=%s", baseURL, urlEncode(candidate))
+			fullBody, err := fetchPage(fullURL, baseURL)
+			if err != nil {
+				log.Warn().Err(err).Str("query", candidate).Msg("full search failed")
+				continue
+			}
+			results = parseSearchHTML(fullBody)
+		}
+
+		for _, item := range results {
+			if item.ID == "" || seen[item.ID] {
+				continue
+			}
+			seen[item.ID] = true
+			all = append(all, item)
+		}
+		if len(all) > 0 {
+			return all, nil
+		}
 	}
 
-	return results, nil
+	return all, nil
+}
+
+func animeHeavenSearchQueries(query string) []string {
+	trimmed := strings.TrimSpace(html.UnescapeString(query))
+	if trimmed == "" {
+		return nil
+	}
+
+	variants := []string{trimmed}
+	sanitized := strings.NewReplacer(":", " ", ";", " ", "/", " ", "-", " ", "_", " ", ".", " ").Replace(trimmed)
+	sanitized = strings.Join(strings.Fields(sanitized), " ")
+	if sanitized != "" && !strings.EqualFold(sanitized, trimmed) {
+		variants = append(variants, sanitized)
+	}
+
+	base := regexp.MustCompile(`(?i)\b(?:\d{1,2}(?:st|nd|rd|th)\s+season|season\s+\d{1,2}|part\s+\d{1,2}|cour\s+\d{1,2}|ova|ona|special|movie|film)\b`).ReplaceAllString(sanitized, " ")
+	base = strings.Join(strings.Fields(base), " ")
+	if base != "" && !strings.EqualFold(base, trimmed) && !strings.EqualFold(base, sanitized) {
+		variants = append(variants, base)
+	}
+
+	out := make([]string, 0, len(variants))
+	seen := map[string]bool{}
+	for _, variant := range variants {
+		key := strings.ToLower(strings.TrimSpace(variant))
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, variant)
+	}
+	return out
 }
 
 func parseSearchHTML(body string) []extensions.SearchResult {

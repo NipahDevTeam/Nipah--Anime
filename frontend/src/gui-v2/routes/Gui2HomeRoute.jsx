@@ -99,6 +99,26 @@ function HomeRecentRow({ item, onClick }) {
   )
 }
 
+function HomeLoadingSection({ isEnglish = false }) {
+  return (
+    <section className="gui2-homev2-band gui2-homev2-band-loading" aria-hidden="true">
+      <div className="gui2-homev2-band-head">
+        <div className="gui2-homev2-band-copy">
+          <div className="gui2-homev2-band-title">{isEnglish ? 'Loading Shelves' : 'Cargando secciones'}</div>
+          <div className="gui2-homev2-band-subtitle">
+            {isEnglish ? 'Preparing the first AniList rows for Home.' : 'Preparando las primeras filas de AniList para Home.'}
+          </div>
+        </div>
+      </div>
+      <div className="gui2-homev2-loading-poster-rail">
+        {Array.from({ length: 6 }, (_, index) => (
+          <div key={`home-loading-card-${index}`} className="gui2-homev2-loading-poster" />
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function HomeBand({ section, onViewAll, onOpenPoster, onOpenContinue }) {
   const bandClassName = `gui2-homev2-band gui2-homev2-band-${section.variant} gui2-homev2-band-${section.key}`
   const continuePageSize = section.pageSize || 6
@@ -187,6 +207,7 @@ export default function Gui2HomeRoute({ preview = false }) {
   const navigate = useNavigate()
   const { lang } = useI18n()
   const isEnglish = lang === 'en'
+  const { season, year } = getCurrentAniListSeason()
   const [heroIndex, setHeroIndex] = useState(0)
   const [heroIsFading, setHeroIsFading] = useState(false)
   const fadeTimeoutRef = useRef(null)
@@ -197,73 +218,49 @@ export default function Gui2HomeRoute({ preview = false }) {
     staleTime: 60_000,
   })
 
-  const trendingQuery = useQuery({
-    queryKey: ['gui2-home-trending', lang],
-    queryFn: async () => {
-      const res = await wails.getTrending(lang)
-      return res?.data?.Page?.media ?? []
-    },
+  const homeAniListQuery = useQuery({
+    queryKey: ['gui2-home-anilist', lang, season, year],
+    queryFn: async () => wails.getAniListAnimeCatalogHome(season, year),
     staleTime: 10 * 60_000,
   })
 
-  const featuredRowsQuery = useQuery({
-    queryKey: ['gui2-home-featured-rows', lang],
-    queryFn: async () => {
-      const { season, year } = getCurrentAniListSeason()
-      const [popularResult, trendingResult, freshResult] = await Promise.allSettled([
-        wails.discoverAnime('', '', year, 'POPULARITY_DESC', '', '', 1),
-        wails.discoverAnime('', season, year, 'TRENDING_DESC', 'RELEASING', '', 1),
-        wails.discoverAnime('', '', 0, 'SCORE_DESC', '', '', 1),
-      ])
+  const trending = useMemo(() => (
+    toAniListMediaList({ data: { Page: { media: homeAniListQuery.data?.featured ?? [] } } })
+  ), [homeAniListQuery.data])
 
-      const rows = [
-        {
-          key: 'popular-now',
-          title: isEnglish ? 'Popular Now' : 'Popular ahora',
-          subtitle: isEnglish ? 'The shows everyone is opening right now' : 'Los shows que mas se estan abriendo ahora mismo',
-          href: '/anime-online',
-          items: popularResult.status === 'fulfilled' ? toAniListMediaList(popularResult.value).slice(0, GUI2_HOME_POSTER_LIMIT) : [],
-        },
-        {
-          key: 'trending-season',
-          title: isEnglish ? 'Trending This Season' : 'Tendencia esta temporada',
-          subtitle: isEnglish ? 'What is moving fastest across AniList this season' : 'Lo que mas se mueve esta temporada en AniList',
-          href: '/anime-online',
-          items: trendingResult.status === 'fulfilled' ? toAniListMediaList(trendingResult.value).slice(0, GUI2_HOME_POSTER_LIMIT) : [],
-        },
-        {
-          key: 'top-rated-picks',
-          title: isEnglish ? 'Top Rated Picks' : 'Mejor valorados',
-          subtitle: isEnglish ? 'Highly rated anime worth opening next' : 'Anime muy bien valorado para abrir despues',
-          href: '/anime-online',
-          items: freshResult.status === 'fulfilled' ? toAniListMediaList(freshResult.value).slice(0, GUI2_HOME_POSTER_LIMIT) : [],
-        },
-      ]
-
-      return rows.filter((row) => row.items.length > 0)
+  const featuredRows = useMemo(() => ([
+    {
+      key: 'popular-now',
+      title: isEnglish ? 'Popular Now' : 'Popular ahora',
+      subtitle: isEnglish ? 'The shows everyone is opening right now' : 'Los shows que mas se estan abriendo ahora mismo',
+      href: '/anime-online',
+      items: (homeAniListQuery.data?.popular ?? []).slice(0, GUI2_HOME_POSTER_LIMIT),
     },
-    staleTime: 10 * 60_000,
-  })
-
-  const discoveryRowsQuery = useQuery({
-    queryKey: ['gui2-home-discovery-rows', lang],
-    queryFn: async () => {
-      const results = await Promise.allSettled(
-        GUI2_HOME_DISCOVERY_ROWS.map((row) => wails.discoverAnime(row.genre, '', 0, 'POPULARITY_DESC', '', '', 1)),
-      )
-
-      return GUI2_HOME_DISCOVERY_ROWS.map((row, index) => ({
-        key: row.key,
-        title: isEnglish ? row.titleEn : row.titleEs,
-        subtitle: isEnglish ? row.subtitleEn : row.subtitleEs,
-        href: '/anime-online',
-        items: results[index]?.status === 'fulfilled'
-          ? toAniListMediaList(results[index].value).slice(0, GUI2_HOME_POSTER_LIMIT)
-          : [],
-      })).filter((row) => row.items.length > 0)
+    {
+      key: 'trending-season',
+      title: isEnglish ? 'Trending This Season' : 'Tendencia esta temporada',
+      subtitle: isEnglish ? 'What is moving fastest across AniList this season' : 'Lo que mas se mueve esta temporada en AniList',
+      href: '/anime-online',
+      items: (homeAniListQuery.data?.seasonal ?? []).slice(0, GUI2_HOME_POSTER_LIMIT),
     },
-    staleTime: 10 * 60_000,
-  })
+    {
+      key: 'top-rated-picks',
+      title: isEnglish ? 'Top Rated Picks' : 'Mejor valorados',
+      subtitle: isEnglish ? 'Highly rated anime worth opening next' : 'Anime muy bien valorado para abrir despues',
+      href: '/anime-online',
+      items: (homeAniListQuery.data?.topRated ?? []).slice(0, GUI2_HOME_POSTER_LIMIT),
+    },
+  ]).filter((row) => row.items.length > 0), [homeAniListQuery.data, isEnglish])
+
+  const discoveryRows = useMemo(() => (
+    GUI2_HOME_DISCOVERY_ROWS.map((row) => ({
+      key: row.key,
+      title: isEnglish ? row.titleEn : row.titleEs,
+      subtitle: isEnglish ? row.subtitleEn : row.subtitleEs,
+      href: '/anime-online',
+      items: (homeAniListQuery.data?.[row.key] ?? []).slice(0, GUI2_HOME_POSTER_LIMIT),
+    })).filter((row) => row.items.length > 0)
+  ), [homeAniListQuery.data, isEnglish])
 
   const goTo = useCallback((path, state = undefined) => {
     navigate(preview ? `/__rebuild${path}` : path, state ? { state } : undefined)
@@ -281,11 +278,15 @@ export default function Gui2HomeRoute({ preview = false }) {
 
   const homeData = useMemo(() => buildGui2HomeData({
     dashboard: dashboardQuery.data ?? {},
-    trending: trendingQuery.data ?? [],
-    featuredRows: featuredRowsQuery.data ?? [],
-    genreRows: discoveryRowsQuery.data ?? [],
+    trending,
+    featuredRows,
+    genreRows: discoveryRows,
     isEnglish,
-  }), [dashboardQuery.data, trendingQuery.data, featuredRowsQuery.data, discoveryRowsQuery.data, isEnglish])
+  }), [dashboardQuery.data, discoveryRows, featuredRows, isEnglish, trending])
+  const showHomeLoading = !homeData.hero && homeData.sections.length === 0 && (
+    homeAniListQuery.isLoading
+    || homeAniListQuery.isFetching
+  )
 
   const heroSlides = homeData.heroSlides
 
@@ -342,51 +343,69 @@ export default function Gui2HomeRoute({ preview = false }) {
     <div className="gui2-homev2">
       <section className="gui2-homev2-hero-shell">
         <div className="gui2-homev2-hero">
-          <div className={`gui2-homev2-hero-stage${heroIsFading ? ' transitioning' : ''}`}>
-            {hero?.banner ? (
-              <img src={proxyImage(hero.banner)} alt={hero.title} className="gui2-homev2-hero-image" />
-            ) : (
-              <div className="gui2-homev2-hero-fallback">{hero?.title?.slice(0, 1) || 'N'}</div>
-            )}
-            <div className="gui2-homev2-hero-overlay" />
-
-            {heroSlides.length > 1 ? (
+          <div className={`gui2-homev2-hero-stage${heroIsFading ? ' transitioning' : ''}${showHomeLoading ? ' gui2-homev2-hero-stage-loading' : ''}`}>
+            {showHomeLoading ? (
               <>
-                <button
-                  type="button"
-                  className="gui2-homev2-hero-arrow gui2-homev2-hero-arrow-left"
-                  onClick={() => runHeroTransition('prev')}
-                  aria-label={isEnglish ? 'Previous slide' : 'Slide anterior'}
-                >
-                  {'<'}
-                </button>
-                <button
-                  type="button"
-                  className="gui2-homev2-hero-arrow gui2-homev2-hero-arrow-right"
-                  onClick={() => runHeroTransition('next')}
-                  aria-label={isEnglish ? 'Next slide' : 'Siguiente slide'}
-                >
-                  {'>'}
-                </button>
+                <div className="gui2-homev2-hero-loading-sheen" />
+                <div className="gui2-homev2-hero-overlay" />
+                <div className="gui2-homev2-hero-copy gui2-homev2-hero-copy-loading">
+                  <div className="gui2-homev2-hero-meta">{isEnglish ? 'Loading Home' : 'Cargando Home'}</div>
+                  <h1 className="gui2-homev2-hero-title">{isEnglish ? 'Fetching AniList shelves...' : 'Cargando secciones de AniList...'}</h1>
+                  <p className="gui2-homev2-hero-summary">
+                    {isEnglish
+                      ? 'Preparing the featured banner, recently updated rail, and opening rows.'
+                      : 'Preparando el banner destacado, la columna de actualizados y las primeras filas.'}
+                  </p>
+                </div>
               </>
-            ) : null}
+            ) : (
+              <>
+                {hero?.banner ? (
+                  <img src={proxyImage(hero.banner)} alt={hero.title} className="gui2-homev2-hero-image" />
+                ) : (
+                  <div className="gui2-homev2-hero-fallback">{hero?.title?.slice(0, 1) || 'N'}</div>
+                )}
+                <div className="gui2-homev2-hero-overlay" />
 
-            <div className="gui2-homev2-hero-copy">
-              <h1 className="gui2-homev2-hero-title">{hero?.title || 'NIPAH!'}</h1>
-              {hero?.meta?.length ? <div className="gui2-homev2-hero-meta">{hero.meta.join(' - ')}</div> : null}
-              <button type="button" className="gui2-homev2-primary" onClick={() => openAnimeItem(hero)}>
-                {isEnglish ? 'Watch Now' : 'Ver ahora'}
-              </button>
-              {hero?.summary ? <p className="gui2-homev2-hero-summary">{hero.summary}</p> : null}
-            </div>
+                {heroSlides.length > 1 ? (
+                  <>
+                    <button
+                      type="button"
+                      className="gui2-homev2-hero-arrow gui2-homev2-hero-arrow-left"
+                      onClick={() => runHeroTransition('prev')}
+                      aria-label={isEnglish ? 'Previous slide' : 'Slide anterior'}
+                    >
+                      {'<'}
+                    </button>
+                    <button
+                      type="button"
+                      className="gui2-homev2-hero-arrow gui2-homev2-hero-arrow-right"
+                      onClick={() => runHeroTransition('next')}
+                      aria-label={isEnglish ? 'Next slide' : 'Siguiente slide'}
+                    >
+                      {'>'}
+                    </button>
+                  </>
+                ) : null}
 
-            {heroSlides.length > 1 ? (
-              <div className="gui2-homev2-hero-dots" aria-hidden="true">
-                {heroSlides.map((slide, index) => (
-                  <span key={slide.id} className={`gui2-homev2-hero-dot${index === clampedHeroIndex ? ' active' : ''}`} />
-                ))}
-              </div>
-            ) : null}
+                <div className="gui2-homev2-hero-copy">
+                  <h1 className="gui2-homev2-hero-title">{hero?.title || 'NIPAH!'}</h1>
+                  {hero?.meta?.length ? <div className="gui2-homev2-hero-meta">{hero.meta.join(' - ')}</div> : null}
+                  <button type="button" className="gui2-homev2-primary" onClick={() => openAnimeItem(hero)}>
+                    {isEnglish ? 'Watch Now' : 'Ver ahora'}
+                  </button>
+                  {hero?.summary ? <p className="gui2-homev2-hero-summary">{hero.summary}</p> : null}
+                </div>
+
+                {heroSlides.length > 1 ? (
+                  <div className="gui2-homev2-hero-dots" aria-hidden="true">
+                    {heroSlides.map((slide, index) => (
+                      <span key={slide.id} className={`gui2-homev2-hero-dot${index === clampedHeroIndex ? ' active' : ''}`} />
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
 
@@ -403,23 +422,40 @@ export default function Gui2HomeRoute({ preview = false }) {
             </button>
           </div>
           <div className="gui2-homev2-recent-list">
-            {homeData.recentUpdates.map((item) => (
-              <HomeRecentRow key={item.id} item={item} onClick={() => openAnimeItem(item)} />
-            ))}
+            {showHomeLoading ? (
+              Array.from({ length: 4 }, (_, index) => (
+                <div key={`home-recent-loading-${index}`} className="gui2-homev2-loading-recent-row" aria-hidden="true">
+                  <div className="gui2-homev2-loading-recent-thumb" />
+                  <div className="gui2-homev2-loading-recent-copy">
+                    <div className="gui2-homev2-loading-line gui2-homev2-loading-line-title" />
+                    <div className="gui2-homev2-loading-line gui2-homev2-loading-line-meta" />
+                    <div className="gui2-homev2-loading-line gui2-homev2-loading-line-meta gui2-homev2-loading-line-short" />
+                  </div>
+                </div>
+              ))
+            ) : (
+              homeData.recentUpdates.map((item) => (
+                <HomeRecentRow key={item.id} item={item} onClick={() => openAnimeItem(item)} />
+              ))
+            )}
           </div>
         </aside>
       </section>
 
       <div className="gui2-homev2-stack">
-        {homeData.sections.map((section) => (
-          <HomeBand
-            key={section.key}
-            section={section}
-            onViewAll={(selectedSection) => goTo(selectedSection.href)}
-            onOpenPoster={(item) => openAnimeItem(item)}
-            onOpenContinue={(_, item) => openAnimeItem(item)}
-          />
-        ))}
+        {showHomeLoading && homeData.sections.length === 0 ? (
+          <HomeLoadingSection isEnglish={isEnglish} />
+        ) : (
+          homeData.sections.map((section) => (
+            <HomeBand
+              key={section.key}
+              section={section}
+              onViewAll={(selectedSection) => goTo(selectedSection.href)}
+              onOpenPoster={(item) => openAnimeItem(item)}
+              onOpenContinue={(_, item) => openAnimeItem(item)}
+            />
+          ))
+        )}
       </div>
     </div>
   )

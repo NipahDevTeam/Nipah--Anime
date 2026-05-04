@@ -35,13 +35,18 @@ assert.ok(
 )
 
 assert.ok(
-  source.includes('const media = extractAniListAnimeSearchMedia(aniListSearch)'),
-  'Search should continue to build typed search results from AniList media metadata through the shared extractor',
+  source.includes('searchAniListAnimeWithFallback('),
+  'Search should run AniList anime lookups through the shared fallback helper so aliases and sequel fragments stay visible',
 )
 
 assert.ok(
-  source.includes('extractAniListAnimeSearchMedia'),
-  'Search should normalize AniList anime search payloads through the shared extractor',
+  source.includes('wails.getAniListAnimeCatalogHome(season, year)'),
+  'Anime Online catalog fallback should reuse the bundled AniList home payload instead of collapsing to the 20-card trending fallback',
+)
+
+assert.ok(
+  !source.includes('prewarmAniListAnimeDetails('),
+  'Anime Online typed search should not launch extra AniList detail warmups after every search result set',
 )
 
 assert.ok(

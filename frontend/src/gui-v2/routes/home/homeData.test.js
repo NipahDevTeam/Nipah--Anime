@@ -63,6 +63,20 @@ assert.equal(continueSection.actionLabel, '')
 assert.equal(continueSection.items[0].selectedAnime.episode_id, 1)
 assert.equal(continueSection.items[0].selectedAnime.anime_title, 'Continue 1')
 
+const startupOnlyContinueData = buildGui2HomeData({
+  dashboard: continuePoolDashboard,
+  trending: [],
+  featuredRows: [],
+  genreRows: [],
+  isEnglish: true,
+})
+
+assert.equal(
+  startupOnlyContinueData.sections.some((section) => section.key === 'continue-watching'),
+  false,
+  'GUI2 home should not let the continue-watching shelf become the only visible startup content before AniList shelves are ready',
+)
+
 const mixedContinueData = buildGui2HomeData({
   dashboard: {
     continue_watching_online: [
@@ -155,6 +169,27 @@ assert.deepEqual(
   ['Airing Hero', 'Current Favorite'],
 )
 assert.ok(!recentUpdateData.recentUpdates.some((item) => item.title === 'Local History Title'))
+
+const startupDashboardFallbackData = buildGui2HomeData({
+  dashboard: {
+    recent_anime: [
+      {
+        id: 401,
+        anime_title: 'Local-Looking Dashboard Item',
+        cover_url: 'https://example.com/local-dashboard.jpg',
+        status: 'FINISHED',
+      },
+    ],
+  },
+  trending: [],
+  featuredRows: [],
+  genreRows: [],
+  isEnglish: true,
+})
+
+assert.equal(startupDashboardFallbackData.hero, null)
+assert.equal(startupDashboardFallbackData.sections.length, 0)
+assert.equal(startupDashboardFallbackData.recentUpdates.length, 0)
 
 const genreRows = GUI2_HOME_DISCOVERY_ROWS.slice(0, 4).map((row, rowIndex) => ({
   key: row.key,

@@ -19,6 +19,24 @@ const resolvedMediaCache = new Map()
 const enrichedHitCache = new Map()
 const inFlightCache = new Map()
 
+function supportsSeasonAwareSearchVariants(sourceID = '') {
+  switch (String(sourceID || '').toLowerCase()) {
+    case 'animeheaven-en':
+      return true
+    default:
+      return isStrictEnglishAnimeSource(sourceID)
+  }
+}
+
+function usesStrictSeasonScoring(sourceID = '') {
+  switch (String(sourceID || '').toLowerCase()) {
+    case 'animeheaven-en':
+      return true
+    default:
+      return isStrictEnglishAnimeSource(sourceID)
+  }
+}
+
 function readCache(map, key) {
   const entry = map.get(key)
   if (!entry) return VALUE_MISS
@@ -35,6 +53,10 @@ function writeCache(map, key, value, ttl = CACHE_TTL_MS) {
     expiresAt: Date.now() + ttl,
   })
   return value
+}
+
+function clearCacheEntry(map, key) {
+  map.delete(key)
 }
 
 async function getOrLoad(map, key, loader, ttl = CACHE_TTL_MS) {
@@ -155,7 +177,7 @@ function stripVariantSuffix(value) {
   if (!text) return ''
 
   return text
-    .replace(/\b(?:\d{1,2}(?:st|nd|rd|th)|season\s*\d{1,2}|temporada\s*\d{1,2}|part\s*\d{1,2}|parte\s*\d{1,2}|cour\s*\d{1,2})\b/gi, ' ')
+    .replace(/\b(?:\d{1,2}(?:st|nd|rd|th)\s*(?:season|part|cour)?|season\s*\d{1,2}|temporada\s*\d{1,2}|part\s*\d{1,2}|parte\s*\d{1,2}|cour\s*\d{1,2})\b/gi, ' ')
     .replace(/\b(?:ova|oad|ona|special|movie|film|dub)\b/gi, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim()
@@ -179,13 +201,20 @@ function withSeasonVariants(value, season) {
 
 export function buildResolveSearchQueries(media, sourceID = '') {
   const baseCandidates = buildCandidates(media)
-  if (!isStrictEnglishAnimeSource(sourceID)) {
+  if (!supportsSeasonAwareSearchVariants(sourceID)) {
     return baseCandidates
   }
 
   const { season, kind, year } = extractSeasonHintsFromMedia(media)
   const seen = new Set()
   const out = []
+  const pushExact = (value) => {
+    const variant = String(value ?? '').trim()
+    const key = normalizeTitleForMatch(variant)
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    out.push(variant)
+  }
   const push = (value) => {
     for (const variant of buildExpandedTitleVariants(value)) {
       const key = normalizeTitleForMatch(variant)
@@ -193,6 +222,10 @@ export function buildResolveSearchQueries(media, sourceID = '') {
       seen.add(key)
       out.push(variant)
     }
+  }
+
+  for (const candidate of baseCandidates) {
+    pushExact(candidate)
   }
 
   for (const candidate of baseCandidates) {
@@ -233,7 +266,7 @@ function resolveSearchCandidateLimit(sourceID = '') {
     case 'animegg-en':
       return 6
     case 'animepahe-en':
-      return 5
+      return 6
     default:
       return MAX_RESOLVE_SEARCH_CANDIDATES
   }
@@ -241,8 +274,10 @@ function resolveSearchCandidateLimit(sourceID = '') {
 
 function resolveHitProbeLimit(sourceID = '') {
   switch (String(sourceID || '').toLowerCase()) {
-    case 'animepahe-en':
+    case 'animeheaven-en':
       return 2
+    case 'animepahe-en':
+      return 3
     default:
       return MAX_RESOLVE_HITS
   }
@@ -250,6 +285,8 @@ function resolveHitProbeLimit(sourceID = '') {
 
 function resolveMinScore(sourceID = '') {
   switch (String(sourceID || '').toLowerCase()) {
+    case 'animeheaven-en':
+      return 46
     case 'animekai-en':
       return 68
     case 'animegg-en':
@@ -261,7 +298,7 @@ function resolveMinScore(sourceID = '') {
   }
 }
 
-function shouldShortCircuitSearch(sourceID = '') {
+function requiresValidatedResolvedHit(sourceID = '') {
   switch (String(sourceID || '').toLowerCase()) {
     case 'animepahe-en':
       return true
@@ -270,10 +307,42 @@ function shouldShortCircuitSearch(sourceID = '') {
   }
 }
 
-function hasStrongSearchCandidate(hits, media, sourceID = '') {
+function shouldCacheFailedResolvedMedia(sourceID = '') {
+  return !requiresValidatedResolvedHit(sourceID)
+}
+
+function resolveEpisodeProbeTimeoutMs(sourceID = '', api = null) {
+  const override = Number(api?.episodeProbeTimeoutMs || 0)
+  if (override > 0) return override
+  switch (String(sourceID || '').toLowerCase()) {
+    case 'animeheaven-en':
+      return 6_000
+    case 'animepahe-en':
+      return 8_000
+    default:
+      return 12_000
+  }
+}
+
+function shouldShortCircuitSearch(sourceID = '') {
+  switch (String(sourceID || '').toLowerCase()) {
+    case 'animeheaven-en':
+    case 'animepahe-en':
+      return true
+    default:
+      return false
+  }
+}
+
+function hasStrongSearchCandidate(hits, media, sourceID = '', queryTitle = '') {
   const ranked = rankJKAnimeResults(hits, media, sourceID)
   if (!ranked.length) return false
-  return ranked[0].score >= Math.max(resolveMinScore(sourceID), 90)
+  const top = ranked[0]
+  if (top.score < Math.max(resolveMinScore(sourceID), 90)) return false
+  if (String(sourceID || '').toLowerCase() === 'animepahe-en') {
+    return bestHitQueryTitleScore(top.hit, queryTitle) >= 96
+  }
+  return true
 }
 
 function buildSourceIDCandidates(hit) {
@@ -328,6 +397,15 @@ function buildHitCandidates(hit) {
     hit?.anime_title,
     ...buildSourceIDCandidates(hit),
   ])
+}
+
+function bestHitQueryTitleScore(hit, queryTitle) {
+  if (!queryTitle) return 0
+  let best = 0
+  for (const candidate of buildHitCandidates(hit)) {
+    best = Math.max(best, scoreTitleAgainstNeedles(candidate, [queryTitle]))
+  }
+  return best
 }
 
 function sourceSlugTokens(hit) {
@@ -499,7 +577,7 @@ export function rankOnlineSourceHits(results, needles, options = {}) {
 function rankJKAnimeResults(results, media, sourceID = '') {
   const needles = buildResolverTitleNeedles(media)
 
-  const strictSeason = isStrictEnglishAnimeSource(sourceID)
+  const strictSeason = usesStrictSeasonScoring(sourceID)
 
   return rankOnlineSourceHits(results, needles, {
     targetSeason: getSeasonHint(needles),
@@ -740,6 +818,29 @@ async function getEpisodesCached(sourceID, animeID, api) {
   )
 }
 
+async function getEpisodesCachedWithTimeout(sourceID, animeID, api) {
+  const timeoutMs = resolveEpisodeProbeTimeoutMs(sourceID, api)
+  let timeoutID = null
+  const cacheKey = `episodes:${sourceID}:${animeID}`
+
+  try {
+    return await Promise.race([
+      getEpisodesCached(sourceID, animeID, api),
+      new Promise((_, reject) => {
+        timeoutID = globalThis.setTimeout(() => {
+          clearCacheEntry(inFlightCache, cacheKey)
+          clearCacheEntry(episodeCache, cacheKey)
+          reject(new Error(`episode probe timed out after ${timeoutMs}ms`))
+        }, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutID) {
+      globalThis.clearTimeout(timeoutID)
+    }
+  }
+}
+
 export async function resolveAniListToJKAnime(media, api = wails, sourceFilter = null, lang = 'es') {
   const candidates = buildResolveSearchQueries(media, sourceFilter || '')
   const searchSourceID = sourceFilter || 'jkanime-es'
@@ -755,8 +856,11 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
 
   const candidateTitles = candidates.slice(0, resolveSearchCandidateLimit(searchSourceID))
   const searchResults = []
+  const allowShortCircuit = shouldShortCircuitSearch(searchSourceID)
+    && !getSeasonHint(buildResolverTitleNeedles(media))
+    && !detectVariantKind(buildResolverTitleNeedles(media))
 
-  if (shouldShortCircuitSearch(searchSourceID)) {
+  if (allowShortCircuit) {
     for (const title of candidateTitles) {
       try {
         const hits = (await searchOnlineCached(title, api, searchSourceID) ?? [])
@@ -771,7 +875,7 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
           aggregatedHits.push(hit)
         }
 
-        if (hits.length && hasStrongSearchCandidate(aggregatedHits, media, searchSourceID)) {
+        if (hits.length && hasStrongSearchCandidate(aggregatedHits, media, searchSourceID, title)) {
           break
         }
       } catch (error) {
@@ -820,7 +924,7 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
   const resolvedHits = []
   for (const { hit, score } of rankedHits) {
     try {
-      const episodes = await getEpisodesCached(hit.source_id, hit.id, api)
+      const episodes = await getEpisodesCachedWithTimeout(hit.source_id, hit.id, api)
       if (!episodes?.length) continue
 
       const episodeMatch = episodeCountMatchScore(media?.episodes, episodes.length, searchSourceID)
@@ -833,7 +937,9 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
       if (shouldStopResolvingAfterEpisodeProbe(media, episodeMatch)) {
         break
       }
-    } catch {
+    } catch (error) {
+      const message = String(error?.message ?? error ?? '').trim()
+      if (message) lastErrorMessage = message
       // Try the next ranked source hit.
     }
   }
@@ -850,26 +956,34 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
   }
 
   if (rankedHits.length > 0) {
+    const failedResolution = {
+      hit: requiresValidatedResolvedHit(searchSourceID) ? null : rankedHits[0].hit,
+      searchedTitle,
+      error: lastErrorMessage,
+    }
+    if (!shouldCacheFailedResolvedMedia(searchSourceID)) {
+      return failedResolution
+    }
     return writeCache(
       resolvedMediaCache,
       cacheKey,
-      {
-        hit: rankedHits[0].hit,
-        searchedTitle,
-        error: lastErrorMessage,
-      },
+      failedResolution,
       SEARCH_CACHE_TTL_MS,
     )
   }
 
+  const emptyResolution = {
+    hit: null,
+    searchedTitle,
+    error: lastErrorMessage,
+  }
+  if (!shouldCacheFailedResolvedMedia(searchSourceID)) {
+    return emptyResolution
+  }
   return writeCache(
     resolvedMediaCache,
     cacheKey,
-    {
-      hit: null,
-      searchedTitle,
-      error: lastErrorMessage,
-    },
+    emptyResolution,
     SEARCH_CACHE_TTL_MS,
   )
 }
@@ -902,7 +1016,7 @@ export async function enrichJKAnimeHit(hit, api = wails, lang = 'es') {
       if (!media.length) continue
 
       const rankingOptions = {
-        strictSeason: isStrictEnglishAnimeSource(hit?.source_id),
+        strictSeason: usesStrictSeasonScoring(hit?.source_id),
         targetKind: detectVariantKind([hit?.title, hit?.title_english, hit?.anime_title]),
       }
       const ranked = rankAniListResults(media, hit, rankingOptions)

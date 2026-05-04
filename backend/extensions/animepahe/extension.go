@@ -9,6 +9,7 @@ import (
 	"html"
 	neturl "net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +33,7 @@ var animePaheMirrorBases = []string{
 }
 
 var httpSession = httpclient.NewSession(15)
+var fetchAnimePaheAPIWithBrowserFallback = fetchAPIWithBrowserFallback
 
 type Extension struct{}
 
@@ -67,7 +69,7 @@ func (e *Extension) Search(query string, lang extensions.Language) ([]extensions
 	for _, candidate := range animePaheSearchQueries(query) {
 		for _, base := range animePaheBaseCandidates() {
 			apiURL := fmt.Sprintf("%s/api?m=search&q=%s", base, urlEncode(candidate))
-			body, err := fetchAPIWithBrowserFallback(apiURL)
+			body, err := fetchAnimePaheAPIWithBrowserFallback(apiURL)
 			if err != nil {
 				lastErr = err
 				continue
@@ -160,38 +162,28 @@ func (e *Extension) GetEpisodes(animeID string) ([]extensions.Episode, error) {
 	var lastErr error
 	for _, base := range animePaheBaseCandidates() {
 		all = all[:0]
-		for page := 1; ; page++ {
-			apiURL := fmt.Sprintf("%s/api?m=release&id=%s&sort=episode_asc&page=%d", base, animeID, page)
-			body, err := fetchAPIWithBrowserFallback(apiURL)
+		firstPage, err := animePaheFetchReleasePage(base, animeID, 1)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		all = append(all, firstPage.episodes...)
+
+		if firstPage.lastPage > 1 {
+			pageResults, err := animePaheFetchRemainingReleasePages(base, animeID, firstPage.lastPage)
 			if err != nil {
 				lastErr = err
-				if page == 1 {
-					break
-				}
-				break
+				continue
 			}
-
-			var resp releaseResponse
-			if err := json.Unmarshal([]byte(body), &resp); err != nil {
-				lastErr = err
-				break
-			}
-
-			for _, item := range resp.Data {
-				all = append(all, extensions.Episode{
-					ID:        animeID + "/" + item.Session,
-					Number:    item.Episode,
-					Title:     fmt.Sprintf("Episode %g", item.Episode),
-					Thumbnail: item.Snapshot,
-				})
-			}
-
-			if resp.CurrentPage >= resp.LastPage || len(resp.Data) == 0 {
-				break
+			for page := 2; page <= firstPage.lastPage; page++ {
+				all = append(all, pageResults[page]...)
 			}
 		}
 
 		if len(all) > 0 {
+			sort.Slice(all, func(i, j int) bool {
+				return all[i].Number < all[j].Number
+			})
 			rememberAnimePaheBase(base)
 			return all, nil
 		}
@@ -200,6 +192,84 @@ func (e *Extension) GetEpisodes(animeID string) ([]extensions.Episode, error) {
 		lastErr = fmt.Errorf("animepahe: no episodes found")
 	}
 	return nil, fmt.Errorf("animepahe: episodes failed: %w", lastErr)
+}
+
+type animePaheReleasePage struct {
+	currentPage int
+	lastPage    int
+	episodes    []extensions.Episode
+}
+
+func animePaheFetchReleasePage(base, animeID string, page int) (animePaheReleasePage, error) {
+	apiURL := fmt.Sprintf("%s/api?m=release&id=%s&sort=episode_asc&page=%d", base, animeID, page)
+	body, err := fetchAnimePaheAPIWithBrowserFallback(apiURL)
+	if err != nil {
+		return animePaheReleasePage{}, err
+	}
+
+	var resp releaseResponse
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		return animePaheReleasePage{}, err
+	}
+
+	episodes := make([]extensions.Episode, 0, len(resp.Data))
+	for _, item := range resp.Data {
+		episodes = append(episodes, extensions.Episode{
+			ID:        animeID + "/" + item.Session,
+			Number:    item.Episode,
+			Title:     fmt.Sprintf("Episode %g", item.Episode),
+			Thumbnail: item.Snapshot,
+		})
+	}
+
+	return animePaheReleasePage{
+		currentPage: resp.CurrentPage,
+		lastPage:    resp.LastPage,
+		episodes:    episodes,
+	}, nil
+}
+
+func animePaheFetchRemainingReleasePages(base, animeID string, lastPage int) (map[int][]extensions.Episode, error) {
+	if lastPage <= 1 {
+		return map[int][]extensions.Episode{}, nil
+	}
+
+	results := make(map[int][]extensions.Episode, lastPage-1)
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		firstErr error
+	)
+	sem := make(chan struct{}, 4)
+
+	for page := 2; page <= lastPage; page++ {
+		page := page
+		wg.Add(1)
+		go func() {
+			sem <- struct{}{}
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+
+			releasePage, err := animePaheFetchReleasePage(base, animeID, page)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				return
+			}
+			results[page] = releasePage.episodes
+		}()
+	}
+
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return results, nil
 }
 
 func (e *Extension) GetAudioVariants(animeID string, episodeID string) (map[string]bool, error) {

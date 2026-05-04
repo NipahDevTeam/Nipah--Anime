@@ -93,8 +93,8 @@ export function getReaderViewMode({
   return {
     continuousScrollMode,
     stripReadingMode,
-    effectivePageFit: stripReadingMode ? 'width' : pageFit,
-    stripPageFitPreset: stripReadingMode ? pageFit : 'width',
+    effectivePageFit: pageFit,
+    stripPageFitPreset: pageFit,
   }
 }
 
@@ -105,35 +105,43 @@ export function getReaderScrollSheetVariables({
   zoomPercent = DEFAULT_READER_SETTINGS.zoomPercent,
 } = {}) {
   const safeZoom = clamp(Number(zoomPercent ?? DEFAULT_READER_SETTINGS.zoomPercent) || DEFAULT_READER_SETTINGS.zoomPercent, 60, 180)
+  const maxWidthPx = `${interpolateZoomRange(safeZoom, 1220, 2040)}px`
 
   if (stripReadingMode) {
-    if (stripPageFitPreset === 'height') {
+    if (effectivePageFit === 'height' || stripPageFitPreset === 'height') {
       return {
         '--reader-scroll-page-width': `${clamp(safeZoom - 18, 62, 86)}%`,
+        '--reader-scroll-page-height': `${Math.max(58, safeZoom)}vh`,
+        '--reader-scroll-page-max-width': maxWidthPx,
       }
     }
-    if (stripPageFitPreset === 'original') {
+    if (effectivePageFit === 'original' || stripPageFitPreset === 'original') {
       return {
         '--reader-scroll-page-width': `${clamp(safeZoom - 6, 76, 96)}%`,
+        '--reader-scroll-page-max-width': maxWidthPx,
       }
     }
     return {
       '--reader-scroll-page-width': `${clamp(safeZoom + 4, 88, 100)}%`,
+      '--reader-scroll-page-max-width': maxWidthPx,
     }
   }
 
   if (effectivePageFit === 'height') {
     return {
       '--reader-scroll-page-height': `${Math.max(58, safeZoom)}vh`,
+      '--reader-scroll-page-max-width': maxWidthPx,
     }
   }
   if (effectivePageFit === 'original') {
     return {
       '--reader-scroll-page-width': `${Math.max(68, safeZoom)}%`,
+      '--reader-scroll-page-max-width': maxWidthPx,
     }
   }
   return {
     '--reader-scroll-page-width': `${Math.max(72, safeZoom)}%`,
+    '--reader-scroll-page-max-width': maxWidthPx,
   }
 }
 
@@ -188,10 +196,10 @@ export function getReaderCanvasPageLayout({
 
   const zoomProgress = getZoomProgress(zoomPercent)
   const fitScale = effectivePageFit === 'height'
-    ? 0.72 + (0.28 * zoomProgress)
+    ? 0.66 + (0.60 * zoomProgress)
     : effectivePageFit === 'original'
-      ? 0.7 + (0.3 * zoomProgress)
-      : 0.74 + (0.26 * zoomProgress)
+      ? 0.64 + (0.62 * zoomProgress)
+      : 0.68 + (0.60 * zoomProgress)
 
   let maxWidth = safeSlotWidth * fitScale
   let maxHeight = safeSlotHeight * fitScale

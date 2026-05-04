@@ -9,6 +9,6 @@ import (
 
 func applyPlatformCmdOptions(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: 0x00000010, // CREATE_NEW_CONSOLE
+		CreationFlags: 0x08000000, // CREATE_NO_WINDOW for mpv.exe's console subsystem wrapper
 	}
 }

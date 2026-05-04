@@ -38,7 +38,7 @@ const (
 type Manager struct {
 	mu                 sync.Mutex
 	active             map[string]*inFlightCall
-	lastAniListRequest time.Time
+	nextAniListRequest time.Time
 	aniListCooldownEnd time.Time
 }
 
@@ -487,6 +487,8 @@ func (m *Manager) GetTrending(lang string) (interface{}, error) {
 				seasonYear
 				startDate { year month }
 				genres
+				status
+				nextAiringEpisode { episode airingAt }
 			}
 		}
 	}`
@@ -504,6 +506,146 @@ func (m *Manager) GetTrending(lang string) (interface{}, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func (m *Manager) GetAniListAnimeCatalogHome(season string, year int) (map[string][]map[string]interface{}, error) {
+	gql := `
+	fragment HomeAnimeHeroCard on Media {
+		id
+		title { romaji english native }
+		coverImage { large extraLarge }
+		bannerImage
+		description(asHtml: false)
+		episodes
+		seasonYear
+		genres
+		status
+		nextAiringEpisode { episode airingAt }
+	}
+
+	fragment HomeAnimeShelfCard on Media {
+		id
+		title { romaji english native }
+		coverImage { large extraLarge }
+		seasonYear
+		status
+		nextAiringEpisode { episode airingAt }
+	}
+
+	query ($season: MediaSeason, $seasonYear: Int) {
+		featured: Page(page: 1, perPage: 12) {
+			media(type: ANIME, sort: TRENDING_DESC, status: RELEASING, isAdult: false) {
+				...HomeAnimeHeroCard
+			}
+		}
+		popular: Page(page: 1, perPage: 10) {
+			media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		seasonal: Page(page: 1, perPage: 10) {
+			media(type: ANIME, sort: TRENDING_DESC, status: RELEASING, season: $season, seasonYear: $seasonYear, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		topRated: Page(page: 1, perPage: 10) {
+			media(type: ANIME, sort: SCORE_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		action: Page(page: 1, perPage: 10) {
+			media(type: ANIME, genre: "Action", sort: POPULARITY_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		fantasy: Page(page: 1, perPage: 10) {
+			media(type: ANIME, genre: "Fantasy", sort: POPULARITY_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		romance: Page(page: 1, perPage: 10) {
+			media(type: ANIME, genre: "Romance", sort: POPULARITY_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		scifi: Page(page: 1, perPage: 10) {
+			media(type: ANIME, genre: "Sci-Fi", sort: POPULARITY_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		drama: Page(page: 1, perPage: 10) {
+			media(type: ANIME, genre: "Drama", sort: POPULARITY_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		slice: Page(page: 1, perPage: 10) {
+			media(type: ANIME, genre: "Slice of Life", sort: POPULARITY_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+	}`
+
+	var resp struct {
+		Data struct {
+			Featured struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"featured"`
+			Popular struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"popular"`
+			Seasonal struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"seasonal"`
+			TopRated struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"topRated"`
+			Action struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"action"`
+			Fantasy struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"fantasy"`
+			Romance struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"romance"`
+			Scifi struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"scifi"`
+			Drama struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"drama"`
+			Slice struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"slice"`
+		} `json:"data"`
+	}
+
+	body, err := m.postJSON(anilistEndpoint, map[string]interface{}{
+		"query": gql,
+		"variables": map[string]interface{}{
+			"season":     strings.TrimSpace(season),
+			"seasonYear": year,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+
+	return map[string][]map[string]interface{}{
+		"featured": resp.Data.Featured.Media,
+		"popular":  resp.Data.Popular.Media,
+		"seasonal": resp.Data.Seasonal.Media,
+		"topRated": resp.Data.TopRated.Media,
+		"action":   resp.Data.Action.Media,
+		"fantasy":  resp.Data.Fantasy.Media,
+		"romance":  resp.Data.Romance.Media,
+		"scifi":    resp.Data.Scifi.Media,
+		"drama":    resp.Data.Drama.Media,
+		"slice":    resp.Data.Slice.Media,
+	}, nil
 }
 
 // DiscoverAnime fetches anime from AniList with genre/season/sort/status filters.
@@ -603,6 +745,7 @@ func buildAnimeCatalogPayload(request catalogFetchRequest) map[string]interface{
 				startDate { year month day }
 				genres
 				status
+				nextAiringEpisode { episode airingAt }
 			}
 		}
 	}`,
@@ -614,19 +757,16 @@ func buildAnimeCatalogPayload(request catalogFetchRequest) map[string]interface{
 func (m *Manager) SearchAniList(query string, lang string) (interface{}, error) {
 	gql := `
 	query ($search: String) {
-		Page(page: 1, perPage: 20) {
+		Page(page: 1, perPage: 30) {
 			media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
 				id
 				idMal
 				title { romaji english native }
-				coverImage { large medium }
-				bannerImage
-				description(asHtml: false)
+				coverImage { extraLarge large medium }
 				averageScore
 				episodes
 				status
-				startDate { year }
-				genres
+				seasonYear
 				synonyms
 			}
 		}
@@ -1519,20 +1659,10 @@ func (m *Manager) waitAniListTurn(endpoint string) {
 		return
 	}
 
-	m.mu.Lock()
-	wait := time.Until(m.lastAniListRequest.Add(aniListTurnDelay))
-	if cooldownWait := time.Until(m.aniListCooldownEnd); cooldownWait > wait {
-		wait = cooldownWait
-	}
-	m.mu.Unlock()
-
-	if wait > 0 {
+	readyAt := m.reserveAniListTurn(time.Now())
+	if wait := time.Until(readyAt); wait > 0 {
 		time.Sleep(wait)
 	}
-
-	m.mu.Lock()
-	m.lastAniListRequest = time.Now()
-	m.mu.Unlock()
 }
 
 func aniListRateLimitBackoff(attempt int) time.Duration {
@@ -1548,6 +1678,9 @@ func (m *Manager) noteAniListRateLimit(attempt int) {
 	if until.After(m.aniListCooldownEnd) {
 		m.aniListCooldownEnd = until
 	}
+	if until.After(m.nextAniListRequest) {
+		m.nextAniListRequest = until
+	}
 	m.mu.Unlock()
 }
 
@@ -1555,6 +1688,22 @@ func (m *Manager) clearAniListRateLimitCooldown() {
 	m.mu.Lock()
 	m.aniListCooldownEnd = time.Time{}
 	m.mu.Unlock()
+}
+
+func (m *Manager) reserveAniListTurn(now time.Time) time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	readyAt := now
+	if m.nextAniListRequest.After(readyAt) {
+		readyAt = m.nextAniListRequest
+	}
+	if m.aniListCooldownEnd.After(readyAt) {
+		readyAt = m.aniListCooldownEnd
+	}
+
+	m.nextAniListRequest = readyAt.Add(aniListTurnDelay)
+	return readyAt
 }
 
 func cloneBytes(data []byte) []byte {

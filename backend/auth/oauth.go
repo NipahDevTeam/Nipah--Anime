@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,6 +33,8 @@ type CallbackServer struct {
 	listener    net.Listener
 	srv         *http.Server
 	resultCh    chan callbackResult
+	closeOnce   sync.Once
+	sendOnce    sync.Once
 }
 
 // StartCallbackServer binds to the configured localhost callback port.
@@ -48,51 +52,63 @@ func StartCallbackServer() (*CallbackServer, error) {
 		callbackPath = OAuthCallbackPath
 	}
 
+	cs := &CallbackServer{
+		Port:        port,
+		RedirectURI: OAuthRedirectURI(),
+		listener:    listener,
+		resultCh:    resultCh,
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc(callbackPath, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != callbackPath && !(callbackPath == "/" && r.URL.Path == "") {
+			http.NotFound(w, r)
+			return
+		}
+
 		q := r.URL.Query()
-		if errMsg := q.Get("error"); errMsg != "" {
-			resultCh <- callbackResult{Error: errMsg}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		errMsg := strings.TrimSpace(q.Get("error"))
+		code := strings.TrimSpace(q.Get("code"))
+		state := strings.TrimSpace(q.Get("state"))
+
+		if errMsg == "" && code == "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		cs.sendOnce.Do(func() {
+			resultCh <- callbackResult{
+				Code:  code,
+				State: state,
+				Error: errMsg,
+			}
+		})
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if errMsg != "" {
 			fmt.Fprintf(w, `<html><body style="background:#0a0a0e;color:#f0f0f5;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h2>Error de autenticacion</h2><p>%s</p><p style="color:#888">Puedes cerrar esta pestana.</p></div></body></html>`, errMsg)
 			return
 		}
-		resultCh <- callbackResult{
-			Code:  q.Get("code"),
-			State: q.Get("state"),
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, `<html><body style="background:#0a0a0e;color:#f0f0f5;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h2 style="color:#f5a623">Conectado!</h2><p>Tu cuenta ha sido vinculada a Nipah! Anime.</p><p style="color:#888">Puedes cerrar esta pestana.</p></div></body></html>`)
 	})
 
-	// If the callback path is not root, also accept root and explain the expected path.
 	if callbackPath != "/" {
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, callbackPath, http.StatusTemporaryRedirect)
 		})
 	}
+	cs.srv = &http.Server{Handler: mux}
 
-	srv := &http.Server{Handler: mux}
 	go func() {
-		_ = srv.Serve(listener)
+		_ = cs.srv.Serve(listener)
 	}()
 
-	return &CallbackServer{
-		Port:        port,
-		RedirectURI: OAuthRedirectURI(),
-		listener:    listener,
-		srv:         srv,
-		resultCh:    resultCh,
-	}, nil
+	return cs, nil
 }
 
 // WaitForCode blocks until the OAuth callback arrives or the timeout is reached.
 func (cs *CallbackServer) WaitForCode(timeout time.Duration) (code string, err error) {
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = cs.srv.Shutdown(ctx)
-	}()
+	defer cs.Close()
 
 	select {
 	case res := <-cs.resultCh:
@@ -106,4 +122,18 @@ func (cs *CallbackServer) WaitForCode(timeout time.Duration) (code string, err e
 	case <-time.After(timeout):
 		return "", fmt.Errorf("OAuth callback timed out after %v", timeout)
 	}
+}
+
+func (cs *CallbackServer) Close() {
+	if cs == nil {
+		return
+	}
+	cs.closeOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = cs.srv.Shutdown(ctx)
+		if cs.listener != nil {
+			_ = cs.listener.Close()
+		}
+	})
 }

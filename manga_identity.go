@@ -1279,65 +1279,70 @@ func (a *App) SearchMangaGlobal(query, lang string) ([]map[string]interface{}, e
 		return []map[string]interface{}{}, nil
 	}
 
-	searchCandidates := buildCanonicalMangaQueryCandidates(normalizedQuery)
-	log.Debug().
-		Str("query", normalizedQuery).
-		Str("lang", normalizeMangaSearchLang(lang)).
-		Strs("candidates", searchCandidates).
-		Msg("SearchMangaGlobal candidates")
+	searchLang := normalizeMangaSearchLang(lang)
+	cacheKey := mangaScopedCacheKey("global-search", searchLang, strings.ToLower(normalizedQuery))
+	out, origin, err := rememberJSONWithStale[[]map[string]interface{}](cacheKey, 20*time.Minute, 3*time.Hour, func() ([]map[string]interface{}, error) {
+		searchCandidates := buildCanonicalMangaQueryCandidates(normalizedQuery)
+		log.Debug().
+			Str("query", normalizedQuery).
+			Str("lang", searchLang).
+			Strs("candidates", searchCandidates).
+			Msg("SearchMangaGlobal candidates")
 
-	combined := make([]metadata.AniListMangaMetadata, 0, 12)
-	seen := map[int]struct{}{}
-	var lastErr error
-	var retryableFailure bool
-	for _, candidate := range searchCandidates {
-		results, err := a.metadata.SearchAniListMangaEntries(candidate)
-		if err != nil {
-			if metadata.IsRetryableAniListError(err) {
-				retryableFailure = true
-				log.Warn().Err(err).Str("query", normalizedQuery).Str("candidate", candidate).Msg("AniList manga search transient failure")
-			} else {
-				log.Warn().Err(err).Str("query", normalizedQuery).Str("candidate", candidate).Msg("AniList manga search failed")
-			}
-			lastErr = err
-			continue
-		}
-		for _, item := range results {
-			if _, ok := seen[item.AniListID]; ok {
+		combined := make([]metadata.AniListMangaMetadata, 0, 12)
+		seen := map[int]struct{}{}
+		var lastErr error
+		var retryableFailure bool
+		for _, candidate := range searchCandidates {
+			results, err := a.metadata.SearchAniListMangaEntries(candidate)
+			if err != nil {
+				if metadata.IsRetryableAniListError(err) {
+					retryableFailure = true
+					log.Warn().Err(err).Str("query", normalizedQuery).Str("candidate", candidate).Msg("AniList manga search transient failure")
+				} else {
+					log.Warn().Err(err).Str("query", normalizedQuery).Str("candidate", candidate).Msg("AniList manga search failed")
+				}
+				lastErr = err
 				continue
 			}
-			seen[item.AniListID] = struct{}{}
-			combined = append(combined, item)
+			for _, item := range results {
+				if _, ok := seen[item.AniListID]; ok {
+					continue
+				}
+				seen[item.AniListID] = struct{}{}
+				combined = append(combined, item)
+				if len(combined) >= 12 {
+					break
+				}
+			}
 			if len(combined) >= 12 {
 				break
 			}
 		}
-		if len(combined) >= 12 {
-			break
+		if len(combined) == 0 && lastErr != nil {
+			if retryableFailure {
+				log.Warn().Str("query", normalizedQuery).Msg("SearchMangaGlobal surfacing transient AniList failure")
+			}
+			return nil, lastErr
 		}
-	}
-	if len(combined) == 0 && lastErr != nil {
-		if retryableFailure {
-			log.Warn().Str("query", normalizedQuery).Msg("SearchMangaGlobal surfacing transient AniList failure")
-		}
-		return nil, lastErr
-	}
 
-	out := make([]map[string]interface{}, 0, len(combined))
-	for _, item := range combined {
-		out = append(out, a.buildCanonicalMangaResult(&item))
-		if len(out) >= 12 {
-			break
+		results := make([]map[string]interface{}, 0, len(combined))
+		for _, item := range combined {
+			results = append(results, a.buildCanonicalMangaResult(&item))
+			if len(results) >= 12 {
+				break
+			}
 		}
-	}
+		return results, nil
+	})
 	log.Debug().
 		Str("query", normalizedQuery).
-		Str("lang", normalizeMangaSearchLang(lang)).
-		Int("candidate_count", len(searchCandidates)).
+		Str("lang", searchLang).
+		Str("cache", origin).
 		Int("results", len(out)).
 		Dur("took", time.Since(started)).
 		Msg("SearchMangaGlobal")
-	return out, nil
+	return out, err
 }
 
 func (a *App) GetMangaSourceMatches(anilistID int, lang string) ([]map[string]interface{}, error) {

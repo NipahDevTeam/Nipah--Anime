@@ -290,7 +290,8 @@ func (m *Manager) OpenEpisode(filePath string, episodeID int, episodeNum float64
 		args = append(args, fmt.Sprintf("--start=%f", startSec))
 	}
 
-	// Launch MPV — on Windows use CREATE_NEW_CONSOLE so it gets its own visible window
+	// Launch MPV. On Windows we suppress mpv.exe's extra console window while
+	// keeping the actual player window and IPC startup behavior unchanged.
 	cmd := exec.Command(bin, args...)
 	applyPlatformCmdOptions(cmd)
 

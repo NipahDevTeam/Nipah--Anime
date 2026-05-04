@@ -1,6 +1,13 @@
 package animepahe
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"miruro/backend/extensions"
+)
 
 func TestExtractKwikURLsDetectsExplicitAudioLabels(t *testing.T) {
 	body := `
@@ -99,5 +106,76 @@ func TestNormalizeAnimePaheKwikEntriesTreatsUnknownEntriesAsSubWhenDubExists(t *
 	variants := animePaheAudioVariants(entries)
 	if !variants["sub"] || !variants["dub"] {
 		t.Fatalf("expected both sub and dub variants, got %#v", variants)
+	}
+}
+
+func TestGetEpisodesFetchesRemainingPagesConcurrentlyAfterFirstPage(t *testing.T) {
+	originalFetchAPIWithBrowserFallback := fetchAnimePaheAPIWithBrowserFallback
+	defer func() {
+		fetchAnimePaheAPIWithBrowserFallback = originalFetchAPIWithBrowserFallback
+	}()
+
+	pageTwoRequested := make(chan struct{}, 1)
+	pageThreeRequested := make(chan struct{}, 1)
+	releaseBlockedPages := make(chan struct{})
+
+	fetchAnimePaheAPIWithBrowserFallback = func(rawURL string) (string, error) {
+		switch {
+		case strings.Contains(rawURL, "page=1"):
+			return `{"current_page":1,"last_page":3,"data":[{"episode":1,"session":"ep1"},{"episode":2,"session":"ep2"}]}`, nil
+		case strings.Contains(rawURL, "page=2"):
+			pageTwoRequested <- struct{}{}
+			<-releaseBlockedPages
+			return `{"current_page":2,"last_page":3,"data":[{"episode":3,"session":"ep3"},{"episode":4,"session":"ep4"}]}`, nil
+		case strings.Contains(rawURL, "page=3"):
+			pageThreeRequested <- struct{}{}
+			<-releaseBlockedPages
+			return `{"current_page":3,"last_page":3,"data":[{"episode":5,"session":"ep5"}]}`, nil
+		default:
+			return "", fmt.Errorf("unexpected url %s", rawURL)
+		}
+	}
+
+	done := make(chan []extensions.Episode, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		episodes, err := New().GetEpisodes("anime-session")
+		if err != nil {
+			errCh <- err
+			return
+		}
+		done <- episodes
+	}()
+
+	select {
+	case <-pageTwoRequested:
+	case err := <-errCh:
+		t.Fatalf("get episodes failed before second page request: %v", err)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("timed out waiting for second page request")
+	}
+
+	select {
+	case <-pageThreeRequested:
+	case err := <-errCh:
+		t.Fatalf("get episodes failed before third page request: %v", err)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("expected third page request to be issued without waiting for page two to finish")
+	}
+
+	close(releaseBlockedPages)
+
+	select {
+	case episodes := <-done:
+		if len(episodes) != 5 {
+			t.Fatalf("expected 5 episodes after concurrent fetch, got %d", len(episodes))
+		}
+		if episodes[0].Number != 1 || episodes[len(episodes)-1].Number != 5 {
+			t.Fatalf("expected ascending episode list, got %#v", episodes)
+		}
+	case err := <-errCh:
+		t.Fatalf("get episodes returned error: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for episodes result")
 	}
 }

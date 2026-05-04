@@ -140,6 +140,13 @@ type mangaChapterCachePayload struct {
 	HasChapters bool                 `json:"has_chapters"`
 }
 
+type persistedJSONSnapshot[T any] struct {
+	SavedAtUnix    int64 `json:"saved_at_unix"`
+	FreshUntilUnix int64 `json:"fresh_until_unix"`
+	StaleUntilUnix int64 `json:"stale_until_unix"`
+	Value          T     `json:"value"`
+}
+
 func rememberJSONWithStale[T any](key string, freshTTL, staleTTL time.Duration, loader func() (T, error)) (T, string, error) {
 	var zero T
 	if cached, ok := readAppCachedJSON[T](key); ok {
@@ -161,8 +168,8 @@ func rememberJSONWithStale[T any](key string, freshTTL, staleTTL time.Duration, 
 
 func rememberMangaChaptersWithPolicy(key string, loader func() ([]extensions.Chapter, error)) ([]extensions.Chapter, string, error) {
 	const (
-		freshTTL     = 15 * time.Minute
-		staleTTL     = 60 * time.Minute
+		freshTTL     = 30 * time.Minute
+		staleTTL     = 2 * time.Hour
 		shortMissTTL = 15 * time.Second
 	)
 
@@ -209,6 +216,51 @@ func rememberMangaChaptersWithPolicy(key string, loader func() ([]extensions.Cha
 		return staleChapters, "stale_cache", nil
 	}
 	return nil, "", err
+}
+
+func readPersistentJSONSnapshot[T any](database *db.Database, key string, now time.Time) (T, string, bool) {
+	var zero T
+	if database == nil {
+		return zero, "", false
+	}
+
+	raw := strings.TrimSpace(database.GetSetting(key, ""))
+	if raw == "" {
+		return zero, "", false
+	}
+
+	var snapshot persistedJSONSnapshot[T]
+	if err := json.Unmarshal([]byte(raw), &snapshot); err != nil {
+		return zero, "", false
+	}
+
+	nowUnix := now.Unix()
+	if snapshot.FreshUntilUnix > 0 && nowUnix <= snapshot.FreshUntilUnix {
+		return snapshot.Value, "persistent_fresh_cache", true
+	}
+	if snapshot.StaleUntilUnix > 0 && nowUnix <= snapshot.StaleUntilUnix {
+		return snapshot.Value, "persistent_stale_cache", true
+	}
+	return zero, "", false
+}
+
+func writePersistentJSONSnapshot[T any](database *db.Database, key string, freshTTL, staleTTL time.Duration, value T) {
+	if database == nil {
+		return
+	}
+
+	now := time.Now()
+	payload, err := json.Marshal(persistedJSONSnapshot[T]{
+		SavedAtUnix:    now.Unix(),
+		FreshUntilUnix: now.Add(freshTTL).Unix(),
+		StaleUntilUnix: now.Add(staleTTL).Unix(),
+		Value:          value,
+	})
+	if err != nil {
+		return
+	}
+
+	_ = database.SetSetting(key, string(payload))
 }
 
 func sourceManagesMangaChapterHydration(sourceID string) bool {
@@ -891,6 +943,59 @@ func (a *App) GetAniListAnimeByID(id int) (interface{}, error) {
 		return a.metadata.GetAnimeByID(id)
 	})
 	log.Debug().Int("id", id).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAniListAnimeByID")
+	return result, err
+}
+
+func (a *App) GetAniListAnimeCatalogHome(season string, year int) (map[string][]map[string]interface{}, error) {
+	started := time.Now()
+	if a.metadata == nil {
+		return nil, fmt.Errorf("metadata not initialized")
+	}
+	const (
+		freshTTL = 20 * time.Minute
+		staleTTL = 4 * time.Hour
+	)
+
+	trimmedSeason := strings.TrimSpace(season)
+	cacheKey := fmt.Sprintf("anilist:anime:catalog-home:%s|%d", trimmedSeason, year)
+	persistentKey := "cache:" + cacheKey
+
+	if cached, ok := readAppCachedJSON[map[string][]map[string]interface{}](cacheKey); ok {
+		log.Debug().Str("season", trimmedSeason).Int("year", year).Str("cache", "fresh_cache").Dur("took", time.Since(started)).Msg("GetAniListAnimeCatalogHome")
+		return cached, nil
+	}
+
+	persistentNow := time.Now()
+	if persisted, origin, ok := readPersistentJSONSnapshot[map[string][]map[string]interface{}](a.db, persistentKey, persistentNow); ok {
+		writeAppCachedJSON(staleAppCacheKey(cacheKey), staleTTL, persisted)
+		if origin == "persistent_fresh_cache" {
+			writeAppCachedJSON(cacheKey, freshTTL, persisted)
+			log.Debug().Str("season", trimmedSeason).Int("year", year).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAniListAnimeCatalogHome")
+			return persisted, nil
+		}
+
+		go func(season string, year int, cacheKey, persistentKey string) {
+			refreshed, err := a.metadata.GetAniListAnimeCatalogHome(season, year)
+			if err != nil {
+				log.Debug().Err(err).Str("season", season).Int("year", year).Msg("GetAniListAnimeCatalogHome background refresh skipped")
+				return
+			}
+			writeAppCachedJSON(cacheKey, freshTTL, refreshed)
+			writeAppCachedJSON(staleAppCacheKey(cacheKey), staleTTL, refreshed)
+			writePersistentJSONSnapshot(a.db, persistentKey, freshTTL, staleTTL, refreshed)
+		}(trimmedSeason, year, cacheKey, persistentKey)
+
+		log.Debug().Str("season", trimmedSeason).Int("year", year).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAniListAnimeCatalogHome")
+		return persisted, nil
+	}
+
+	result, origin, err := rememberJSONWithStale[map[string][]map[string]interface{}](cacheKey, freshTTL, staleTTL, func() (map[string][]map[string]interface{}, error) {
+		return a.metadata.GetAniListAnimeCatalogHome(trimmedSeason, year)
+	})
+	if err == nil {
+		writePersistentJSONSnapshot(a.db, persistentKey, freshTTL, staleTTL, result)
+	}
+	log.Debug().Str("season", strings.TrimSpace(season)).Int("year", year).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAniListAnimeCatalogHome")
 	return result, err
 }
 

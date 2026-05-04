@@ -1,11 +1,10 @@
 import { wails } from '../../lib/wails.js'
 
-export const STARTUP_MIN_VISIBLE_MS = 3200
-export const STARTUP_EXIT_MS = 360
-export const STARTUP_TASK_TIMEOUT_MS = 4800
-export const STARTUP_BACKGROUND_DELAY_MS = 1200
+export const STARTUP_MIN_VISIBLE_MS = 1200
+export const STARTUP_EXIT_MS = 280
+export const STARTUP_TASK_TIMEOUT_MS = 2800
+export const STARTUP_BACKGROUND_DELAY_MS = 600
 export const STARTUP_BACKGROUND_CONCURRENCY = 1
-const STARTUP_DETAIL_PRELOAD_LIMIT = 4
 
 function wait(ms) {
   return new Promise((resolve) => {
@@ -145,28 +144,6 @@ async function settleWithin(task, timeoutMs = STARTUP_TASK_TIMEOUT_MS) {
   ]).catch((error) => ({ error }))
 }
 
-async function warmAnimeDetailSet(lang) {
-  const response = await wails.getTrending(lang)
-  const media = response?.data?.Page?.media ?? []
-  const ids = media
-    .map((item) => Number(item?.id || item?.anilist_id || 0))
-    .filter((value) => value > 0)
-    .slice(0, STARTUP_DETAIL_PRELOAD_LIMIT)
-
-  await Promise.allSettled(ids.map((id) => wails.getAniListAnimeByID(id)))
-}
-
-async function warmMangaDetailSet(lang) {
-  const response = await wails.discoverManga('', 0, 'TRENDING_DESC', '', '', 1)
-  const media = response?.data?.Page?.media ?? []
-  const ids = media
-    .map((item) => Number(item?.id || item?.anilist_id || 0))
-    .filter((value) => value > 0)
-    .slice(0, STARTUP_DETAIL_PRELOAD_LIMIT)
-
-  await Promise.allSettled(ids.map((id) => wails.getAniListMangaByID(id)))
-}
-
 export function buildStartupWarmupPlan(settings = {}) {
   const lang = getStartupWarmupLanguage(settings)
   const { season, year } = getStartupSeason()
@@ -201,14 +178,14 @@ export function buildStartupWarmupPlan(settings = {}) {
         run: () => wails.isMPVAvailable(),
       },
       {
-        key: 'home-trending',
-        queryKey: ['gui2-home-trending', lang],
+        key: 'home-anilist',
+        queryKey: ['gui2-home-anilist', lang, season, year],
         staleTime: 10 * 60_000,
-        run: async () => {
-          const response = await wails.getTrending(lang)
-          return response?.data?.Page?.media ?? []
-        },
+        timeoutMs: 9000,
+        run: () => wails.getAniListAnimeCatalogHome(season, year),
       },
+    ],
+    background: [
       {
         key: 'anime-catalog-default',
         queryKey: ['anime-catalog', lang, 'TRENDING_DESC', '', '', 0, 1, '', ''],
@@ -220,20 +197,6 @@ export function buildStartupWarmupPlan(settings = {}) {
         queryKey: ['manga-catalog', lang, 'TRENDING_DESC', '', 0, 1, '', ''],
         staleTime: 20 * 60_000,
         run: async () => normalizeMangaCatalogPage(await wails.discoverManga('', 0, 'TRENDING_DESC', '', '', 1)),
-      },
-    ],
-    background: [
-      {
-        key: 'home-popular-now',
-        run: () => wails.discoverAnime('', '', year, 'POPULARITY_DESC', '', '', 1),
-      },
-      {
-        key: 'home-trending-season',
-        run: () => wails.discoverAnime('', season, year, 'TRENDING_DESC', 'RELEASING', '', 1),
-      },
-      {
-        key: 'home-top-rated',
-        run: () => wails.discoverAnime('', '', 0, 'SCORE_DESC', '', '', 1),
       },
       {
         key: 'history',
@@ -251,14 +214,6 @@ export function buildStartupWarmupPlan(settings = {}) {
         key: 'manga-catalog-home',
         run: () => wails.getAniListMangaCatalogHome(lang),
       },
-      {
-        key: 'anime-detail-seed',
-        run: () => warmAnimeDetailSet(lang),
-      },
-      {
-        key: 'manga-detail-seed',
-        run: () => warmMangaDetailSet(lang),
-      },
     ],
   }
 }
@@ -268,7 +223,10 @@ export async function runStartupWarmup(queryClient) {
   const settings = rawSettings && !rawSettings.timedOut && !rawSettings.error ? rawSettings : {}
   const plan = buildStartupWarmupPlan(settings)
 
-  const blockingTasks = plan.blocking.map((task) => settleWithin(() => runStartupWarmupTask(task, queryClient)))
+  const blockingTasks = plan.blocking.map((task) => settleWithin(
+    () => runStartupWarmupTask(task, queryClient),
+    Number(task?.timeoutMs) > 0 ? Number(task.timeoutMs) : STARTUP_TASK_TIMEOUT_MS,
+  ))
   await Promise.allSettled(blockingTasks)
 
   return {

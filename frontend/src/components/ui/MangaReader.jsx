@@ -433,14 +433,22 @@ export default function MangaReader({
           ...page,
           proxy_url: proxyImage(page.url, { sourceID }),
         }))
-        await Promise.allSettled(nextPages.map(preloadReaderPage))
+        const blockingPreloadCount = readerSettings.readingMode === 'scroll'
+          ? Math.min(INITIAL_VERTICAL_PAGE_BATCH, Math.max(nextPages.length, 1))
+          : Math.min(nextPages.length, readerSettings.readingMode === 'double' ? 2 : 1)
+        await Promise.allSettled(nextPages.slice(0, blockingPreloadCount).map(preloadReaderPage))
+        void Promise.allSettled(nextPages.slice(blockingPreloadCount).map(preloadReaderPage))
         setPages(nextPages)
         setCurrentPage(0)
-        setVisibleCount(nextPages.length || INITIAL_VERTICAL_PAGE_BATCH)
+        setVisibleCount(
+          readerSettings.readingMode === 'scroll'
+            ? Math.min(INITIAL_VERTICAL_PAGE_BATCH, Math.max(nextPages.length, 1))
+            : (nextPages.length || INITIAL_VERTICAL_PAGE_BATCH),
+        )
       })()
       .catch((e) => setError(e?.message ?? (isEnglish ? 'Error loading pages' : 'Error al cargar paginas')))
       .finally(() => setLoading(false))
-  }, [chapterID, dataSaver, isEnglish, mangaID, reloadToken, sourceID])
+  }, [chapterID, dataSaver, isEnglish, mangaID, readerSettings.readingMode, reloadToken, sourceID])
 
   useEffect(() => {
     const handler = (event) => {

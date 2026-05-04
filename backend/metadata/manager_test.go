@@ -59,3 +59,22 @@ func TestIsRetryableAniListErrorTreats429AsRetryable(t *testing.T) {
 		t.Fatalf("expected AniList 429 errors to be retryable")
 	}
 }
+
+func TestReserveAniListTurnSerializesConcurrentReservations(t *testing.T) {
+	manager := NewManager()
+	now := time.Date(2026, time.May, 4, 12, 0, 0, 0, time.UTC)
+
+	first := manager.reserveAniListTurn(now)
+	second := manager.reserveAniListTurn(now)
+	third := manager.reserveAniListTurn(now.Add(100 * time.Millisecond))
+
+	if !first.Equal(now) {
+		t.Fatalf("expected first AniList reservation at %s, got %s", now, first)
+	}
+	if want := now.Add(aniListTurnDelay); !second.Equal(want) {
+		t.Fatalf("expected second AniList reservation at %s, got %s", want, second)
+	}
+	if want := now.Add(2 * aniListTurnDelay); !third.Equal(want) {
+		t.Fatalf("expected third AniList reservation at %s, got %s", want, third)
+	}
+}

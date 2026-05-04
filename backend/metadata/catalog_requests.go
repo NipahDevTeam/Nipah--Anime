@@ -39,18 +39,22 @@ type aniListAnimeCatalogNode struct {
 		Large      string `json:"large"`
 		ExtraLarge string `json:"extraLarge"`
 	} `json:"coverImage"`
-	BannerImage  string      `json:"bannerImage"`
-	Description  string      `json:"description"`
-	AverageScore float64     `json:"averageScore"`
-	Popularity   int         `json:"popularity"`
-	Trending     int         `json:"trending"`
-	Favourites   int         `json:"favourites"`
-	Episodes     int         `json:"episodes"`
-	Season       string      `json:"season"`
-	SeasonYear   int         `json:"seasonYear"`
-	StartDate    AniListDate `json:"startDate"`
-	Genres       []string    `json:"genres"`
-	Status       string      `json:"status"`
+	BannerImage       string      `json:"bannerImage"`
+	Description       string      `json:"description"`
+	AverageScore      float64     `json:"averageScore"`
+	Popularity        int         `json:"popularity"`
+	Trending          int         `json:"trending"`
+	Favourites        int         `json:"favourites"`
+	Episodes          int         `json:"episodes"`
+	Season            string      `json:"season"`
+	SeasonYear        int         `json:"seasonYear"`
+	StartDate         AniListDate `json:"startDate"`
+	Genres            []string    `json:"genres"`
+	Status            string      `json:"status"`
+	NextAiringEpisode *struct {
+		Episode  int `json:"episode"`
+		AiringAt int `json:"airingAt"`
+	} `json:"nextAiringEpisode"`
 }
 
 type aniListAnimeCatalogEnvelope struct {

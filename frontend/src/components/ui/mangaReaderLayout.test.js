@@ -75,7 +75,7 @@ assert.deepEqual(
   {
     continuousScrollMode: true,
     stripReadingMode: true,
-    effectivePageFit: 'width',
+    effectivePageFit: 'height',
     stripPageFitPreset: 'height',
   },
 )
@@ -85,7 +85,7 @@ assert.deepEqual(
   {
     continuousScrollMode: true,
     stripReadingMode: true,
-    effectivePageFit: 'width',
+    effectivePageFit: 'original',
     stripPageFitPreset: 'original',
   },
 )
@@ -96,23 +96,42 @@ assert.deepEqual(
     continuousScrollMode: true,
     stripReadingMode: false,
     effectivePageFit: 'height',
-    stripPageFitPreset: 'width',
+    stripPageFitPreset: 'height',
   },
 )
 
 assert.deepEqual(
   getReaderScrollSheetVariables({ stripReadingMode: true, stripPageFitPreset: 'width', effectivePageFit: 'width', zoomPercent: 100 }),
-  { '--reader-scroll-page-width': '100%' },
+  {
+    '--reader-scroll-page-width': '100%',
+    '--reader-scroll-page-max-width': '1493px',
+  },
 )
 
 assert.deepEqual(
   getReaderScrollSheetVariables({ stripReadingMode: true, stripPageFitPreset: 'height', effectivePageFit: 'width', zoomPercent: 100 }),
-  { '--reader-scroll-page-width': '82%' },
+  {
+    '--reader-scroll-page-width': '82%',
+    '--reader-scroll-page-height': '100vh',
+    '--reader-scroll-page-max-width': '1493px',
+  },
 )
 
 assert.deepEqual(
-  getReaderScrollSheetVariables({ stripReadingMode: true, stripPageFitPreset: 'original', effectivePageFit: 'width', zoomPercent: 100 }),
-  { '--reader-scroll-page-width': '94%' },
+  getReaderScrollSheetVariables({ stripReadingMode: true, stripPageFitPreset: 'height', effectivePageFit: 'height', zoomPercent: 100 }),
+  {
+    '--reader-scroll-page-width': '82%',
+    '--reader-scroll-page-height': '100vh',
+    '--reader-scroll-page-max-width': '1493px',
+  },
+)
+
+assert.deepEqual(
+  getReaderScrollSheetVariables({ stripReadingMode: true, stripPageFitPreset: 'original', effectivePageFit: 'original', zoomPercent: 100 }),
+  {
+    '--reader-scroll-page-width': '94%',
+    '--reader-scroll-page-max-width': '1493px',
+  },
 )
 
 assert.deepEqual(
@@ -163,8 +182,8 @@ const pagedPortraitAtHighZoom = getReaderCanvasPageLayout({
   naturalHeight: 2400,
 })
 
-assert.deepEqual(pagedPortraitAtDefaultZoom, { width: 496, height: 744 })
-assert.deepEqual(pagedPortraitAtHighZoom, { width: 600, height: 900 })
+assert.deepEqual(pagedPortraitAtDefaultZoom, { width: 528, height: 792 })
+assert.deepEqual(pagedPortraitAtHighZoom, { width: 768, height: 1152 })
 assert.ok(
   pagedPortraitAtHighZoom.height > pagedPortraitAtDefaultZoom.height,
   'paged zoom should enlarge the page itself instead of just inflating its wrapper',
@@ -179,7 +198,7 @@ assert.deepEqual(
     naturalWidth: 1600,
     naturalHeight: 2400,
   }),
-  { width: 600, height: 900 },
+  { width: 768, height: 1152 },
 )
 
 assert.deepEqual(
@@ -237,7 +256,10 @@ assert.ok(!componentSource.includes('sheetClassName="reader-page-sheet--scroll"'
 assert.ok(!componentSource.includes('preserveReaderViewport, readerSettings.pageFit, readerSettings.readingMode, uiVisible'), 'reader UI visibility toggles should not re-run viewport restoration')
 assert.ok(!componentSource.includes('<footer className="reader-bottom-bar"'), 'reader should not render the deprecated bottom toolbar')
 assert.ok(!componentSource.includes('const saved = getMangaReaderProgress(sourceID, mangaID, chapterID)'), 'reader should not auto-restore into the last saved page when opening a chapter')
-assert.ok(componentSource.includes('await Promise.allSettled(nextPages.map(preloadReaderPage))'), 'reader should wait for chapter pages to preload before revealing the chapter')
+assert.ok(componentSource.includes('const blockingPreloadCount = readerSettings.readingMode === \'scroll\''), 'reader should size the blocking preload window based on the active reading mode')
+assert.ok(componentSource.includes('await Promise.allSettled(nextPages.slice(0, blockingPreloadCount).map(preloadReaderPage))'), 'reader should only block on the first visible reader pages before revealing the chapter')
+assert.ok(componentSource.includes('void Promise.allSettled(nextPages.slice(blockingPreloadCount).map(preloadReaderPage))'), 'reader should continue warming the remaining chapter pages in the background after the first visible batch is ready')
+assert.ok(!componentSource.includes('await Promise.allSettled(nextPages.map(preloadReaderPage))'), 'reader should not block initial chapter reveal on every single page image anymore')
 assert.ok(componentSource.includes('<div className="reader-settings-label">Zoom</div>'), 'reader settings should expose the zoom controls again')
 assert.ok(componentSource.includes('label="Zoom"'), 'reader settings should render a zoom slider row')
 assert.ok(componentSource.includes('preserveReaderViewport()'), 'reader should preserve the current viewport when fit/layout changes')
@@ -246,6 +268,7 @@ assert.ok(cssSource.includes('.reader-shell-v2'), 'reader shell CSS should exist
 assert.ok(cssSource.includes('.reader-settings-panel'), 'reader settings panel CSS should exist in gui2.css')
 assert.ok(cssSource.includes('.reader-stage--double'), 'reader double-page stage CSS should exist in gui2.css')
 assert.ok(cssSource.includes('.reader-scroll-stack'), 'reader CSS should define a dedicated continuous scroll stack')
+assert.ok(cssSource.includes('var(--reader-scroll-page-max-width'), 'reader CSS should make the scroll zoom ceiling configurable instead of hard-capping it at a fixed width')
 assert.ok(cssSource.includes('.reader-scroll-slice'), 'reader CSS should define seam-free scroll slices')
 assert.ok(cssSource.includes('.reader-scroll-image'), 'reader CSS should style scroll pages without page chrome')
 assert.ok(cssSource.includes('max-height: 100%;'), 'reader CSS should keep paged media contained without forcing a fixed height')

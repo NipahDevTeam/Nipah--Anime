@@ -10,7 +10,7 @@ import {
   rankOnlineSourceHits,
   resolveAniListToJKAnime,
 } from '../lib/onlineAnimeResolver'
-import { extractAniListAnimeSearchMedia } from '../lib/anilistSearch'
+import { searchAniListAnimeWithFallback } from '../lib/anilistSearch'
 import { normalizeAnimeSourceID } from '../lib/animeSources'
 import { buildPendingAniListSelectedAnime, getInitialSelectedAnimePayload, normalizeSelectedAnimePayload } from '../lib/mediaNavigation'
 import {
@@ -325,16 +325,45 @@ async function fetchCatalogPage({ sort, page, genres, season, year, format, stat
   })()
 }
 
+function flattenAnimeFallbackCatalog(homeCatalog) {
+  const seen = new Set()
+  const out = []
+  for (const bucket of [
+    homeCatalog?.featured,
+    homeCatalog?.popular,
+    homeCatalog?.seasonal,
+    homeCatalog?.topRated,
+    homeCatalog?.action,
+    homeCatalog?.fantasy,
+    homeCatalog?.romance,
+    homeCatalog?.scifi,
+    homeCatalog?.drama,
+    homeCatalog?.slice,
+  ]) {
+    for (const item of bucket ?? []) {
+      const id = Number(item?.id || item?.anilist_id || 0)
+      if (!id || seen.has(id)) continue
+      seen.add(id)
+      out.push(item)
+    }
+  }
+  return out
+}
+
 async function fetchCatalogFallback(page, lang = 'es') {
-  const res = await wails.getTrending(lang)
-  const pageData = res?.data?.Page
-  const media = pageData?.media ?? []
+  const { season, year } = getCurrentAniListSeason()
+  const homeCatalog = await wails.getAniListAnimeCatalogHome(season, year)
+  const media = flattenAnimeFallbackCatalog(homeCatalog)
+  const safePage = Math.max(1, Number(page || 1))
+  const start = (safePage - 1) * CATALOG_PAGE_SIZE
+  const slice = media.slice(start, start + CATALOG_PAGE_SIZE)
   return {
     data: {
       Page: {
-        media,
+        media: slice,
         pageInfo: {
-          hasNextPage: page === 1 ? (media.length >= CATALOG_PAGE_SIZE) : false,
+          hasNextPage: start + CATALOG_PAGE_SIZE < media.length,
+          currentPage: safePage,
         },
       },
     },
@@ -620,17 +649,12 @@ export default function Search() {
     if (clearSelected) setSelected(null)
 
     try {
-      const aniListSearch = await wails.searchAniList(term, appLang)
-      const media = extractAniListAnimeSearchMedia(aniListSearch)
-      const seen = new Set()
-      const finalResults = media
-        .filter((item) => {
-          const id = Number(item?.id || item?.anilist_id || 0)
-          if (id <= 0 || seen.has(id)) return false
-          seen.add(id)
-          return true
-        })
-        .slice(0, preferredAnilistID > 0 ? 12 : 10)
+      const aniListSearch = await searchAniListAnimeWithFallback(
+        term,
+        (candidate) => wails.searchAniList(candidate, appLang),
+        { limit: 20, minResults: 6, maxCandidates: 3 },
+      )
+      const finalResults = aniListSearch.results
       if (requestID !== searchRequestRef.current) return []
       setResults(finalResults)
 

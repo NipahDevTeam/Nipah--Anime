@@ -2803,6 +2803,12 @@ body.reader-active .gui2-content {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.gui2-homev2-hero-stage-loading {
+  background:
+    radial-gradient(circle at 18% 24%, rgba(215, 163, 90, 0.1), transparent 32%),
+    linear-gradient(180deg, rgba(20, 21, 26, 0.98), rgba(11, 12, 15, 0.99));
+}
+
 .gui2-homev2-hero-image,
 .gui2-homev2-hero-fallback {
   width: 100%;
@@ -2818,6 +2824,16 @@ body.reader-active .gui2-content {
   color: var(--gui2-text);
   font-size: 72px;
   font-weight: 800;
+}
+
+.gui2-homev2-hero-loading-sheen {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.04) 26%, rgba(255, 255, 255, 0.12) 38%, rgba(255, 255, 255, 0) 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+  background-size: 200% 100%, 100% 100%;
+  animation: gui2-homev2-loading-sheen 1.8s linear infinite;
 }
 
 .gui2-homev2-hero-overlay {
@@ -2838,6 +2854,10 @@ body.reader-active .gui2-content {
   display: grid;
   gap: 8px;
   transition: opacity 320ms ease, transform 320ms ease;
+}
+
+.gui2-homev2-hero-copy-loading {
+  max-width: 520px;
 }
 
 .gui2-homev2-hero-stage.transitioning .gui2-homev2-hero-image,
@@ -2992,6 +3012,46 @@ body.reader-active .gui2-content {
   gap: 8px;
 }
 
+.gui2-homev2-loading-recent-row {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.gui2-homev2-loading-recent-thumb {
+  aspect-ratio: 1.55 / 1;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+  background-size: 200% 100%;
+  animation: gui2-homev2-loading-sheen 1.8s linear infinite;
+}
+
+.gui2-homev2-loading-recent-copy {
+  display: grid;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.gui2-homev2-loading-line {
+  height: 12px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+  background-size: 200% 100%;
+  animation: gui2-homev2-loading-sheen 1.8s linear infinite;
+}
+
+.gui2-homev2-loading-line-title {
+  width: 84%;
+  height: 14px;
+}
+
+.gui2-homev2-loading-line-meta {
+  width: 58%;
+}
+
+.gui2-homev2-loading-line-short {
+  width: 34%;
+}
+
 .gui2-homev2-recent-row {
   display: grid;
   grid-template-columns: 118px minmax(0, 1fr);
@@ -3066,8 +3126,25 @@ body.reader-active .gui2-content {
   padding: 12px;
 }
 
+.gui2-homev2-band-loading {
+  overflow: hidden;
+}
+
 .gui2-homev2-band-continue-watching {
   gap: 12px;
+}
+
+.gui2-homev2-loading-poster-rail {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gui2-homev2-loading-poster {
+  aspect-ratio: 0.7;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+  background-size: 200% 100%;
+  animation: gui2-homev2-loading-sheen 1.8s linear infinite;
 }
 
 .gui2-homev2-poster-rail {
@@ -3075,6 +3152,15 @@ body.reader-active .gui2-content {
   grid-template-columns: repeat(var(--gui2-homev2-poster-columns, 10), minmax(0, 1fr));
   gap: 8px;
   justify-content: start;
+}
+
+@keyframes gui2-homev2-loading-sheen {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .gui2-homev2-poster {
@@ -6295,7 +6381,7 @@ body.reader-active .reader-shell-v2 {
 }
 
 .reader-scroll-stack {
-  width: min(var(--reader-scroll-page-width, 100%), 1280px);
+  width: min(var(--reader-scroll-page-width, 100%), var(--reader-scroll-page-max-width, 1280px));
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -6324,7 +6410,7 @@ body.reader-active .reader-shell-v2 {
 }
 
 .reader-fit--original .reader-scroll-stack {
-  width: min(var(--reader-scroll-page-width, 74%), 1280px);
+  width: min(var(--reader-scroll-page-width, 74%), var(--reader-scroll-page-max-width, 1280px));
 }
 
 .reader-page-sheet {

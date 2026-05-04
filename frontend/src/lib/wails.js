@@ -326,6 +326,21 @@ function getPreviewMangaCatalogHome() {
   }
 }
 
+function getPreviewAnimeCatalogHome(season = '', year = 0) {
+  return {
+    featured: getPreviewAnimeCatalog({ sort: 'TRENDING_DESC', status: 'RELEASING', page: 1 }).media.slice(0, 20),
+    popular: getPreviewAnimeCatalog({ sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
+    seasonal: getPreviewAnimeCatalog({ season, year, sort: 'TRENDING_DESC', status: 'RELEASING', page: 1 }).media.slice(0, 12),
+    topRated: getPreviewAnimeCatalog({ sort: 'SCORE_DESC', page: 1 }).media.slice(0, 12),
+    action: getPreviewAnimeCatalog({ genres: 'Action', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
+    fantasy: getPreviewAnimeCatalog({ genres: 'Fantasy', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
+    romance: getPreviewAnimeCatalog({ genres: 'Romance', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
+    scifi: getPreviewAnimeCatalog({ genres: 'Sci-Fi', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
+    drama: getPreviewAnimeCatalog({ genres: 'Drama', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
+    slice: getPreviewAnimeCatalog({ genres: 'Slice of Life', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
+  }
+}
+
 function buildPreviewLocalAnimeEpisodes(localID, totalEpisodes = 12) {
   return Array.from({ length: totalEpisodes }, (_, index) => {
     const episodeNum = index + 1
@@ -795,6 +810,10 @@ export const wails = {
   async getAniListAnimeByID(id) {
     if (isWailsRuntimeUnavailable()) return PREVIEW_ANIME_LIBRARY.find((item) => Number(item.id) === Number(id)) ?? null
     return rememberRuntimeCache(['anilist-anime-detail', Number(id) || 0], SOURCE_METADATA_CACHE_TTL_MS, () => window.go.main.App.GetAniListAnimeByID(id))
+  },
+  async getAniListAnimeCatalogHome(season = '', year = 0) {
+    if (isWailsRuntimeUnavailable()) return getPreviewAnimeCatalogHome(season, year)
+    return window.go.main.App.GetAniListAnimeCatalogHome(season, year)
   },
   async getAniListMangaByID(id) {
     if (isWailsRuntimeUnavailable()) return PREVIEW_MANGA_LIBRARY.find((item) => Number(item.anilist_id || item.id) === Number(id)) ?? null

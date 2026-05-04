@@ -15,18 +15,13 @@ assert.ok(
 )
 
 assert.ok(
-  source.includes("() => wails.discoverAnime('', '', year, 'POPULARITY_DESC', '', '', 1)"),
-  'Startup warmup popular shelf should pass the explicit format slot before the page argument',
+  source.includes("wails.getAniListAnimeCatalogHome(season, year)"),
+  'Startup warmup should seed the bundled anime home AniList payload before the gui-v2 Home route renders',
 )
 
 assert.ok(
-  source.includes("() => wails.discoverAnime('', season, year, 'TRENDING_DESC', 'RELEASING', '', 1)"),
-  'Startup warmup seasonal shelf should preserve status and still pass the explicit format slot',
-)
-
-assert.ok(
-  source.includes("() => wails.discoverAnime('', '', 0, 'SCORE_DESC', '', '', 1)"),
-  'Startup warmup top-rated shelf should pass the explicit format slot before the page argument',
+  source.includes("timeoutMs: 9000"),
+  'Startup warmup should give the bundled Home AniList payload a longer cold-start blocking window so the first Home shelf fetch stays behind the boot screen when possible',
 )
 
 console.log('startup warmup signature wiring tests passed')

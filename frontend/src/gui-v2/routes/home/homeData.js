@@ -243,10 +243,7 @@ export function buildGui2HomeData({
   const featuredPool = uniqueItems(
     trending.length
       ? trending
-      : [
-          ...resolvedFeaturedRows.flatMap((row) => row.items || []),
-          ...(dashboard?.recent_anime || []),
-        ],
+      : resolvedFeaturedRows.flatMap((row) => row.items || []),
   )
 
   const heroSlides = featuredPool.slice(0, 5)
@@ -280,6 +277,7 @@ export function buildGui2HomeData({
     ...resolvedFeaturedRows.flatMap((row) => row.items || []),
     ...resolvedGenreRows.flatMap((row) => row.items || []),
   ])
+  const hasPrimaryShelves = heroSlides.length > 0 || fallbackFeaturedRows.length > 0 || resolvedGenreRows.length > 0
 
   return {
     hero: hero
@@ -302,7 +300,7 @@ export function buildGui2HomeData({
     })),
     recentUpdates,
     sections: [
-      {
+      ...(hasPrimaryShelves ? [{
         key: 'continue-watching',
         title: isEnglish ? 'Continue Watching' : 'Continuar viendo',
         subtitle: isEnglish ? 'Pick up what you already started' : 'Retoma lo que ya empezaste',
@@ -310,7 +308,7 @@ export function buildGui2HomeData({
         pageSize: GUI2_HOME_CONTINUE_LIMIT,
         variant: 'landscape',
         items: continuePool.map((item, index) => mapContinueItem(item, index, isEnglish)),
-      },
+      }] : []),
       ...fallbackFeaturedRows.map((section) => ({
         key: section.key,
         title: section.title,
