@@ -1,18 +1,12 @@
 package main
 
 import (
-	"context"
 	"embed"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/linux"
-	"github.com/wailsapp/wails/v2/pkg/options/mac"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
 	"miruro/backend/db"
 	"miruro/backend/logger"
@@ -35,51 +29,7 @@ func main() {
 
 	app := NewApp()
 
-	err := wails.Run(&options.App{
-		Title:     "Nipah! Anime",
-		Width:     960,
-		Height:    620,
-		MinWidth:  920,
-		MinHeight: 560,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
-		},
-		BackgroundColour: &options.RGBA{R: 10, G: 10, B: 14, A: 1},
-		OnStartup: func(ctx context.Context) {
-			installerLog.Info().Dur("since_process_start", time.Since(processStarted)).Msg("wails startup callback")
-			app.startup(ctx)
-		},
-		OnDomReady: func(ctx context.Context) {
-			installerLog.Info().Dur("since_process_start", time.Since(processStarted)).Msg("wails dom ready callback")
-			app.domReady(ctx)
-		},
-		OnShutdown: app.shutdown,
-		Bind: []interface{}{
-			app,
-		},
-		// Platform-specific options
-		Windows: &windows.Options{
-			WebviewIsTransparent:              false,
-			WindowIsTranslucent:               false,
-			DisableWindowIcon:                 false,
-			DisableFramelessWindowDecorations: false,
-			WebviewUserDataPath:               "",
-		},
-		Mac: &mac.Options{
-			TitleBar:             mac.TitleBarHiddenInset(),
-			Appearance:           mac.DefaultAppearance,
-			WebviewIsTransparent: true,
-			WindowIsTranslucent:  true,
-			About: &mac.AboutInfo{
-				Title:   "Nipah! Anime",
-				Message: "A self-hosted anime & manga media server for Latin America.",
-			},
-		},
-		Linux: &linux.Options{
-			WindowIsTranslucent: false,
-			WebviewGpuPolicy:    linux.WebviewGpuPolicyAlways,
-		},
-	})
+	err := wails.Run(newWailsAppOptions(app, processStarted))
 
 	if err != nil {
 		println("Error:", err.Error())

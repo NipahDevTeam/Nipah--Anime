@@ -41,17 +41,14 @@ export async function runStartupWarmupQueue(tasks, queryClient, concurrency = ST
   if (queue.length === 0) return
 
   const safeConcurrency = Math.max(1, Math.min(queue.length, Number(concurrency) || 1))
-  let nextIndex = 0
 
-  const worker = async () => {
-    while (nextIndex < queue.length) {
-      const currentTask = queue[nextIndex]
-      nextIndex += 1
-      await runStartupWarmupTask(currentTask, queryClient)
+  const worker = async (workerIndex) => {
+    for (let taskIndex = workerIndex; taskIndex < queue.length; taskIndex += safeConcurrency) {
+      await runStartupWarmupTask(queue[taskIndex], queryClient)
     }
   }
 
-  await Promise.all(Array.from({ length: safeConcurrency }, () => worker()))
+  await Promise.all(Array.from({ length: safeConcurrency }, (_, workerIndex) => worker(workerIndex)))
 }
 
 function normalizeCatalogPage(payload) {

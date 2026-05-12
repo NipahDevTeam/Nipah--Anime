@@ -1,16 +1,18 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { toastError, toastSuccess } from '../../components/ui/Toast'
 import { useI18n } from '../../lib/i18n'
 import { extractAniListAnimeSearchMedia } from '../../lib/anilistSearch'
 import { buildAnimeNavigationState, buildMangaListNavigationState } from '../../lib/mediaNavigation'
 import { proxyImage, wails } from '../../lib/wails'
+import { buildMotionVars, buildStaggerDelayMs } from '../motion/gui2Motion'
 import { withGui2Prefix } from '../routeRegistry'
 
 const EDITOR_META_PREFIX = 'nipah-my-lists-meta'
 const MEDIA_TABS = ['anime', 'manga']
 const STATUS_ORDER = ['ALL', 'WATCHING', 'COMPLETED', 'PLANNING', 'DROPPED', 'ON_HOLD']
-const PAGE_SIZE_OPTIONS = [25, 50, 100]
+const PAGE_SIZE_OPTIONS = [24, 36, 48]
 
 const STATUS_LABELS = {
   anime: {
@@ -59,6 +61,19 @@ const STATUS_ACCENTS = {
   ON_HOLD: '#76afff',
 }
 
+const SORT_OPTIONS = [
+  { value: 'UPDATED_DESC', label: { en: 'Last Updated', es: 'Ultima actualizacion' } },
+  { value: 'TITLE_ASC', label: { en: 'Title', es: 'Titulo' } },
+  { value: 'SCORE_DESC', label: { en: 'Score', es: 'Puntuacion' } },
+  { value: 'PROGRESS_DESC', label: { en: 'Progress', es: 'Progreso' } },
+  { value: 'ADDED_DESC', label: { en: 'Last Added', es: 'Ultimo agregado' } },
+  { value: 'STARTED_DESC', label: { en: 'Start Date', es: 'Fecha de inicio' } },
+  { value: 'COMPLETED_DESC', label: { en: 'Completed Date', es: 'Fecha de finalizacion' } },
+  { value: 'RELEASE_DESC', label: { en: 'Release Date', es: 'Fecha de estreno' } },
+  { value: 'AVERAGE_SCORE_DESC', label: { en: 'Average Score', es: 'Puntuacion media' } },
+  { value: 'POPULARITY_DESC', label: { en: 'Popularity', es: 'Popularidad' } },
+]
+
 function getLabels(lang, mediaType) {
   return STATUS_LABELS[mediaType]?.[lang] || STATUS_LABELS[mediaType]?.es || STATUS_LABELS.anime.en
 }
@@ -73,19 +88,22 @@ function entrySecondaryTitle(entry) {
 }
 
 function entryStudioOrFormat(entry, mediaType) {
-  if (mediaType === 'anime') {
-    const format = entry?.media_format || 'TV'
-    const subtitle = entry?.title ? entry.title : ''
-    return [format, subtitle].filter(Boolean).join(' • ')
-  }
-
-  const format = entry?.media_format || 'Manga'
+  const format = entry?.media_format || (mediaType === 'anime' ? 'TV' : 'Manga')
   const subtitle = entry?.title ? entry.title : ''
-  return [format, subtitle].filter(Boolean).join(' • ')
+  return [format, subtitle].filter(Boolean).join(' | ')
 }
 
 function entryCount(entry, mediaType) {
   return mediaType === 'anime' ? Number(entry?.episodes_total || 0) : Number(entry?.chapters_total || 0)
+}
+
+function preferHighQualityCover(url) {
+  const value = String(url || '')
+  if (!value) return ''
+  return value
+    .replace('/medium/', '/large/')
+    .replace('/small/', '/large/')
+    .replace(/(\bsize=)(medium|small)\b/i, '$1large')
 }
 
 function entryProgressValue(entry, mediaType) {
@@ -111,41 +129,39 @@ function buildEditorStorageKey(mediaType, anilistID) {
 function formatDateInput(value) {
   if (!value) return ''
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
+  if (Number.isNaN(date.getTime()) || date.getUTCFullYear() <= 1901) return ''
   return date.toISOString().slice(0, 10)
 }
 
+function currentDateInput() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function readEditorMeta(mediaType, entry) {
-  if (typeof localStorage === 'undefined' || !entry?.anilist_id) {
-    return {
-      startedOn: formatDateInput(entry?.updated_at || entry?.added_at || ''),
-      notes: '',
-      tags: [],
-    }
+  const fallback = {
+    startedOn: formatDateInput(
+      entry?.started_at
+      || entry?.start_date
+      || entry?.startedAt
+      || entry?.updated_at
+      || entry?.added_at
+      || '',
+    ) || currentDateInput(),
+    completedOn: '',
   }
+
+  if (typeof localStorage === 'undefined' || !entry?.anilist_id) return fallback
 
   try {
     const raw = localStorage.getItem(buildEditorStorageKey(mediaType, entry.anilist_id))
-    if (!raw) {
-      return {
-        startedOn: formatDateInput(entry?.updated_at || entry?.added_at || ''),
-        notes: '',
-        tags: [],
-      }
-    }
-
+    if (!raw) return fallback
     const parsed = JSON.parse(raw)
     return {
-      startedOn: typeof parsed.startedOn === 'string' ? parsed.startedOn : formatDateInput(entry?.updated_at || entry?.added_at || ''),
-      notes: typeof parsed.notes === 'string' ? parsed.notes : '',
-      tags: Array.isArray(parsed.tags) ? parsed.tags.map((item) => String(item)).filter(Boolean) : [],
+      startedOn: typeof parsed.startedOn === 'string' ? parsed.startedOn : fallback.startedOn,
+      completedOn: typeof parsed.completedOn === 'string' ? parsed.completedOn : '',
     }
   } catch {
-    return {
-      startedOn: formatDateInput(entry?.updated_at || entry?.added_at || ''),
-      notes: '',
-      tags: [],
-    }
+    return fallback
   }
 }
 
@@ -154,24 +170,66 @@ function writeEditorMeta(mediaType, anilistID, payload) {
   localStorage.setItem(buildEditorStorageKey(mediaType, anilistID), JSON.stringify(payload))
 }
 
-function normalizeTagInput(value) {
-  return String(value || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
 function clampNumber(value, min, max) {
   const numeric = Number(value || 0)
   if (Number.isNaN(numeric)) return min
   return Math.max(min, Math.min(max, numeric))
 }
 
-function MyListMetric({ label, value }) {
+function toTimestamp(value) {
+  const timestamp = new Date(value || 0).getTime()
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function compareText(a, b) {
+  return String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base' })
+}
+
+function MyListCard({ entry, mediaType, labels, isEnglish, isActive, onOpen, onEdit }) {
+  const score = Number(entry.score || 0)
+  const accent = STATUS_ACCENTS[entry.status] || '#f0b14d'
+  const meta = [
+    entry.year || '',
+    entryStudioOrFormat(entry, mediaType).split(' | ')[0],
+    progressLabel(entry, mediaType),
+  ].filter(Boolean).join(' | ')
+
   return (
-    <article className="gui2-mylist-metric">
-      <span className="gui2-mylist-metric-label">{label}</span>
-      <strong className="gui2-mylist-metric-value">{value}</strong>
+    <article className={`gui2-mylist-card${isActive ? ' active' : ''}`}>
+      <button type="button" className="gui2-mylist-card-hitarea" onClick={onOpen} title={entryTitle(entry)}>
+        <div className="gui2-mylist-card-art">
+          {entry.cover_image ? (
+            <img src={proxyImage(entry.cover_image)} alt={entryTitle(entry)} className="gui2-mylist-card-image" />
+          ) : (
+            <div className="gui2-mylist-card-image gui2-mylist-card-image-fallback">{entryTitle(entry).slice(0, 1)}</div>
+          )}
+          <div className="gui2-mylist-card-image-shade" />
+          <span className="gui2-mylist-card-edit-icon" aria-hidden="true">✎</span>
+          <span className="gui2-mylist-card-status" style={{ color: accent }}>
+            {labels[entry.status] || entry.status}
+          </span>
+          <span className="gui2-mylist-card-score">
+            {score > 0 ? score.toFixed(1) : '-'} <span aria-hidden="true">*</span>
+          </span>
+        </div>
+        <div className="gui2-mylist-card-copy">
+          <strong className="gui2-mylist-card-title">{entryTitle(entry)}</strong>
+          <span className="gui2-mylist-card-meta">{meta}</span>
+          <span className="gui2-mylist-card-progressbar">
+            <span className="gui2-mylist-card-progressfill" style={{ width: `${progressPercent(entry, mediaType)}%`, backgroundColor: accent }} />
+          </span>
+        </div>
+      </button>
+      <button
+        type="button"
+        className="gui2-mylist-card-edit"
+        aria-label={isEnglish ? 'Edit' : 'Editar'}
+        onClick={(event) => {
+          event.stopPropagation()
+          event.preventDefault()
+          onEdit()
+        }}
+      />
     </article>
   )
 }
@@ -198,6 +256,501 @@ function AddAnimeResult({ item, label, onAdd }) {
   )
 }
 
+function Gui2MyListsCoverDriven(props) {
+  const {
+    isEnglish,
+    lang,
+    activeMediaType,
+    setActiveMediaType,
+    setShowAddPanel,
+    setShowActions,
+    setSelectedKey,
+    labels,
+    statusFilter,
+    setStatusFilter,
+    query,
+    setQuery,
+    showActions,
+    showSortMenu,
+    setShowSortMenu,
+    sortKey,
+    sortLabel,
+    setSortKey,
+    pendingSyncCount,
+    failedSyncCount,
+    handleSyncAniList,
+    handleRetrySync,
+    handleClearList,
+    showAddPanel,
+    addQuery,
+    setAddQuery,
+    addStatus,
+    setAddStatus,
+    deferredAddQuery,
+    searching,
+    handleSearchToAdd,
+    addResults,
+    handleAddAnime,
+    activeCounts,
+    activeTotal,
+    filteredEntries,
+    groupedEntries,
+    loading,
+    pageEntries,
+    selectedEntry,
+    handleOpenEntry,
+    setPage,
+    safePage,
+    totalPages,
+    pageChips,
+    pageSize,
+    setPageSize,
+    showFrom,
+    showTo,
+    saving,
+    draftStatus,
+    setDraftStatus,
+    draftProgress,
+    setDraftProgress,
+    draftScore,
+    setDraftScore,
+    draftStartedOn,
+    setDraftStartedOn,
+    draftCompletedOn,
+    setDraftCompletedOn,
+    handleSaveSelection,
+    handleResetSelection,
+    handleRemoveSelection,
+  } = props
+  const selectedEntryCover = selectedEntry?.cover_image ? proxyImage(preferHighQualityCover(selectedEntry.cover_image)) : ''
+
+  useEffect(() => {
+    if (!selectedEntry || typeof document === 'undefined') return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [selectedEntry])
+
+  const editorOverlay = selectedEntry && typeof document !== 'undefined'
+    ? createPortal(
+      <>
+        <button
+          type="button"
+          className="gui2-mylist-editor-backdrop"
+          aria-label={isEnglish ? 'Close editor' : 'Cerrar editor'}
+          onClick={() => setSelectedKey('')}
+        />
+
+        <aside className={`gui2-mylist-editor-drawer${selectedEntry ? ' open' : ''}`}>
+          <div className="gui2-mylist-editor">
+            <div className="gui2-mylist-editor-visual">
+              {selectedEntryCover ? (
+                <>
+                  <div className="gui2-mylist-editor-image-backdrop" style={{ backgroundImage: `url("${selectedEntryCover.replace(/"/g, '\\"')}")` }} />
+                  <img src={selectedEntryCover} alt={entryTitle(selectedEntry)} className="gui2-mylist-editor-image" />
+                </>
+              ) : (
+                <div className="gui2-mylist-editor-image gui2-mylist-editor-image-fallback">{entryTitle(selectedEntry).slice(0, 1)}</div>
+              )}
+              <button type="button" className="gui2-mylist-editor-close" onClick={() => setSelectedKey('')} aria-label={isEnglish ? 'Close editor' : 'Cerrar editor'}>
+                X
+              </button>
+            </div>
+
+            <div className="gui2-mylist-editor-header">
+              <h2 className="gui2-mylist-editor-title">{entryTitle(selectedEntry)}</h2>
+              <div className="gui2-mylist-editor-meta">
+                {[
+                  selectedEntry.year,
+                  entryCount(selectedEntry, activeMediaType) ? `${entryCount(selectedEntry, activeMediaType)} ${activeMediaType === 'anime' ? (isEnglish ? 'Episodes' : 'Episodios') : (isEnglish ? 'Chapters' : 'Capitulos')}` : '',
+                  entryStudioOrFormat(selectedEntry, activeMediaType).split(' | ')[0],
+                ].filter(Boolean).join(' | ')}
+              </div>
+            </div>
+
+            <div className="gui2-mylist-editor-fields">
+              <label className="gui2-mylist-field">
+                <span>{isEnglish ? 'Status' : 'Estado'}</span>
+                <select className="gui2-mylist-editor-select" value={draftStatus} onChange={(event) => setDraftStatus(event.target.value)}>
+                  {STATUS_ORDER.filter((status) => status !== 'ALL').map((status) => (
+                    <option key={status} value={status}>{labels[status]}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="gui2-mylist-field">
+                <span>{isEnglish ? 'Progress' : 'Progreso'}</span>
+                <div className="gui2-mylist-stepper">
+                  <button type="button" className="gui2-mylist-stepper-btn" onClick={() => setDraftProgress((value) => clampNumber(value - 1, 0, entryCount(selectedEntry, activeMediaType) || 9999))}>-</button>
+                  <input
+                    type="number"
+                    className="gui2-mylist-stepper-input"
+                    value={draftProgress}
+                    min="0"
+                    max={entryCount(selectedEntry, activeMediaType) || 9999}
+                    onChange={(event) => setDraftProgress(clampNumber(event.target.value, 0, entryCount(selectedEntry, activeMediaType) || 9999))}
+                  />
+                  <button type="button" className="gui2-mylist-stepper-btn" onClick={() => setDraftProgress((value) => clampNumber(value + 1, 0, entryCount(selectedEntry, activeMediaType) || 9999))}>+</button>
+                  <span className="gui2-mylist-stepper-total">/ {entryCount(selectedEntry, activeMediaType) || '-'}</span>
+                </div>
+                <div className="gui2-mylist-editor-progressbar">
+                  <div className="gui2-mylist-editor-progressfill" style={{ width: `${entryCount(selectedEntry, activeMediaType) ? Math.round((draftProgress / entryCount(selectedEntry, activeMediaType)) * 100) : 0}%` }} />
+                </div>
+              </div>
+
+              <div className="gui2-mylist-field">
+                <span>{isEnglish ? 'Score' : 'Puntuacion'}</span>
+                <div className="gui2-mylist-score-row">
+                  <select className="gui2-mylist-editor-select" value={draftScore} onChange={(event) => setDraftScore(Number(event.target.value || 0))}>
+                    {Array.from({ length: 11 }).map((_, index) => (
+                      <option key={index} value={index}>{index === 0 ? '-' : index.toFixed(1)}</option>
+                    ))}
+                  </select>
+                  <span className="gui2-mylist-score-star">*</span>
+                </div>
+              </div>
+
+              <label className="gui2-mylist-field">
+                <span>{isEnglish ? 'Started On' : 'Empezado el'}</span>
+                <input type="date" className="gui2-mylist-editor-input" value={draftStartedOn} onChange={(event) => setDraftStartedOn(event.target.value)} />
+              </label>
+
+              <label className="gui2-mylist-field">
+                <span>{isEnglish ? 'Completed On' : 'Finalizado el'}</span>
+                <input type="date" className="gui2-mylist-editor-input" value={draftCompletedOn} onChange={(event) => setDraftCompletedOn(event.target.value)} />
+              </label>
+            </div>
+
+            <div className="gui2-mylist-editor-footer">
+              <button type="button" className="btn btn-primary" onClick={handleSaveSelection} disabled={saving}>
+                {saving ? (isEnglish ? 'Saving...' : 'Guardando...') : (isEnglish ? 'Save Changes' : 'Guardar cambios')}
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={handleResetSelection}>
+                {isEnglish ? 'Reset' : 'Restablecer'}
+              </button>
+              <button type="button" className="btn btn-ghost gui2-mylist-remove-btn" onClick={handleRemoveSelection}>
+                {isEnglish ? 'Remove' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </aside>
+      </>,
+      document.body,
+    )
+    : null
+
+  return (
+    <div className="gui2-mylist-page gui2-motion-enter" style={buildMotionVars('page')}>
+      <header
+        className="gui2-mylist-switchline gui2-lists-hero gui2-lists-hero-premium gui2-motion-enter"
+        style={{ ...buildMotionVars('section'), animationDelay: `${buildStaggerDelayMs(0, 30)}ms` }}
+      >
+        <div className="gui2-mylist-tabline" role="tablist" aria-label={isEnglish ? 'Media type' : 'Tipo de medio'}>
+          {MEDIA_TABS.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={`gui2-mylist-media-tab${activeMediaType === tab ? ' active' : ''}`}
+              onClick={() => {
+                setActiveMediaType(tab)
+                setShowAddPanel(false)
+                setShowActions(false)
+                setShowSortMenu(false)
+                setSelectedKey('')
+              }}
+            >
+              {tab === 'anime' ? 'Anime' : 'Manga'}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <section
+        className="gui2-mylist-toolbar gui2-motion-enter"
+        style={{ ...buildMotionVars('section'), animationDelay: `${buildStaggerDelayMs(1, 30)}ms` }}
+      >
+        <div className="gui2-mylist-status-tabs">
+          {STATUS_ORDER.map((status) => (
+            <button
+              key={status}
+              type="button"
+              className={`gui2-mylist-status-tab${statusFilter === status ? ' active' : ''}`}
+              onClick={() => setStatusFilter(status)}
+            >
+              {labels[status]}
+            </button>
+          ))}
+        </div>
+
+        <div className="gui2-mylist-toolbar-actions">
+          <div className="gui2-mylist-search">
+            <span className="gui2-mylist-search-icon">Q</span>
+            <input
+              type="text"
+              className="gui2-mylist-search-input"
+              placeholder={isEnglish ? 'Search your lists...' : 'Buscar en tus listas...'}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+
+          <div className="gui2-mylist-sort-wrap">
+            <button
+              type="button"
+              className="gui2-mylist-sort-toggle"
+              onClick={() => setShowSortMenu((value) => !value)}
+              aria-label={isEnglish ? 'Sort list' : 'Ordenar lista'}
+            >
+              <span className="gui2-mylist-sort-icon" aria-hidden="true">↕</span>
+              <span className="gui2-mylist-sort-label">{sortLabel}</span>
+            </button>
+
+            {showSortMenu ? (
+              <div className="gui2-mylist-sort-menu">
+                {SORT_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`gui2-mylist-sort-item${sortKey === option.value ? ' active' : ''}`}
+                    onClick={() => {
+                      setShowSortMenu(false)
+                      setSortKey(option.value)
+                    }}
+                  >
+                    {isEnglish ? option.label.en : option.label.es}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="gui2-mylist-actions-menu-wrap">
+            <button
+              type="button"
+              className="gui2-mylist-actions-toggle"
+              onClick={() => setShowActions((value) => !value)}
+              aria-label={isEnglish ? 'List actions' : 'Acciones de lista'}
+            >
+              <span />
+              <span />
+              <span />
+            </button>
+
+            {showActions ? (
+              <div className="gui2-mylist-actions-menu">
+                {activeMediaType === 'anime' ? (
+                  <button
+                    type="button"
+                    className="gui2-mylist-actions-item"
+                    onClick={() => {
+                      setShowAddPanel((value) => !value)
+                      setShowActions(false)
+                    }}
+                  >
+                    {showAddPanel ? (isEnglish ? 'Hide Add Anime' : 'Ocultar agregar anime') : (isEnglish ? 'Add Anime' : 'Agregar anime')}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="gui2-mylist-actions-item"
+                  onClick={() => {
+                    handleSyncAniList()
+                    setShowActions(false)
+                  }}
+                >
+                  {isEnglish ? 'Sync AniList' : 'Sincronizar AniList'}
+                </button>
+                <button
+                  type="button"
+                  className="gui2-mylist-actions-item"
+                  onClick={() => {
+                    handleRetrySync()
+                    setShowActions(false)
+                  }}
+                  disabled={pendingSyncCount === 0 && failedSyncCount === 0}
+                >
+                  {isEnglish ? 'Retry Queue' : 'Reintentar cola'}
+                </button>
+                <button
+                  type="button"
+                  className="gui2-mylist-actions-item danger"
+                  onClick={() => {
+                    handleClearList()
+                    setShowActions(false)
+                  }}
+                >
+                  {activeMediaType === 'anime' ? (isEnglish ? 'Clear Anime List' : 'Borrar anime') : (isEnglish ? 'Clear Manga List' : 'Borrar manga')}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      {showAddPanel && activeMediaType === 'anime' ? (
+        <section className="gui2-mylist-add-panel">
+          <div className="gui2-mylist-add-controls">
+            <input
+              type="text"
+              className="gui2-mylist-search-input"
+              placeholder={isEnglish ? 'Search AniList...' : 'Buscar en AniList...'}
+              value={addQuery}
+              onChange={(event) => setAddQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') handleSearchToAdd()
+              }}
+            />
+            <select className="gui2-mylist-inline-select" value={addStatus} onChange={(event) => setAddStatus(event.target.value)}>
+              {STATUS_ORDER.filter((status) => status !== 'ALL').map((status) => (
+                <option key={status} value={status}>{getLabels(lang, 'anime')[status]}</option>
+              ))}
+            </select>
+            <button type="button" className="btn btn-primary" onClick={handleSearchToAdd} disabled={!deferredAddQuery.trim() || searching}>
+              {searching ? (isEnglish ? 'Searching...' : 'Buscando...') : (isEnglish ? 'Search' : 'Buscar')}
+            </button>
+          </div>
+          <div className="gui2-mylist-add-results">
+            {addResults.length ? addResults.slice(0, 8).map((item) => (
+              <AddAnimeResult
+                key={item.id}
+                item={item}
+                label={`+ ${getLabels(lang, 'anime')[addStatus]}`}
+                onAdd={handleAddAnime}
+              />
+            )) : (
+              <div className="gui2-inline-empty">
+                {searching
+                  ? (isEnglish ? 'Searching AniList...' : 'Buscando en AniList...')
+                  : (isEnglish ? 'Search for a title to add it directly into your list.' : 'Busca un titulo para agregarlo directamente a tu lista.')}
+              </div>
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      <div
+        className="gui2-mylist-grid-shell gui2-lists-shelf gui2-motion-enter gui2-lists-shell-premium"
+        style={{ ...buildMotionVars('section'), animationDelay: `${buildStaggerDelayMs(2, 30)}ms` }}
+      >
+        <section className="gui2-mylist-grid-wrap">
+          <div
+            key={`${activeMediaType}-${statusFilter}`}
+            className="gui2-mylist-content-stage gui2-motion-enter"
+            style={buildMotionVars('section')}
+          >
+            <div className="gui2-mylist-grid-meta">
+              <span>{isEnglish ? `${filteredEntries.length} entries` : `${filteredEntries.length} entradas`}</span>
+              <span>{labels.WATCHING}: {Number(activeCounts.WATCHING || 0)} | {labels.COMPLETED}: {Number(activeCounts.COMPLETED || 0)} | {isEnglish ? 'Total' : 'Total'}: {activeTotal}</span>
+            </div>
+
+            {loading ? (
+              <div className="gui2-inline-empty">{isEnglish ? 'Loading your lists...' : 'Cargando tus listas...'}</div>
+            ) : statusFilter === 'ALL' ? (
+              <div className="gui2-mylist-status-shelves">
+                {groupedEntries.length ? groupedEntries.map((section, index) => (
+                  <section
+                    key={section.status}
+                    className="gui2-mylist-status-shelf gui2-motion-enter"
+                    style={{ ...buildMotionVars('card'), animationDelay: `${buildStaggerDelayMs(index, 24)}ms` }}
+                  >
+                    <header className="gui2-mylist-status-shelf-head">
+                      <h2 className="gui2-mylist-status-shelf-title">{section.label}</h2>
+                      <span className="gui2-mylist-status-shelf-count">{section.entries.length}</span>
+                    </header>
+                    <div className="gui2-mylist-status-shelf-grid">
+                      {section.entries.map((entry) => (
+                        <MyListCard
+                          key={`${activeMediaType}-${section.status}-${entry.anilist_id}`}
+                          entry={entry}
+                          mediaType={activeMediaType}
+                          labels={labels}
+                          isEnglish={isEnglish}
+                          isActive={selectedEntry?.anilist_id === entry.anilist_id}
+                          onOpen={() => handleOpenEntry(entry, activeMediaType)}
+                          onEdit={() => setSelectedKey(`${activeMediaType}-${entry.anilist_id}`)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )) : (
+                  <div className="gui2-inline-empty">{isEnglish ? 'No entries match the current filters.' : 'No hay elementos para los filtros actuales.'}</div>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="gui2-mylist-grid">
+                  {pageEntries.length ? pageEntries.map((entry) => (
+                    <MyListCard
+                      key={`${activeMediaType}-${entry.anilist_id}`}
+                      entry={entry}
+                      mediaType={activeMediaType}
+                      labels={labels}
+                      isEnglish={isEnglish}
+                      isActive={selectedEntry?.anilist_id === entry.anilist_id}
+                      onOpen={() => handleOpenEntry(entry, activeMediaType)}
+                      onEdit={() => setSelectedKey(`${activeMediaType}-${entry.anilist_id}`)}
+                    />
+                  )) : (
+                    <div className="gui2-inline-empty">{isEnglish ? 'No entries match the current filters.' : 'No hay elementos para los filtros actuales.'}</div>
+                  )}
+                </div>
+
+                <div className="gui2-mylist-grid-footer">
+                  <div className="gui2-mylist-table-summary">
+                    {isEnglish
+                      ? `Showing ${showFrom}-${showTo} of ${filteredEntries.length} entries`
+                      : `Mostrando ${showFrom}-${showTo} de ${filteredEntries.length} entradas`}
+                  </div>
+                  <div className="gui2-mylist-footer-actions">
+                    <div className="gui2-mylist-pagination">
+                      <button type="button" className="gui2-mylist-page-btn" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                        {'<'}
+                      </button>
+                      {pageChips.map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          className={`gui2-mylist-page-chip${item === safePage ? ' active' : ''}`}
+                          onClick={() => setPage(item)}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                      <button type="button" className="gui2-mylist-page-btn" disabled={safePage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>
+                        {'>'}
+                      </button>
+                    </div>
+                    <label className="gui2-mylist-rows">
+                      <span>{isEnglish ? 'Cards per page:' : 'Tarjetas por pagina:'}</span>
+                      <select className="gui2-mylist-inline-select" value={pageSize} onChange={(event) => setPageSize(Number(event.target.value) || 24)}>
+                        {PAGE_SIZE_OPTIONS.map((value) => (
+                          <option key={value} value={value}>{value}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {editorOverlay}
+
+      {(pendingSyncCount > 0 || failedSyncCount > 0) ? (
+        <div className="gui2-inline-status">
+          {isEnglish
+            ? `Remote sync queue: ${pendingSyncCount} pending / ${failedSyncCount} failed.`
+            : `Cola remota: ${pendingSyncCount} pendientes / ${failedSyncCount} fallidos.`}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export default function Gui2MyListsRoute({ preview = false }) {
   const navigate = useNavigate()
   const { lang } = useI18n()
@@ -212,10 +765,12 @@ export default function Gui2MyListsRoute({ preview = false }) {
   const [syncStatus, setSyncStatus] = useState(null)
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
-  const [pageSize, setPageSize] = useState(25)
+  const [sortKey, setSortKey] = useState('UPDATED_DESC')
+  const [pageSize, setPageSize] = useState(24)
   const [page, setPage] = useState(1)
   const [selectedKey, setSelectedKey] = useState('')
   const [showActions, setShowActions] = useState(false)
+  const [showSortMenu, setShowSortMenu] = useState(false)
   const [showAddPanel, setShowAddPanel] = useState(false)
   const [addQuery, setAddQuery] = useState('')
   const [addStatus, setAddStatus] = useState('PLANNING')
@@ -225,9 +780,7 @@ export default function Gui2MyListsRoute({ preview = false }) {
   const [draftProgress, setDraftProgress] = useState(0)
   const [draftScore, setDraftScore] = useState(0)
   const [draftStartedOn, setDraftStartedOn] = useState('')
-  const [draftNotes, setDraftNotes] = useState('')
-  const [draftTags, setDraftTags] = useState([])
-  const [tagInput, setTagInput] = useState('')
+  const [draftCompletedOn, setDraftCompletedOn] = useState('')
   const [saving, setSaving] = useState(false)
   const deferredQuery = useDeferredValue(query)
   const deferredAddQuery = useDeferredValue(addQuery)
@@ -287,10 +840,9 @@ export default function Gui2MyListsRoute({ preview = false }) {
   const activeCounts = activeMediaType === 'anime' ? animeCounts : mangaCounts
   const activeTotal = Object.values(activeCounts).reduce((sum, value) => sum + Number(value || 0), 0)
   const loading = activeMediaType === 'anime' ? loadingAnime : loadingManga
-  const animeCount = Object.values(animeCounts).reduce((sum, value) => sum + Number(value || 0), 0)
-  const mangaCount = Object.values(mangaCounts).reduce((sum, value) => sum + Number(value || 0), 0)
   const pendingSyncCount = Number(syncStatus?.pending_count || 0)
   const failedSyncCount = Number(syncStatus?.failed_count || 0)
+  const sortLabel = (SORT_OPTIONS.find((option) => option.value === sortKey)?.label?.[lang] || SORT_OPTIONS[0].label[lang] || SORT_OPTIONS[0].label.en)
 
   const filteredEntries = useMemo(() => {
     const term = String(deferredQuery || '').trim().toLowerCase()
@@ -298,22 +850,56 @@ export default function Gui2MyListsRoute({ preview = false }) {
       .filter((entry) => {
         if (statusFilter !== 'ALL' && entry.status !== statusFilter) return false
         if (!term) return true
-        return [
-          entry.title,
-          entry.title_english,
-          entry.status,
-          entry.year,
-        ].filter(Boolean).join(' ').toLowerCase().includes(term)
+        return [entry.title, entry.title_english, entry.status, entry.year].filter(Boolean).join(' ').toLowerCase().includes(term)
       })
       .sort((a, b) => {
-        const aTime = new Date(a.updated_at || a.added_at || 0).getTime()
-        const bTime = new Date(b.updated_at || b.added_at || 0).getTime()
-        return bTime - aTime
+        const metaA = readEditorMeta(activeMediaType, a)
+        const metaB = readEditorMeta(activeMediaType, b)
+        const progressA = entryProgressValue(a, activeMediaType)
+        const progressB = entryProgressValue(b, activeMediaType)
+        switch (sortKey) {
+          case 'TITLE_ASC':
+            return compareText(a.title_english || a.title, b.title_english || b.title)
+          case 'SCORE_DESC':
+            return (Number(b.score) || 0) - (Number(a.score) || 0) || compareText(a.title_english || a.title, b.title_english || b.title)
+          case 'PROGRESS_DESC':
+            return progressB - progressA || compareText(a.title_english || a.title, b.title_english || b.title)
+          case 'ADDED_DESC':
+            return toTimestamp(b.added_at) - toTimestamp(a.added_at)
+          case 'STARTED_DESC':
+            return toTimestamp(metaB.startedOn) - toTimestamp(metaA.startedOn)
+          case 'COMPLETED_DESC':
+            return toTimestamp(metaB.completedOn) - toTimestamp(metaA.completedOn)
+          case 'RELEASE_DESC':
+            return (Number(b.year) || 0) - (Number(a.year) || 0) || compareText(a.title_english || a.title, b.title_english || b.title)
+          case 'AVERAGE_SCORE_DESC':
+            return (Number(b.average_score || b.averageScore) || 0) - (Number(a.average_score || a.averageScore) || 0)
+              || (Number(b.year) || 0) - (Number(a.year) || 0)
+          case 'POPULARITY_DESC':
+            return (Number(b.popularity) || 0) - (Number(a.popularity) || 0)
+              || (Number(b.year) || 0) - (Number(a.year) || 0)
+          case 'UPDATED_DESC':
+          default:
+            return toTimestamp(b.updated_at || b.added_at) - toTimestamp(a.updated_at || a.added_at)
+        }
       })
-  }, [activeEntries, deferredQuery, statusFilter])
+  }, [activeEntries, activeMediaType, deferredQuery, sortKey, statusFilter])
 
   const totalPages = Math.max(1, Math.ceil(filteredEntries.length / pageSize))
   const safePage = Math.min(page, totalPages)
+  const groupedEntries = useMemo(() => (
+    statusFilter === 'ALL'
+      ? STATUS_ORDER
+        .filter((status) => status !== 'ALL')
+        .map((status) => ({
+          status,
+          label: labels[status],
+          entries: filteredEntries.filter((entry) => entry.status === status),
+        }))
+        .filter((section) => section.entries.length)
+      : []
+  ), [filteredEntries, labels, statusFilter])
+
   const pageEntries = useMemo(() => {
     const start = (safePage - 1) * pageSize
     return filteredEntries.slice(start, start + pageSize)
@@ -321,17 +907,17 @@ export default function Gui2MyListsRoute({ preview = false }) {
 
   useEffect(() => {
     setPage(1)
-  }, [activeMediaType, deferredQuery, statusFilter, pageSize])
+  }, [activeMediaType, deferredQuery, sortKey, statusFilter, pageSize])
 
   useEffect(() => {
-    if (!pageEntries.length) {
+    if (!filteredEntries.length) {
       setSelectedKey('')
       return
     }
-    if (!pageEntries.some((entry) => `${activeMediaType}-${entry.anilist_id}` === selectedKey)) {
-      setSelectedKey(`${activeMediaType}-${pageEntries[0].anilist_id}`)
+    if (!filteredEntries.some((entry) => `${activeMediaType}-${entry.anilist_id}` === selectedKey)) {
+      setSelectedKey('')
     }
-  }, [activeMediaType, pageEntries, selectedKey])
+  }, [activeMediaType, filteredEntries, selectedKey])
 
   const selectedEntry = pageEntries.find((entry) => `${activeMediaType}-${entry.anilist_id}` === selectedKey)
     || filteredEntries.find((entry) => `${activeMediaType}-${entry.anilist_id}` === selectedKey)
@@ -344,9 +930,7 @@ export default function Gui2MyListsRoute({ preview = false }) {
     setDraftProgress(entryProgressValue(selectedEntry, activeMediaType))
     setDraftScore(Number(selectedEntry.score || 0))
     setDraftStartedOn(stored.startedOn || '')
-    setDraftNotes(stored.notes || '')
-    setDraftTags(stored.tags || [])
-    setTagInput('')
+    setDraftCompletedOn(stored.completedOn || '')
   }, [activeMediaType, selectedEntry])
 
   const reportSyncResult = (result) => {
@@ -404,6 +988,7 @@ export default function Gui2MyListsRoute({ preview = false }) {
         await wails.clearMangaList()
         await loadManga()
       }
+      setSelectedKey('')
       toastSuccess(isEnglish ? 'List cleared.' : 'Lista borrada.')
       await loadSyncMeta()
     } catch (error) {
@@ -455,22 +1040,11 @@ export default function Gui2MyListsRoute({ preview = false }) {
 
   const handleOpenEntry = (entry, mediaType = activeMediaType) => {
     if (!entry) return
-
     if (mediaType === 'anime') {
-      navigate(animeOnlinePath, {
-        state: buildAnimeNavigationState(entry),
-      })
+      navigate(animeOnlinePath, { state: buildAnimeNavigationState(entry) })
       return
     }
-
-    navigate(mangaOnlinePath, {
-      state: buildMangaListNavigationState(entry),
-    })
-  }
-
-  const handleOpenSelected = () => {
-    if (!selectedEntry) return
-    handleOpenEntry(selectedEntry, activeMediaType)
+    navigate(mangaOnlinePath, { state: buildMangaListNavigationState(entry) })
   }
 
   const handleRemoveSelection = async () => {
@@ -491,7 +1065,8 @@ export default function Gui2MyListsRoute({ preview = false }) {
         reportSyncResult(result)
         await loadManga()
       }
-      writeEditorMeta(activeMediaType, selectedEntry.anilist_id, { startedOn: '', notes: '', tags: [] })
+      writeEditorMeta(activeMediaType, selectedEntry.anilist_id, { startedOn: '', completedOn: '' })
+      setSelectedKey('')
       await loadSyncMeta()
     } catch (error) {
       toastError(error?.message || 'Unknown error')
@@ -527,8 +1102,7 @@ export default function Gui2MyListsRoute({ preview = false }) {
 
       writeEditorMeta(activeMediaType, selectedEntry.anilist_id, {
         startedOn: draftStartedOn,
-        notes: draftNotes,
-        tags: draftTags,
+        completedOn: draftCompletedOn,
       })
 
       toastSuccess(isEnglish ? 'Changes saved.' : 'Cambios guardados.')
@@ -547,26 +1121,8 @@ export default function Gui2MyListsRoute({ preview = false }) {
     setDraftProgress(entryProgressValue(selectedEntry, activeMediaType))
     setDraftScore(Number(selectedEntry.score || 0))
     setDraftStartedOn(stored.startedOn || '')
-    setDraftNotes(stored.notes || '')
-    setDraftTags(stored.tags || [])
-    setTagInput('')
+    setDraftCompletedOn(stored.completedOn || '')
   }
-
-  const handleAddTags = () => {
-    if (!tagInput.trim()) return
-    const nextTags = [...new Set([...draftTags, ...normalizeTagInput(tagInput)])]
-    setDraftTags(nextTags)
-    setTagInput('')
-  }
-
-  const metricItems = [
-    { label: isEnglish ? 'Total Entries' : 'Entradas totales', value: activeTotal },
-    { label: labels.WATCHING, value: Number(activeCounts.WATCHING || 0) },
-    { label: labels.COMPLETED, value: Number(activeCounts.COMPLETED || 0) },
-    { label: labels.PLANNING, value: Number(activeCounts.PLANNING || 0) },
-    { label: labels.ON_HOLD, value: Number(activeCounts.ON_HOLD || 0) },
-    { label: labels.DROPPED, value: Number(activeCounts.DROPPED || 0) },
-  ]
 
   const showFrom = filteredEntries.length === 0 ? 0 : ((safePage - 1) * pageSize) + 1
   const showTo = Math.min(filteredEntries.length, safePage * pageSize)
@@ -577,370 +1133,70 @@ export default function Gui2MyListsRoute({ preview = false }) {
   ].filter((item, index, array) => Number.isFinite(item) && array.indexOf(item) === index)
 
   return (
-    <div className="gui2-mylist-page">
-      <header className="gui2-mylist-header">
-        <div className="gui2-mylist-header-copy">
-          <h1 className="gui2-mylist-title">{isEnglish ? 'My Lists' : 'Mis listas'}</h1>
-          <p className="gui2-mylist-subtitle">
-            {isEnglish
-              ? 'Track, organize, and manage all your anime and manga in one place.'
-              : 'Organiza y administra todo tu anime y manga en un solo lugar.'}
-          </p>
-        </div>
-
-        <div className="gui2-mylist-tabline" role="tablist" aria-label={isEnglish ? 'Media type' : 'Tipo de medio'}>
-          {MEDIA_TABS.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              className={`gui2-mylist-media-tab${activeMediaType === tab ? ' active' : ''}`}
-              onClick={() => {
-                setActiveMediaType(tab)
-                setShowAddPanel(false)
-                setShowActions(false)
-              }}
-            >
-              {tab === 'anime' ? 'Anime' : 'Manga'}
-            </button>
-          ))}
-        </div>
-      </header>
-
-      <section className="gui2-mylist-toolbar">
-        <div className="gui2-mylist-status-tabs">
-          {STATUS_ORDER.map((status) => (
-            <button
-              key={status}
-              type="button"
-              className={`gui2-mylist-status-tab${statusFilter === status ? ' active' : ''}`}
-              onClick={() => setStatusFilter(status)}
-            >
-              {labels[status]}
-            </button>
-          ))}
-        </div>
-
-        <div className="gui2-mylist-toolbar-actions">
-          <div className="gui2-mylist-search">
-            <span className="gui2-mylist-search-icon">⌕</span>
-            <input
-              type="text"
-              className="gui2-mylist-search-input"
-              placeholder={isEnglish ? 'Search your lists...' : 'Buscar en tus listas...'}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </div>
-
-          <div className="gui2-mylist-actions-menu-wrap">
-            <button type="button" className="gui2-mylist-actions-toggle" onClick={() => setShowActions((value) => !value)} aria-label={isEnglish ? 'List actions' : 'Acciones de lista'}>
-              <span />
-              <span />
-              <span />
-            </button>
-
-            {showActions ? (
-              <div className="gui2-mylist-actions-menu">
-                {activeMediaType === 'anime' ? (
-                  <button type="button" className="gui2-mylist-actions-item" onClick={() => { setShowAddPanel((value) => !value); setShowActions(false) }}>
-                    {showAddPanel ? (isEnglish ? 'Hide Add Anime' : 'Ocultar agregar anime') : (isEnglish ? 'Add Anime' : 'Agregar anime')}
-                  </button>
-                ) : null}
-                <button type="button" className="gui2-mylist-actions-item" onClick={() => { handleSyncAniList(); setShowActions(false) }}>
-                  {isEnglish ? 'Sync AniList' : 'Sincronizar AniList'}
-                </button>
-                <button type="button" className="gui2-mylist-actions-item" onClick={() => { handleRetrySync(); setShowActions(false) }} disabled={pendingSyncCount === 0 && failedSyncCount === 0}>
-                  {isEnglish ? 'Retry Queue' : 'Reintentar cola'}
-                </button>
-                <button type="button" className="gui2-mylist-actions-item danger" onClick={() => { handleClearList(); setShowActions(false) }}>
-                  {activeMediaType === 'anime' ? (isEnglish ? 'Clear Anime List' : 'Borrar anime') : (isEnglish ? 'Clear Manga List' : 'Borrar manga')}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      {showAddPanel && activeMediaType === 'anime' ? (
-        <section className="gui2-mylist-add-panel">
-          <div className="gui2-mylist-add-controls">
-            <input
-              type="text"
-              className="gui2-mylist-search-input"
-              placeholder={isEnglish ? 'Search AniList...' : 'Buscar en AniList...'}
-              value={addQuery}
-              onChange={(event) => setAddQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') handleSearchToAdd()
-              }}
-            />
-            <select className="gui2-mylist-inline-select" value={addStatus} onChange={(event) => setAddStatus(event.target.value)}>
-              {STATUS_ORDER.filter((status) => status !== 'ALL').map((status) => (
-                <option key={status} value={status}>{getLabels(lang, 'anime')[status]}</option>
-              ))}
-            </select>
-            <button type="button" className="btn btn-primary" onClick={handleSearchToAdd} disabled={!deferredAddQuery.trim() || searching}>
-              {searching ? (isEnglish ? 'Searching...' : 'Buscando...') : (isEnglish ? 'Search' : 'Buscar')}
-            </button>
-          </div>
-          <div className="gui2-mylist-add-results">
-            {addResults.length ? addResults.slice(0, 8).map((item) => (
-              <AddAnimeResult
-                key={item.id}
-                item={item}
-                label={`+ ${getLabels(lang, 'anime')[addStatus]}`}
-                onAdd={handleAddAnime}
-              />
-            )) : (
-              <div className="gui2-inline-empty">
-                {searching
-                  ? (isEnglish ? 'Searching AniList...' : 'Buscando en AniList...')
-                  : (isEnglish ? 'Search for a title to add it directly into your list.' : 'Busca un titulo para agregarlo directamente a tu lista.')}
-              </div>
-            )}
-          </div>
-        </section>
-      ) : null}
-
-      <section className="gui2-mylist-metrics">
-        {metricItems.map((metric) => (
-          <MyListMetric key={metric.label} label={metric.label} value={metric.value} />
-        ))}
-      </section>
-
-      <div className="gui2-mylist-shell">
-        <section className="gui2-mylist-table-wrap">
-          <div className="gui2-mylist-table-head">
-            <span>{isEnglish ? 'Title' : 'Titulo'}</span>
-            <span>{isEnglish ? 'Status' : 'Estado'}</span>
-            <span>{isEnglish ? 'Progress' : 'Progreso'}</span>
-            <span>{isEnglish ? 'Score' : 'Puntuacion'}</span>
-            <span>{isEnglish ? 'Year' : 'Ano'}</span>
-            <span>{isEnglish ? 'More' : 'Mas'}</span>
-          </div>
-
-          <div className="gui2-mylist-table">
-            {loading ? (
-              <div className="gui2-inline-empty">{isEnglish ? 'Loading your lists...' : 'Cargando tus listas...'}</div>
-            ) : pageEntries.length ? pageEntries.map((entry) => (
-              <button
-                key={`${activeMediaType}-${entry.anilist_id}`}
-                type="button"
-                className={`gui2-mylist-row${selectedEntry?.anilist_id === entry.anilist_id ? ' active' : ''}`}
-                onClick={() => setSelectedKey(`${activeMediaType}-${entry.anilist_id}`)}
-                onDoubleClick={() => handleOpenEntry(entry, activeMediaType)}
-              >
-                <span className="gui2-mylist-row-title">
-                  {entry.cover_image ? (
-                    <img src={proxyImage(entry.cover_image)} alt="" className="gui2-mylist-row-cover" />
-                  ) : (
-                    <span className="gui2-mylist-row-cover gui2-mylist-row-cover-fallback">{entryTitle(entry).slice(0, 1)}</span>
-                  )}
-                  <span className="gui2-mylist-row-copy">
-                    <strong>{entryTitle(entry)}</strong>
-                    <small>{entryStudioOrFormat(entry, activeMediaType)}</small>
-                  </span>
-                </span>
-                <span className="gui2-mylist-row-status" style={{ color: STATUS_ACCENTS[entry.status] || 'var(--gui2-text)' }}>
-                  {labels[entry.status] || entry.status}
-                </span>
-                <span className="gui2-mylist-row-progress">
-                  <span className="gui2-mylist-row-progress-label">{progressLabel(entry, activeMediaType)}</span>
-                  <span className="gui2-mylist-row-progressbar">
-                    <span className="gui2-mylist-row-progressfill" style={{ width: `${progressPercent(entry, activeMediaType)}%`, backgroundColor: STATUS_ACCENTS[entry.status] || '#f0b14d' }} />
-                  </span>
-                </span>
-                <span className="gui2-mylist-row-score">
-                  {Number(entry.score || 0) > 0 ? `${Number(entry.score).toFixed(1)}` : '-'}
-                  <span className="gui2-mylist-row-star">★</span>
-                </span>
-                <span className="gui2-mylist-row-year">{entry.year || '-'}</span>
-                <span className="gui2-mylist-row-more">⋮</span>
-              </button>
-            )) : (
-              <div className="gui2-inline-empty">{isEnglish ? 'No entries match the current filters.' : 'No hay elementos para los filtros actuales.'}</div>
-            )}
-          </div>
-
-          <div className="gui2-mylist-table-footer">
-            <div className="gui2-mylist-table-summary">
-              {isEnglish
-                ? `Showing ${showFrom}-${showTo} of ${filteredEntries.length} entries`
-                : `Mostrando ${showFrom}-${showTo} de ${filteredEntries.length} entradas`}
-            </div>
-            <div className="gui2-mylist-footer-actions">
-              <div className="gui2-mylist-pagination">
-                <button type="button" className="gui2-mylist-page-btn" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
-                  ‹
-                </button>
-                {pageChips.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    className={`gui2-mylist-page-chip${item === safePage ? ' active' : ''}`}
-                    onClick={() => setPage(item)}
-                  >
-                    {item}
-                  </button>
-                ))}
-                <button type="button" className="gui2-mylist-page-btn" disabled={safePage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>
-                  ›
-                </button>
-              </div>
-              <label className="gui2-mylist-rows">
-                <span>{isEnglish ? 'Rows per page:' : 'Filas por pagina:'}</span>
-                <select className="gui2-mylist-inline-select" value={pageSize} onChange={(event) => setPageSize(Number(event.target.value) || 25)}>
-                  {PAGE_SIZE_OPTIONS.map((value) => (
-                    <option key={value} value={value}>{value}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </div>
-        </section>
-
-        <aside className="gui2-mylist-editor">
-          {selectedEntry ? (
-            <>
-              <div className="gui2-mylist-editor-visual">
-                {selectedEntry.cover_image ? (
-                  <img src={proxyImage(selectedEntry.cover_image)} alt={entryTitle(selectedEntry)} className="gui2-mylist-editor-image" />
-                ) : (
-                  <div className="gui2-mylist-editor-image gui2-mylist-editor-image-fallback">{entryTitle(selectedEntry).slice(0, 1)}</div>
-                )}
-                <button type="button" className="gui2-mylist-editor-close" onClick={() => setSelectedKey('')} aria-label={isEnglish ? 'Clear selection' : 'Quitar seleccion'}>
-                  ×
-                </button>
-              </div>
-
-              <div className="gui2-mylist-editor-header">
-                <h2 className="gui2-mylist-editor-title">{entryTitle(selectedEntry)}</h2>
-                <div className="gui2-mylist-editor-meta">
-                  {[selectedEntry.year, entryCount(selectedEntry, activeMediaType) ? `${entryCount(selectedEntry, activeMediaType)} ${activeMediaType === 'anime' ? (isEnglish ? 'Episodes' : 'Episodios') : (isEnglish ? 'Chapters' : 'Capitulos')}` : '', entryStudioOrFormat(selectedEntry, activeMediaType).split(' • ')[0]].filter(Boolean).join('   |   ')}
-                </div>
-              </div>
-
-              <div className="gui2-mylist-editor-fields">
-                <label className="gui2-mylist-field">
-                  <span>{isEnglish ? 'Status' : 'Estado'}</span>
-                  <select className="gui2-mylist-editor-select" value={draftStatus} onChange={(event) => setDraftStatus(event.target.value)}>
-                    {STATUS_ORDER.filter((status) => status !== 'ALL').map((status) => (
-                      <option key={status} value={status}>{labels[status]}</option>
-                    ))}
-                  </select>
-                </label>
-
-                <div className="gui2-mylist-field">
-                  <span>{isEnglish ? 'Progress' : 'Progreso'}</span>
-                  <div className="gui2-mylist-stepper">
-                    <button type="button" className="gui2-mylist-stepper-btn" onClick={() => setDraftProgress((value) => clampNumber(value - 1, 0, entryCount(selectedEntry, activeMediaType) || 9999))}>−</button>
-                    <input
-                      type="number"
-                      className="gui2-mylist-stepper-input"
-                      value={draftProgress}
-                      min="0"
-                      max={entryCount(selectedEntry, activeMediaType) || 9999}
-                      onChange={(event) => setDraftProgress(clampNumber(event.target.value, 0, entryCount(selectedEntry, activeMediaType) || 9999))}
-                    />
-                    <button type="button" className="gui2-mylist-stepper-btn" onClick={() => setDraftProgress((value) => clampNumber(value + 1, 0, entryCount(selectedEntry, activeMediaType) || 9999))}>+</button>
-                    <span className="gui2-mylist-stepper-total">/ {entryCount(selectedEntry, activeMediaType) || '-'}</span>
-                  </div>
-                  <div className="gui2-mylist-editor-progressbar">
-                    <div className="gui2-mylist-editor-progressfill" style={{ width: `${entryCount(selectedEntry, activeMediaType) ? Math.round((draftProgress / entryCount(selectedEntry, activeMediaType)) * 100) : 0}%` }} />
-                  </div>
-                </div>
-
-                <div className="gui2-mylist-field">
-                  <span>{isEnglish ? 'Score' : 'Puntuacion'}</span>
-                  <div className="gui2-mylist-score-row">
-                    <select className="gui2-mylist-editor-select" value={draftScore} onChange={(event) => setDraftScore(Number(event.target.value || 0))}>
-                      {Array.from({ length: 11 }).map((_, index) => (
-                        <option key={index} value={index}>{index === 0 ? '-' : index.toFixed(1)}</option>
-                      ))}
-                    </select>
-                    <span className="gui2-mylist-score-star">★</span>
-                  </div>
-                </div>
-
-                <label className="gui2-mylist-field">
-                  <span>{isEnglish ? 'Started On' : 'Empezado el'}</span>
-                  <input type="date" className="gui2-mylist-editor-input" value={draftStartedOn} onChange={(event) => setDraftStartedOn(event.target.value)} />
-                </label>
-
-                <label className="gui2-mylist-field">
-                  <span>{isEnglish ? 'Notes' : 'Notas'}</span>
-                  <textarea
-                    className="gui2-mylist-editor-notes"
-                    value={draftNotes}
-                    onChange={(event) => setDraftNotes(event.target.value)}
-                    placeholder={isEnglish ? 'Add a note for this entry.' : 'Agrega una nota para esta entrada.'}
-                  />
-                </label>
-
-                <div className="gui2-mylist-field">
-                  <span>{isEnglish ? 'Tags' : 'Etiquetas'}</span>
-                  <div className="gui2-mylist-tags-row">
-                    {draftTags.length ? draftTags.map((tag) => (
-                      <button key={tag} type="button" className="gui2-mylist-tag" onClick={() => setDraftTags((current) => current.filter((item) => item !== tag))}>
-                        {tag} <span aria-hidden="true">×</span>
-                      </button>
-                    )) : (
-                      <span className="gui2-mylist-tag-empty">{isEnglish ? '+ Add tags' : '+ Agregar etiquetas'}</span>
-                    )}
-                  </div>
-                  <div className="gui2-mylist-tag-inputrow">
-                    <input
-                      type="text"
-                      className="gui2-mylist-editor-input"
-                      value={tagInput}
-                      onChange={(event) => setTagInput(event.target.value)}
-                      placeholder={isEnglish ? 'Type a tag and press add' : 'Escribe una etiqueta y agrégala'}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault()
-                          handleAddTags()
-                        }
-                      }}
-                    />
-                    <button type="button" className="btn btn-ghost" onClick={handleAddTags}>
-                      {isEnglish ? 'Add' : 'Agregar'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="gui2-mylist-editor-footer">
-                <button type="button" className="btn btn-primary" onClick={handleSaveSelection} disabled={saving}>
-                  {saving ? (isEnglish ? 'Saving...' : 'Guardando...') : (isEnglish ? 'Save Changes' : 'Guardar cambios')}
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={handleOpenSelected}>
-                  {activeMediaType === 'anime'
-                    ? (isEnglish ? 'Open in Anime Online' : 'Abrir en Anime Online')
-                    : (isEnglish ? 'Open in Manga Online' : 'Abrir en Manga Online')}
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={handleResetSelection}>
-                  {isEnglish ? 'Reset' : 'Restablecer'}
-                </button>
-                <button type="button" className="btn btn-ghost gui2-mylist-remove-btn" onClick={handleRemoveSelection}>
-                  {isEnglish ? 'Remove' : 'Eliminar'}
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="gui2-inline-empty">
-              {isEnglish ? 'Select a title from the list to edit it here.' : 'Selecciona un titulo de la lista para editarlo aqui.'}
-            </div>
-          )}
-        </aside>
-      </div>
-
-      {(pendingSyncCount > 0 || failedSyncCount > 0) ? (
-        <div className="gui2-inline-status">
-          {isEnglish
-            ? `Remote sync queue: ${pendingSyncCount} pending / ${failedSyncCount} failed.`
-            : `Cola remota: ${pendingSyncCount} pendientes / ${failedSyncCount} fallidos.`}
-        </div>
-      ) : null}
-    </div>
+    <Gui2MyListsCoverDriven
+      isEnglish={isEnglish}
+      lang={lang}
+      activeMediaType={activeMediaType}
+      setActiveMediaType={setActiveMediaType}
+      setShowAddPanel={setShowAddPanel}
+      setShowActions={setShowActions}
+      setSelectedKey={setSelectedKey}
+      labels={labels}
+      statusFilter={statusFilter}
+      setStatusFilter={setStatusFilter}
+      query={query}
+      setQuery={setQuery}
+      showActions={showActions}
+      showSortMenu={showSortMenu}
+      setShowSortMenu={setShowSortMenu}
+      sortKey={sortKey}
+      sortLabel={sortLabel}
+      setSortKey={setSortKey}
+      pendingSyncCount={pendingSyncCount}
+      failedSyncCount={failedSyncCount}
+      handleSyncAniList={handleSyncAniList}
+      handleRetrySync={handleRetrySync}
+      handleClearList={handleClearList}
+      showAddPanel={showAddPanel}
+      addQuery={addQuery}
+      setAddQuery={setAddQuery}
+      addStatus={addStatus}
+      setAddStatus={setAddStatus}
+      deferredAddQuery={deferredAddQuery}
+      searching={searching}
+      handleSearchToAdd={handleSearchToAdd}
+      addResults={addResults}
+      handleAddAnime={handleAddAnime}
+      activeCounts={activeCounts}
+      activeTotal={activeTotal}
+      filteredEntries={filteredEntries}
+      groupedEntries={groupedEntries}
+      loading={loading}
+      pageEntries={pageEntries}
+      selectedEntry={selectedEntry}
+      handleOpenEntry={handleOpenEntry}
+      setPage={setPage}
+      safePage={safePage}
+      totalPages={totalPages}
+      pageChips={pageChips}
+      pageSize={pageSize}
+      setPageSize={setPageSize}
+      showFrom={showFrom}
+      showTo={showTo}
+      saving={saving}
+      draftStatus={draftStatus}
+      setDraftStatus={setDraftStatus}
+      draftProgress={draftProgress}
+      setDraftProgress={setDraftProgress}
+      draftScore={draftScore}
+      setDraftScore={setDraftScore}
+      draftStartedOn={draftStartedOn}
+      setDraftStartedOn={setDraftStartedOn}
+      draftCompletedOn={draftCompletedOn}
+      setDraftCompletedOn={setDraftCompletedOn}
+      handleSaveSelection={handleSaveSelection}
+      handleResetSelection={handleResetSelection}
+      handleRemoveSelection={handleRemoveSelection}
+    />
   )
 }

@@ -22,6 +22,7 @@ import { toastError } from '../components/ui/Toast'
 import VirtualMediaGrid from '../components/ui/VirtualMediaGrid'
 import { useI18n } from '../lib/i18n'
 import { perfEnd, perfMark, perfStart } from '../lib/perfTrace'
+import { buildMotionVars, buildStaggerDelayMs } from '../gui-v2/motion/gui2Motion'
 import Gui2OnlineCatalogSurface, { CatalogIcon, Gui2CatalogPaginationControls, PageArrowButton } from '../gui-v2/routes/catalog/Gui2OnlineCatalogSurface'
 
 const LANG_OPTIONS = [{ value: 'es', label: 'Espanol' }, { value: 'en', label: 'English' }]
@@ -34,7 +35,7 @@ const GENRE_LABELS = {
   Sports: { es: 'Deportes', en: 'Sports' }, Supernatural: { es: 'Sobrenatural', en: 'Supernatural' }, Thriller: { es: 'Suspenso', en: 'Thriller' },
 }
 const GENRES = Object.keys(GENRE_LABELS)
-const CATALOG_PAGE_SIZE = 48
+const CATALOG_PAGE_SIZE = 36
 const MANGA_FORMAT_OPTIONS = [
   { value: '', label: 'All Types' },
   { value: 'MANGA', label: 'Manga' },
@@ -383,6 +384,65 @@ function isUsableMangaSourceResult(result) {
   return chapters.length > 0
 }
 
+function getMangaSourceResolutionGeneration(generations, sessionKey) {
+  if (!sessionKey) return 0
+  return Number(generations?.[sessionKey] || 0)
+}
+
+function invalidateMangaSourceResolutionGeneration(generations, sessionKey) {
+  if (!sessionKey) return 0
+  const nextGeneration = getMangaSourceResolutionGeneration(generations, sessionKey) + 1
+  generations[sessionKey] = nextGeneration
+  return nextGeneration
+}
+
+function createMangaSourceResolutionSnapshot(generations, sessionKey, sourceID) {
+  return {
+    sessionKey: sessionKey || '',
+    sourceID: sourceID || '',
+    generation: getMangaSourceResolutionGeneration(generations, sessionKey),
+  }
+}
+
+function isMangaSourceResolutionSnapshotCurrent(generations, snapshot) {
+  if (!snapshot?.sessionKey) return false
+  return getMangaSourceResolutionGeneration(generations, snapshot.sessionKey) === Number(snapshot.generation || 0)
+}
+
+function buildStaleMangaSourceResolutionResult(sessionKey = '') {
+  return { selection_key: sessionKey, source: null, chapters: [], stale: true }
+}
+
+function resolveMangaSourceResultIfCurrent(generations, snapshot, result) {
+  if (isMangaSourceResolutionSnapshotCurrent(generations, snapshot)) return result
+  return buildStaleMangaSourceResolutionResult(snapshot?.sessionKey || '')
+}
+
+function resetMangaSourceSessionStateForSourceSwitch(sourceStates, sessionKey, previousSourceID) {
+  if (!sessionKey || !previousSourceID || !sourceStates?.[sessionKey]?.[previousSourceID]) return sourceStates
+  const nextSessionState = { ...sourceStates[sessionKey] }
+  delete nextSessionState[previousSourceID]
+  if (Object.keys(nextSessionState).length === 0) {
+    const next = { ...sourceStates }
+    delete next[sessionKey]
+    return next
+  }
+  return {
+    ...sourceStates,
+    [sessionKey]: nextSessionState,
+  }
+}
+
+function buildMangaActiveSourceSessionQueryKey(sessionKey = '') {
+  return sessionKey
+    ? ['manga-active-source', sessionKey]
+    : ['manga-active-source']
+}
+
+function buildMangaActiveSourceQueryKey(sessionKey = '', sourceID = '', lang = '') {
+  return [...buildMangaActiveSourceSessionQueryKey(sessionKey), sourceID, lang]
+}
+
 export default function MangaSearch() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -501,6 +561,7 @@ export default function MangaSearch() {
   const [catalogFormat, setCatalogFormat] = useState('')
   const [catalogStatus, setCatalogStatus] = useState('')
   const chaptersRef = useRef([])
+  const sourceResolutionGenerationRef = useRef({})
   const inputRef = useRef(null)
   const navigationLoadRef = useRef(0)
   const searchLoadRef = useRef(0)
@@ -609,14 +670,21 @@ export default function MangaSearch() {
   }, [lang])
 
   const cancelActiveSourceQueries = useCallback((sessionKey = '') => {
-    const queryKey = sessionKey
-      ? ['manga-active-source', sessionKey]
-      : ['manga-active-source']
+    const queryKey = buildMangaActiveSourceSessionQueryKey(sessionKey)
     queryClient.cancelQueries({ queryKey }).catch(() => {})
+    queryClient.removeQueries({ queryKey })
   }, [queryClient])
+
+  const cancelActiveSourceQuery = useCallback((sessionKey = '', sourceID = '', targetLang = lang) => {
+    if (!sessionKey || !sourceID) return
+    const queryKey = buildMangaActiveSourceQueryKey(sessionKey, sourceID, targetLang)
+    queryClient.cancelQueries({ queryKey }).catch(() => {})
+    queryClient.removeQueries({ queryKey })
+  }, [lang, queryClient])
 
   const clearSelectedSession = useCallback((sessionKey = '') => {
     const targetSessionKey = sessionKey || currentSessionKeyRef.current
+    invalidateMangaSourceResolutionGeneration(sourceResolutionGenerationRef.current, targetSessionKey)
     cancelActiveSourceQueries(targetSessionKey)
     setChapters([])
     setPendingAutoReadChapterID('')
@@ -774,6 +842,16 @@ export default function MangaSearch() {
     enabled: Boolean(selected) && Boolean(activeSourceID),
     queryFn: async () => {
       if (!selected) return { selection_key: selectedSessionKey, source: null, chapters: [] }
+      const resolutionSnapshot = createMangaSourceResolutionSnapshot(
+        sourceResolutionGenerationRef.current,
+        selectedSessionKey,
+        activeSourceID,
+      )
+      const resolveIfCurrent = (result) => resolveMangaSourceResultIfCurrent(
+        sourceResolutionGenerationRef.current,
+        resolutionSnapshot,
+        result,
+      )
       if (selected.mode === 'direct') {
         const sourceID = normalizeMangaSourceID(selected.direct_source_id || activeSourceID || getDefaultMangaSource(lang))
         const loaded = await getCachedMangaChapters(
@@ -783,9 +861,11 @@ export default function MangaSearch() {
           () => wails.getMangaChaptersSource(sourceID, selected.direct_manga_id, lang),
         )
         return {
-          selection_key: selectedSessionKey,
-          source: { source_id: sourceID, source_name: getMangaSourceMeta(sourceID).label, source_manga_id: selected.direct_manga_id, source_title: selected.direct_source_title || selected.title, status: 'ready', confidence: 1 },
-          chapters: loaded ?? [],
+          ...resolveIfCurrent({
+            selection_key: selectedSessionKey,
+            source: { source_id: sourceID, source_name: getMangaSourceMeta(sourceID).label, source_manga_id: selected.direct_manga_id, source_title: selected.direct_source_title || selected.title, status: 'ready', confidence: 1 },
+            chapters: loaded ?? [],
+          }),
         }
       }
       const canonicalPromise = (async () => {
@@ -819,8 +899,11 @@ export default function MangaSearch() {
       })()
 
       const canonicalResolved = await canonicalPromise.catch((error) => ({ error }))
+      if (!isMangaSourceResolutionSnapshotCurrent(sourceResolutionGenerationRef.current, resolutionSnapshot)) {
+        return buildStaleMangaSourceResolutionResult(selectedSessionKey)
+      }
       if (canonicalResolved && !canonicalResolved.error && isUsableMangaSourceResult(canonicalResolved)) {
-        return canonicalResolved
+        return resolveIfCurrent(canonicalResolved)
       }
 
       const excludedMangaIDs = canonicalResolved?.source?.source_manga_id
@@ -832,15 +915,18 @@ export default function MangaSearch() {
       const fallbackResolved = await resolveCanonicalSourceSearchFallback(selected, activeSourceID, lang, { excludeMangaIDs: excludedMangaIDs })
         .then((resolved) => (resolved ? { selection_key: selectedSessionKey, ...resolved } : null))
         .catch(() => null)
+      if (!isMangaSourceResolutionSnapshotCurrent(sourceResolutionGenerationRef.current, resolutionSnapshot)) {
+        return buildStaleMangaSourceResolutionResult(selectedSessionKey)
+      }
 
       if (fallbackResolved && isUsableMangaSourceResult(fallbackResolved)) {
-        return fallbackResolved
+        return resolveIfCurrent(fallbackResolved)
       }
       if (canonicalResolved && !canonicalResolved.error && canonicalResolved?.source?.source_manga_id) {
-        return canonicalResolved
+        return resolveIfCurrent(canonicalResolved)
       }
       if (fallbackResolved?.source?.source_manga_id) {
-        return fallbackResolved
+        return resolveIfCurrent(fallbackResolved)
       }
       if (canonicalResolved?.error) {
         throw canonicalResolved.error
@@ -875,7 +961,7 @@ export default function MangaSearch() {
   useEffect(() => {
     const sessionKey = selected?.sessionKey || ''
     const sourceInfo = activeSourceQuery.data?.source
-    if (!sessionKey || activeSourceQuery.data?.selection_key !== sessionKey) return
+    if (!sessionKey || activeSourceQuery.data?.stale || activeSourceQuery.data?.selection_key !== sessionKey) return
     if (!sourceInfo?.source_id) return
     const nextStatus = sourceInfo.status || 'ready'
     setSourceStates((prev) => ({
@@ -913,6 +999,7 @@ export default function MangaSearch() {
   }, [activeSourceID, activeSourceQuery.error, selected])
 
   useEffect(() => {
+    if (activeSourceQuery.data?.stale) return
     if (activeSourceQuery.data?.selection_key && activeSourceQuery.data.selection_key !== selectedSessionKey) return
     if (!selected || !activeSourceQuery.data) return
     const sourceInfo = activeSourceQuery.data.source
@@ -1117,10 +1204,15 @@ export default function MangaSearch() {
   const selectActiveSource = useCallback((nextSourceID) => {
     const normalizedSourceID = normalizeMangaSourceID(nextSourceID)
     if (!normalizedSourceID || normalizedSourceID === activeSourceID) return
-    cancelActiveSourceQueries(currentSessionKeyRef.current)
+    const sessionKey = currentSessionKeyRef.current
+    invalidateMangaSourceResolutionGeneration(sourceResolutionGenerationRef.current, sessionKey)
+    cancelActiveSourceQuery(sessionKey, activeSourceID)
     setChapters([])
+    setPendingAutoReadChapterID('')
+    setChapterFilter('all')
+    setSourceStates((prev) => resetMangaSourceSessionStateForSourceSwitch(prev, sessionKey, activeSourceID))
     void persistMangaSourcePreference(normalizedSourceID)
-  }, [activeSourceID, cancelActiveSourceQueries, persistMangaSourcePreference])
+  }, [activeSourceID, cancelActiveSourceQuery, lang, persistMangaSourcePreference])
   useEffect(() => {
     if (!location.state?.autoOpen) return
     const item = location.state.autoOpen
@@ -1483,21 +1575,31 @@ export default function MangaSearch() {
           }
 
           return (
-            <VirtualMediaGrid
-              items={results}
-              listClassName="gui2-catalog-grid"
-              itemClassName="gui2-catalog-grid-item"
-              itemContent={(item) => (
-                <OnlinePosterCard
-                  key={`search-${item.id}`}
-                  cover={item.resolved_cover_url || item.cover_url}
-                  title={getCatalogTitle(item)}
-                  meta={getCatalogMeta(item, isEnglish).map((value) => <span key={`${item.id}-${value}`}>{value}</span>)}
-                  noCoverLabel={ui.noCover}
-                  onClick={() => openCanonicalItem(item, { returnMode: 'results' })}
-                />
-              )}
-            />
+            <div
+              className="gui2-catalog-grid-motion gui2-motion-enter"
+              style={{ ...buildMotionVars('section'), animationDelay: `${buildStaggerDelayMs(1)}ms` }}
+            >
+              <VirtualMediaGrid
+                items={results}
+                listClassName="gui2-catalog-grid"
+                itemClassName="gui2-catalog-grid-item"
+                itemContent={(item, index) => (
+                  <div
+                    className="gui2-catalog-card-shell gui2-motion-enter"
+                    style={{ ...buildMotionVars('card'), animationDelay: `${buildStaggerDelayMs(index)}ms` }}
+                  >
+                    <OnlinePosterCard
+                      key={`search-${item.id}`}
+                      cover={item.resolved_cover_url || item.cover_url}
+                      title={getCatalogTitle(item)}
+                      meta={getCatalogMeta(item, isEnglish).map((value) => <span key={`${item.id}-${value}`}>{value}</span>)}
+                      noCoverLabel={ui.noCover}
+                      onClick={() => openCanonicalItem(item, { returnMode: 'results' })}
+                    />
+                  </div>
+                )}
+              />
+            </div>
           )
         }
 
@@ -1515,22 +1617,32 @@ export default function MangaSearch() {
         }
 
         return (
-          <VirtualMediaGrid
-            items={displayedCatalog}
-            listClassName="gui2-catalog-grid"
-            itemClassName="gui2-catalog-grid-item"
-            itemContent={(item) => (
-              <OnlinePosterCard
-                key={`catalog-${item.id}`}
-                cover={item.resolved_cover_url || item.cover_url}
-                title={getCatalogTitle(item)}
-                meta={getCatalogMeta(item, isEnglish).map((value) => <span key={`${item.id}-${value}`}>{value}</span>)}
-                badge={item.status ? <span className="gui2-catalog-status-badge">{String(item.status).replaceAll('_', ' ')}</span> : null}
-                noCoverLabel={ui.noCover}
-                onClick={() => openCanonicalItem(item)}
-              />
-            )}
-          />
+          <div
+            className="gui2-catalog-grid-motion gui2-motion-enter"
+            style={{ ...buildMotionVars('section'), animationDelay: `${buildStaggerDelayMs(1)}ms` }}
+          >
+            <VirtualMediaGrid
+              items={displayedCatalog}
+              listClassName="gui2-catalog-grid"
+              itemClassName="gui2-catalog-grid-item"
+              itemContent={(item, index) => (
+                <div
+                  className="gui2-catalog-card-shell gui2-motion-enter"
+                  style={{ ...buildMotionVars('card'), animationDelay: `${buildStaggerDelayMs(index)}ms` }}
+                >
+                  <OnlinePosterCard
+                    key={`catalog-${item.id}`}
+                    cover={item.resolved_cover_url || item.cover_url}
+                    title={getCatalogTitle(item)}
+                    meta={getCatalogMeta(item, isEnglish).map((value) => <span key={`${item.id}-${value}`}>{value}</span>)}
+                    badge={item.status ? <span className="gui2-catalog-status-badge">{String(item.status).replaceAll('_', ' ')}</span> : null}
+                    noCoverLabel={ui.noCover}
+                    onClick={() => openCanonicalItem(item)}
+                  />
+                </div>
+              )}
+            />
+          </div>
         )
       })()}
       bottomPagination={!searched ? (

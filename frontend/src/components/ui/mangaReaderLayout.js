@@ -1,3 +1,5 @@
+import { getReaderStagePageLayout } from './reader/readerStageLayout.js'
+
 export const READER_SETTINGS_KEY = 'nipah:manga-reader-ui-settings-v2'
 export const READER_BOOKMARKS_KEY = 'nipah:manga-reader-bookmarks-v1'
 
@@ -47,7 +49,7 @@ export function isStripFormattedTitle(format = '', country = '') {
 export function normalizeReaderSettings(partial = {}) {
   const next = partial && typeof partial === 'object' ? partial : {}
   const readingMode = ['scroll', 'paged', 'double'].includes(next.readingMode) ? next.readingMode : DEFAULT_READER_SETTINGS.readingMode
-  const pageFit = ['width', 'height', 'original'].includes(next.pageFit) ? next.pageFit : DEFAULT_READER_SETTINGS.pageFit
+  const pageFit = ['width', 'height', 'original', 'cover'].includes(next.pageFit) ? next.pageFit : DEFAULT_READER_SETTINGS.pageFit
   const readingDirection = ['ltr', 'rtl'].includes(next.readingDirection) ? next.readingDirection : DEFAULT_READER_SETTINGS.readingDirection
 
   return {
@@ -149,6 +151,15 @@ export function getReaderCanvasVariables({
   effectivePageFit = DEFAULT_READER_SETTINGS.pageFit,
   zoomPercent = DEFAULT_READER_SETTINGS.zoomPercent,
 } = {}) {
+  if (effectivePageFit === 'cover') {
+    return {
+      '--reader-canvas-sheet-width': '100%',
+      '--reader-canvas-sheet-height': '100%',
+      '--reader-canvas-sheet-max-width': '100%',
+      '--reader-canvas-sheet-max-height': '100%',
+    }
+  }
+
   const safeZoom = clamp(Number(zoomPercent ?? DEFAULT_READER_SETTINGS.zoomPercent) || DEFAULT_READER_SETTINGS.zoomPercent, 60, 180)
 
   if (effectivePageFit === 'height') {
@@ -185,39 +196,14 @@ export function getReaderCanvasPageLayout({
   naturalWidth = 0,
   naturalHeight = 0,
 } = {}) {
-  const safeSlotWidth = Math.max(0, Number(slotWidth) || 0)
-  const safeSlotHeight = Math.max(0, Number(slotHeight) || 0)
-  const safeNaturalWidth = Math.max(0, Number(naturalWidth) || 0)
-  const safeNaturalHeight = Math.max(0, Number(naturalHeight) || 0)
-
-  if (!safeSlotWidth || !safeSlotHeight || !safeNaturalWidth || !safeNaturalHeight) {
-    return null
-  }
-
-  const zoomProgress = getZoomProgress(zoomPercent)
-  const fitScale = effectivePageFit === 'height'
-    ? 0.66 + (0.60 * zoomProgress)
-    : effectivePageFit === 'original'
-      ? 0.64 + (0.62 * zoomProgress)
-      : 0.68 + (0.60 * zoomProgress)
-
-  let maxWidth = safeSlotWidth * fitScale
-  let maxHeight = safeSlotHeight * fitScale
-
-  if (effectivePageFit === 'original') {
-    maxWidth = Math.min(maxWidth, safeNaturalWidth)
-    maxHeight = Math.min(maxHeight, safeNaturalHeight)
-  }
-
-  const containRatio = Math.min(maxWidth / safeNaturalWidth, maxHeight / safeNaturalHeight)
-  if (!Number.isFinite(containRatio) || containRatio <= 0) {
-    return null
-  }
-
-  return {
-    width: Math.max(1, Math.round(safeNaturalWidth * containRatio)),
-    height: Math.max(1, Math.round(safeNaturalHeight * containRatio)),
-  }
+  return getReaderStagePageLayout({
+    pageFit: effectivePageFit,
+    zoomPercent,
+    slotWidth,
+    slotHeight,
+    naturalWidth,
+    naturalHeight,
+  })
 }
 
 export function normalizeReaderPages(loadedPages = [], chapterID = '') {

@@ -233,6 +233,9 @@ var animeGGOgVideoRe = regexp.MustCompile(`<meta[^>]+property="og:video"[^>]+con
 var animeggPreferredProvider sync.Map
 var animeggAudioVariantCache sync.Map
 var animeggPlayableValidationCache sync.Map
+var animeGGFetchPageWithHeaders = animeflv.FetchPageWithHeaders
+var animeGGFetchEmbedSourcesFn = animeGGFetchEmbedSources
+var animeGGBrowserSessionStreamFn = browserSessionStream
 
 type animeGGAudioVariantState struct {
 	Dub       bool
@@ -293,6 +296,7 @@ func animeGGAnimeKey(episodeID string) string {
 
 func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSource, error) {
 	episodePath, targetAudio := animeGGParseEpisodeRequest(episodeID)
+	normalizedTargetAudio := animeGGNormalizeAudio(targetAudio)
 	// episodeID is "/{slug}-episode-{N}/"
 	url := baseURL + episodePath
 	body, err := fetchPage(url, baseURL)
@@ -306,7 +310,6 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 	animeKey := animeGGAnimeKey(episodePath)
 	variantEmbeds := animeGGExtractEmbedVariants(body)
 	preferredVariantEmbeds := animeGGOrderVariantEmbeds(variantEmbeds, targetAudio)
-	hasDirectVariantSources := false
 
 	// Try iframes
 	for _, m := range iframeRe.FindAllStringSubmatch(body, 20) {
@@ -327,7 +330,7 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 	if len(sources) == 0 {
 		if m := directM3U8Re.FindString(body); m != "" && !seen[m] {
 			sources = append(sources, extensions.StreamSource{
-				URL: m, Quality: animeGGInferQuality(m), Language: extensions.LangEnglish, Audio: targetAudio,
+				URL: m, Quality: animeGGInferQuality(m), Language: extensions.LangEnglish, Audio: normalizedTargetAudio,
 			})
 		}
 	}
@@ -336,18 +339,17 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 	if len(sources) == 0 {
 		if m := directMp4Re.FindString(body); m != "" && !seen[m] {
 			sources = append(sources, extensions.StreamSource{
-				URL: m, Quality: animeGGInferQuality(m), Language: extensions.LangEnglish, Audio: targetAudio,
+				URL: m, Quality: animeGGInferQuality(m), Language: extensions.LangEnglish, Audio: normalizedTargetAudio,
 			})
 		}
 	}
 
 	if len(variantEmbeds) > 0 {
 		for _, variant := range preferredVariantEmbeds {
-			directSources, directErr := animeGGFetchEmbedSources(variant.URL, url, variant.Audio)
+			directSources, directErr := animeGGFetchEmbedSourcesFn(variant.URL, url, variant.Audio)
 			if directErr != nil || len(directSources) == 0 {
 				continue
 			}
-			hasDirectVariantSources = true
 			sources = animeGGMergeSources(sources, directSources)
 			if animeKey != "" {
 				animeggPreferredProvider.Store(animeKey, variant.URL)
@@ -355,11 +357,16 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 		}
 	}
 
-	if len(sources) == 0 && len(embeds) > 0 {
-		sort.Slice(embeds, func(i, j int) bool {
-			return animeGGPreferredPriority(animeKey, embeds[i]) < animeGGPreferredPriority(animeKey, embeds[j])
+	selectedEmbeds := animeGGSelectEmbedURLs(embeds, variantEmbeds, normalizedTargetAudio)
+	if normalizedTargetAudio != "" && len(variantEmbeds) > 0 && len(selectedEmbeds) == 0 {
+		return nil, fmt.Errorf("animegg: requested %s audio unavailable for %s", normalizedTargetAudio, episodeID)
+	}
+
+	if len(sources) == 0 && len(selectedEmbeds) > 0 {
+		sort.Slice(selectedEmbeds, func(i, j int) bool {
+			return animeGGPreferredPriority(animeKey, selectedEmbeds[i]) < animeGGPreferredPriority(animeKey, selectedEmbeds[j])
 		})
-		for _, embedURL := range embeds {
+		for _, embedURL := range selectedEmbeds {
 			resolved, resolveErr := animeflv.ResolvePlayable(embedURL)
 			if resolveErr != nil {
 				continue
@@ -368,7 +375,7 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 				URL:      resolved.URL,
 				Quality:  animeGGResolvedQuality(resolved.URL, resolved.Quality),
 				Language: extensions.LangEnglish,
-				Audio:    targetAudio,
+				Audio:    normalizedTargetAudio,
 				Referer:  embedURL,
 			})
 			if animeKey != "" {
@@ -383,13 +390,13 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 	// visited the episode page first.  We therefore use a SINGLE browser session
 	// that visits the episode page (acquiring cookies) and then navigates to the
 	// embed iframe, capturing the /play/ or m3u8 request from within that session.
-	if len(sources) == 0 || (!hasDirectVariantSources && animeGGNeedsBrowserUpgrade(sources, targetAudio)) {
+	if len(sources) == 0 || animeGGNeedsBrowserUpgrade(sources, targetAudio) {
 		quickUpgrade := animeGGNormalizeAudio(targetAudio) == "" && len(sources) > 0
 		preferredEmbedURL := ""
 		if len(preferredVariantEmbeds) > 0 {
 			preferredEmbedURL = preferredVariantEmbeds[0].URL
 		}
-		if streamSources := browserSessionStream(url, targetAudio, preferredEmbedURL, quickUpgrade); len(streamSources) > 0 {
+		if streamSources := animeGGBrowserSessionStreamFn(url, targetAudio, preferredEmbedURL, quickUpgrade); len(streamSources) > 0 {
 			sources = animeGGMergeSources(sources, streamSources)
 		}
 	}
@@ -425,7 +432,7 @@ func (e *Extension) GetAudioVariants(animeID string, episodeID string) (map[stri
 		return result, fmt.Errorf("animegg: no episode available to probe audio variants")
 	}
 
-	cacheKey := animeGGAnimeKey(targetEpisode)
+	cacheKey := animeGGAudioVariantCacheKey(targetEpisode)
 	if cacheKey != "" {
 		if cached, ok := animeggAudioVariantCache.Load(cacheKey); ok {
 			if state, ok := cached.(animeGGAudioVariantState); ok && time.Since(state.CheckedAt) < 30*time.Minute {
@@ -457,14 +464,28 @@ func (e *Extension) GetAudioVariants(animeID string, episodeID string) (map[stri
 // ─────────────────────────────────────────────────────────────────────────────
 
 func fetchPage(url, referer string) (string, error) {
-	return animeflv.FetchPageWithHeaders(url, referer, map[string]string{
+	headers := map[string]string{
 		"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 		"Accept-Language":           "en-US,en;q=0.9",
 		"Upgrade-Insecure-Requests": "1",
 		"Sec-Fetch-Dest":            "document",
 		"Sec-Fetch-Mode":            "navigate",
 		"Sec-Fetch-Site":            "none",
-	})
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		body, err := animeGGFetchPageWithHeaders(url, referer, headers)
+		if err == nil {
+			return body, nil
+		}
+		lastErr = err
+		if !animeGGShouldRetryFetch(err) || attempt == 2 {
+			break
+		}
+		time.Sleep(time.Duration(attempt+1) * 150 * time.Millisecond)
+	}
+	return "", lastErr
 }
 
 // browserSessionStream uses a SINGLE headless browser session to:
@@ -873,6 +894,32 @@ func animeGGOrderVariantEmbeds(variants []animeGGEmbedVariant, targetAudio strin
 	return ordered
 }
 
+func animeGGSelectEmbedURLs(embeds []string, variantEmbeds []animeGGEmbedVariant, targetAudio string) []string {
+	if len(variantEmbeds) == 0 {
+		return embeds
+	}
+
+	selectedVariants := animeGGOrderVariantEmbeds(variantEmbeds, targetAudio)
+	if len(selectedVariants) == 0 {
+		if animeGGNormalizeAudio(targetAudio) != "" {
+			return nil
+		}
+		return embeds
+	}
+
+	selected := make([]string, 0, len(selectedVariants))
+	seen := map[string]bool{}
+	for _, variant := range selectedVariants {
+		url := strings.TrimSpace(variant.URL)
+		if url == "" || seen[url] {
+			continue
+		}
+		seen[url] = true
+		selected = append(selected, url)
+	}
+	return selected
+}
+
 func animeGGFetchEmbedSources(embedURL, referer, audio string) ([]extensions.StreamSource, error) {
 	body, err := fetchPage(embedURL, referer)
 	if err != nil {
@@ -1151,6 +1198,45 @@ func animeGGNormalizeAudio(value string) string {
 	default:
 		return ""
 	}
+}
+
+func animeGGAudioVariantCacheKey(episodeID string) string {
+	episodePath, _ := animeGGParseEpisodeRequest(episodeID)
+	return strings.Trim(strings.TrimSpace(episodePath), "/")
+}
+
+func animeGGShouldRetryFetch(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(err.Error()))
+	if lower == "" {
+		return false
+	}
+	for _, token := range []string{
+		"timeout",
+		"tempor",
+		"connection reset",
+		"connection refused",
+		"unexpected eof",
+		"eof",
+		"tls handshake timeout",
+		"no such host",
+		"502",
+		"503",
+		"504",
+		"520",
+		"521",
+		"522",
+		"523",
+		"524",
+		"525",
+	} {
+		if strings.Contains(lower, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func animeGGDecodeBackupURL(raw string) string {
@@ -1509,12 +1595,16 @@ func animeGGNeedsBrowserUpgrade(sources []extensions.StreamSource, targetAudio s
 		if strings.TrimSpace(source.Cookie) != "" {
 			return false
 		}
+		url := strings.ToLower(strings.TrimSpace(source.URL))
+		if strings.Contains(url, "animegg.org/play/") || strings.Contains(url, "www.animegg.org/play/") {
+			return true
+		}
 		qualityScore := animeGGQualityScore(source.Quality)
 		if qualityScore >= 720 {
 			return false
 		}
 		if normalizedTarget == "" && qualityScore >= 480 {
-			if strings.Contains(strings.ToLower(source.URL), ".m3u8") || strings.TrimSpace(source.Referer) != "" {
+			if strings.Contains(url, ".m3u8") || strings.TrimSpace(source.Referer) != "" {
 				return false
 			}
 		}

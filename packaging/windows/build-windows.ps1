@@ -97,6 +97,9 @@ $env:GOTMPDIR = $goTmpRoot
 Write-Host "[Windows] Building Nipah! Anime v$productVersion"
 Write-Host "[Windows] Building Wails app + NSIS installer"
 
+Invoke-Step "[Windows] Building frontend bundle" { npm.cmd --prefix frontend install }
+Invoke-Step "[Windows] Building frontend assets" { npm.cmd --prefix frontend run build }
+
 $preservedArtifacts = @()
 if (Test-Path "build\bin") {
     New-Item -ItemType Directory -Force -Path $preserveRoot | Out-Null
@@ -113,7 +116,7 @@ if (Test-Path "build\bin") {
 }
 
 $usedFallback = $false
-& $wailsCmd.Source build -clean -s -nsis -platform windows/amd64
+& $wailsCmd.Source build -clean -nsis -platform windows/amd64
 if ($LASTEXITCODE -ne 0) {
     $usedFallback = $true
     Write-Warning "[Windows] Wails packaging failed; falling back to direct Go build + NSIS packaging."

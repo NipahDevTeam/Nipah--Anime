@@ -1,3 +1,4 @@
+import { buildMotionVars } from '../../gui-v2/motion/gui2Motion'
 import { proxyImage } from '../../lib/wails'
 import { getMangaSourceMeta } from '../../lib/mangaSources'
 
@@ -248,9 +249,12 @@ export default function OnlineMangaDetail({
   ]
 
   return (
-    <div className="fade-in media-detail-page media-detail-page--online gui2-landing-page gui2-landing-page--manga">
+    <div
+      className="fade-in media-detail-page media-detail-page--online gui2-landing-page gui2-landing-page--manga gui2-motion-enter"
+      style={buildMotionVars('page')}
+    >
       <section
-        className="gui2-landing-hero"
+        className="gui2-landing-hero gui2-manga-landing-hero-premium"
         style={selectedBanner ? {
           backgroundImage: `linear-gradient(180deg, rgba(7,7,10,0.16) 0%, rgba(7,7,10,0.76) 44%, rgba(7,7,10,0.97) 82%, rgba(7,7,10,0.99) 100%), radial-gradient(circle at top right, rgba(184, 78, 49, 0.18) 0%, rgba(184, 78, 49, 0) 34%), url(${selectedBanner})`,
         } : {}}
@@ -261,7 +265,7 @@ export default function OnlineMangaDetail({
           </button>
         </div>
 
-        <div className="gui2-landing-hero-grid gui2-landing-hero-grid--manga">
+        <div className={`gui2-landing-hero-grid gui2-landing-hero-grid--manga${selectedCover ? '' : ' gui2-landing-hero-grid--coverless'}`}>
           {selectedCover ? (
             <div className="gui2-landing-cover-wrap">
               <img src={selectedCover} alt={heading} className="gui2-landing-cover" />
@@ -386,7 +390,7 @@ export default function OnlineMangaDetail({
 
             {canShowChapters ? (
               visibleChapters.length > 0 ? (
-                <div className="gui2-landing-chapter-table">
+            <div className="gui2-landing-chapter-table gui2-manga-landing-chapters-editorial">
                   <div className="gui2-landing-chapter-header">
                     <span>#</span>
                     <span>{isEnglish ? 'Chapter' : 'Capitulo'}</span>

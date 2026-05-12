@@ -12,6 +12,7 @@ import {
   buildGui2HomeData,
   getNextHomeHeroIndex,
 } from './home/homeData'
+import { buildMotionVars, buildStaggerDelayMs } from '../motion/gui2Motion'
 
 function getCurrentAniListSeason() {
   const now = new Date()
@@ -80,22 +81,27 @@ function HomeContinueCard({ item, onClick }) {
   )
 }
 
-function HomeRecentRow({ item, onClick }) {
+function HomeRecentRow({ item, onClick, motionIndex = 0 }) {
   return (
-    <button type="button" className="gui2-homev2-recent-row" onClick={onClick} title={item.title}>
-      <div className="gui2-homev2-recent-thumb">
-        {item.image ? (
-          <img src={proxyImage(item.image)} alt={item.title} className="gui2-homev2-recent-image" />
-        ) : (
-          <div className="gui2-homev2-recent-fallback">{item.title.slice(0, 1)}</div>
-        )}
-      </div>
-      <div className="gui2-homev2-recent-copy">
-        <div className="gui2-homev2-recent-title">{item.title}</div>
-        <div className="gui2-homev2-recent-episode">{item.episodeLabel}</div>
-        <div className="gui2-homev2-recent-age">{item.ageLabel}</div>
-      </div>
-    </button>
+    <div
+      className="gui2-homev2-recent-shell gui2-motion-enter"
+      style={{ ...buildMotionVars('card'), animationDelay: `${buildStaggerDelayMs(motionIndex, 22)}ms` }}
+    >
+      <button type="button" className="gui2-homev2-recent-row" onClick={onClick} title={item.title}>
+        <div className="gui2-homev2-recent-thumb">
+          {item.image ? (
+            <img src={proxyImage(item.image)} alt={item.title} className="gui2-homev2-recent-image" />
+          ) : (
+            <div className="gui2-homev2-recent-fallback">{item.title.slice(0, 1)}</div>
+          )}
+        </div>
+        <div className="gui2-homev2-recent-copy">
+          <div className="gui2-homev2-recent-title">{item.title}</div>
+          <div className="gui2-homev2-recent-episode">{item.episodeLabel}</div>
+          <div className="gui2-homev2-recent-age">{item.ageLabel}</div>
+        </div>
+      </button>
+    </div>
   )
 }
 
@@ -119,8 +125,8 @@ function HomeLoadingSection({ isEnglish = false }) {
   )
 }
 
-function HomeBand({ section, onViewAll, onOpenPoster, onOpenContinue }) {
-  const bandClassName = `gui2-homev2-band gui2-homev2-band-${section.variant} gui2-homev2-band-${section.key}`
+function HomeBand({ section, onViewAll, onOpenPoster, onOpenContinue, motionIndex = 0 }) {
+  const bandClassName = `gui2-homev2-band gui2-motion-enter gui2-homev2-band-${section.variant} gui2-homev2-band-${section.key}`
   const continuePageSize = section.pageSize || 6
   const continuePages = section.variant === 'landscape'
     ? Array.from({ length: Math.ceil(section.items.length / continuePageSize) }, (_, index) => (
@@ -137,7 +143,10 @@ function HomeBand({ section, onViewAll, onOpenPoster, onOpenContinue }) {
   const clampedContinuePageIndex = Math.min(continuePageIndex, Math.max(continuePages.length - 1, 0))
 
   return (
-    <section className={bandClassName}>
+    <section
+      className={bandClassName}
+      style={{ ...buildMotionVars('section'), animationDelay: `${buildStaggerDelayMs(motionIndex + 1, 30)}ms` }}
+    >
       <div className="gui2-homev2-band-head">
         <div className="gui2-homev2-band-copy">
           <div className="gui2-homev2-band-title">{section.title}</div>
@@ -160,8 +169,14 @@ function HomeBand({ section, onViewAll, onOpenPoster, onOpenContinue }) {
               {continuePages.map((pageItems, pageIndex) => (
                 <div key={`${section.key}-page-${pageIndex}`} className="gui2-homev2-continue-page">
                   <div className="gui2-homev2-continue-rail">
-                    {pageItems.map((item) => (
-                      <HomeContinueCard key={item.id} item={item} onClick={() => onOpenContinue(section, item)} />
+                    {pageItems.map((item, itemIndex) => (
+                      <div
+                        key={item.id}
+                        className="gui2-homev2-continue-shell-item gui2-motion-enter"
+                        style={{ ...buildMotionVars('card'), animationDelay: `${buildStaggerDelayMs(itemIndex, 22)}ms` }}
+                      >
+                        <HomeContinueCard item={item} onClick={() => onOpenContinue(section, item)} />
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -194,8 +209,14 @@ function HomeBand({ section, onViewAll, onOpenPoster, onOpenContinue }) {
           className="gui2-homev2-poster-rail"
           style={{ '--gui2-homev2-poster-columns': String(Math.max(section.items.length, 1)) }}
         >
-          {section.items.map((item) => (
-            <HomePosterCard key={item.id} item={item} onClick={() => onOpenPoster(item, section)} />
+          {section.items.map((item, itemIndex) => (
+            <div
+              key={item.id}
+              className="gui2-homev2-poster-shell gui2-motion-enter"
+              style={{ ...buildMotionVars('card'), animationDelay: `${buildStaggerDelayMs(itemIndex, 22)}ms` }}
+            >
+              <HomePosterCard item={item} onClick={() => onOpenPoster(item, section)} />
+            </div>
           ))}
         </div>
       )}
@@ -340,8 +361,11 @@ export default function Gui2HomeRoute({ preview = false }) {
   const hero = heroSlides[clampedHeroIndex] || homeData.hero
 
   return (
-    <div className="gui2-homev2">
-      <section className="gui2-homev2-hero-shell">
+    <div className="gui2-homev2 gui2-homev2-shell-premium gui2-motion-enter" style={buildMotionVars('page')}>
+      <section
+        className="gui2-homev2-hero-shell gui2-homev2-hero-band gui2-motion-enter"
+        style={{ ...buildMotionVars('section'), animationDelay: `${buildStaggerDelayMs(0)}ms` }}
+      >
         <div className="gui2-homev2-hero">
           <div className={`gui2-homev2-hero-stage${heroIsFading ? ' transitioning' : ''}${showHomeLoading ? ' gui2-homev2-hero-stage-loading' : ''}`}>
             {showHomeLoading ? (
@@ -434,8 +458,8 @@ export default function Gui2HomeRoute({ preview = false }) {
                 </div>
               ))
             ) : (
-              homeData.recentUpdates.map((item) => (
-                <HomeRecentRow key={item.id} item={item} onClick={() => openAnimeItem(item)} />
+              homeData.recentUpdates.map((item, index) => (
+                <HomeRecentRow key={item.id} item={item} motionIndex={index} onClick={() => openAnimeItem(item)} />
               ))
             )}
           </div>
@@ -446,10 +470,11 @@ export default function Gui2HomeRoute({ preview = false }) {
         {showHomeLoading && homeData.sections.length === 0 ? (
           <HomeLoadingSection isEnglish={isEnglish} />
         ) : (
-          homeData.sections.map((section) => (
+          homeData.sections.map((section, index) => (
             <HomeBand
               key={section.key}
               section={section}
+              motionIndex={index}
               onViewAll={(selectedSection) => goTo(selectedSection.href)}
               onOpenPoster={(item) => openAnimeItem(item)}
               onOpenContinue={(_, item) => openAnimeItem(item)}

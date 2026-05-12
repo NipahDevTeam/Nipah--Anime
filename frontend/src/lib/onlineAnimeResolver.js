@@ -59,7 +59,7 @@ function clearCacheEntry(map, key) {
   map.delete(key)
 }
 
-async function getOrLoad(map, key, loader, ttl = CACHE_TTL_MS) {
+async function getOrLoad(map, key, loader, ttl = CACHE_TTL_MS, options = {}) {
   const cached = readCache(map, key)
   if (cached !== VALUE_MISS) return cached
 
@@ -71,6 +71,9 @@ async function getOrLoad(map, key, loader, ttl = CACHE_TTL_MS) {
     .then(loader)
     .then((value) => {
       inFlightCache.delete(key)
+      if (typeof options.shouldCache === 'function' && !options.shouldCache(value)) {
+        return value
+      }
       return writeCache(map, key, value, ttl)
     })
     .catch((error) => {
@@ -93,6 +96,29 @@ function uniqueExpandedCandidates(values) {
     }
   }
   return out
+}
+
+function detectImplicitTrailingSeason(values, targetSeason) {
+  const wantedSeason = Number(targetSeason) || 0
+  if (wantedSeason <= 1 || wantedSeason >= 100) return null
+
+  for (const value of values) {
+    const text = String(value ?? '').trim()
+    if (!text || extractSeasonNumber(text)) continue
+    const match = text.match(/(?:^|[\s:~\-])(\d{1,2})$/)
+    if (!match) continue
+    const numericValue = Number(match[1])
+    if (numericValue === wantedSeason) return numericValue
+  }
+
+  return null
+}
+
+function resolveCandidateSeason(targetSeason, values, strictSeason = false) {
+  const explicitSeason = getSeasonHint(values)
+  if (explicitSeason) return explicitSeason
+  if (strictSeason) return detectImplicitTrailingSeason(values, targetSeason)
+  return null
 }
 
 function buildMediaCacheKey(media, candidates, sourceID = '', lang = 'es') {
@@ -311,6 +337,31 @@ function shouldCacheFailedResolvedMedia(sourceID = '') {
   return !requiresValidatedResolvedHit(sourceID)
 }
 
+function resolveSearchProbeTimeoutMs(sourceID = '', api = null) {
+  const override = Number(api?.searchProbeTimeoutMs || 0)
+  if (override > 0) return override
+  switch (String(sourceID || '').toLowerCase()) {
+    case 'animepahe-en':
+      return 3_500
+    default:
+      return 0
+  }
+}
+
+function shouldCacheSearchResults(sourceID = '', value) {
+  if (String(sourceID || '').toLowerCase() === 'animepahe-en') {
+    return Array.isArray(value) && value.length > 0
+  }
+  return true
+}
+
+function shouldCacheEpisodeResults(sourceID = '', value) {
+  if (String(sourceID || '').toLowerCase() === 'animepahe-en') {
+    return Array.isArray(value) && value.length > 0
+  }
+  return true
+}
+
 function resolveEpisodeProbeTimeoutMs(sourceID = '', api = null) {
   const override = Number(api?.episodeProbeTimeoutMs || 0)
   if (override > 0) return override
@@ -322,6 +373,20 @@ function resolveEpisodeProbeTimeoutMs(sourceID = '', api = null) {
     default:
       return 12_000
   }
+}
+
+function resolveEpisodeProbeRetryTimeoutMs(sourceID = '', api = null) {
+  const override = Number(api?.episodeProbeRetryTimeoutMs || 0)
+  if (override > 0) {
+    if (String(sourceID || '').toLowerCase() === 'animepahe-en') {
+      return Math.min(override, 60)
+    }
+    return override
+  }
+  if (String(sourceID || '').toLowerCase() === 'animepahe-en') {
+    return Math.min(Math.max(resolveEpisodeProbeTimeoutMs(sourceID, api), 45), 60)
+  }
+  return Math.max(resolveEpisodeProbeTimeoutMs(sourceID, api), 12_000)
 }
 
 function shouldShortCircuitSearch(sourceID = '') {
@@ -501,9 +566,9 @@ function scoreSourceHit(hit, needles, options = {}) {
     return -1150
   }
   const explicitTargetSeason = targetSeason && extractSeasonNumber(needles.join(' ')) === targetSeason
-  const explicitCandidateSeason = candidateSeasonPresent(candidateTitles)
+  const explicitCandidateSeason = candidateSeasonPresent(candidateTitles) || Boolean(detectImplicitTrailingSeason(candidateTitles, targetSeason))
   if (targetSeason) {
-    const candidateSeason = getSeasonHint(candidateTitles)
+    const candidateSeason = resolveCandidateSeason(targetSeason, candidateTitles, strictSeason)
     if (strictSeason && explicitTargetSeason && targetSeason > 1 && !candidateSeason) {
       return -975
     }
@@ -703,11 +768,11 @@ function scoreAniListEntry(entry, hit, options = {}) {
     best = Math.max(best, scoreTitleAgainstNeedles(candidate, needles))
   }
 
-  const candidateSeason = getSeasonHint(candidateTitles)
+  const candidateSeason = resolveCandidateSeason(targetSeason, candidateTitles, strictSeason)
   const targetKind = options.targetKind ?? detectVariantKind(needles)
   const candidateKind = detectAniListKind(entry)
   const explicitTargetSeason = targetSeason && extractSeasonNumber(needles.join(' ')) === targetSeason
-  const explicitCandidateSeason = candidateSeasonPresent(candidateTitles)
+  const explicitCandidateSeason = candidateSeasonPresent(candidateTitles) || Boolean(detectImplicitTrailingSeason(candidateTitles, targetSeason))
   if (targetSeason) {
     if (strictSeason && explicitTargetSeason && targetSeason > 1 && !candidateSeason) {
       return -975
@@ -770,13 +835,22 @@ function episodeCountMatchScore(targetEpisodes, actualEpisodes, sourceID = '') {
   const expected = Number(targetEpisodes) || 0
   const actual = Number(actualEpisodes) || 0
   const strictAnimeGG = String(sourceID || '').toLowerCase() === 'animegg-en'
+  const softAnimePahe = String(sourceID || '').toLowerCase() === 'animepahe-en'
 
   if (actual <= 0) return -1000
   if (expected <= 0) return actual > 1 ? 8 : 0
   if (strictAnimeGG && expected > 8 && actual <= 1) return -1200
+  if (softAnimePahe && expected > 8 && actual <= 1) return -1200
 
   const diff = Math.abs(expected - actual)
   const tolerance = Math.max(2, Math.floor(expected * 0.12))
+  if (softAnimePahe) {
+    if (diff === 0) return 18
+    if (diff <= tolerance) return 10
+    if (diff <= Math.max(6, Math.floor(expected * 0.25))) return 4
+    if (actual < expected * 0.35 || actual > expected * 1.8) return -18
+    return -8
+  }
   if (diff === 0) return 42
   if (diff <= tolerance) return 24
   if (diff <= Math.max(6, Math.floor(expected * 0.25))) return 8
@@ -797,7 +871,45 @@ async function searchOnlineCached(title, api, sourceID = 'jkanime-es') {
     buildSearchCacheKey('jkanime-search', title, sourceID),
     () => api.searchOnline(title, sourceID),
     SEARCH_CACHE_TTL_MS,
+    {
+      shouldCache: (value) => shouldCacheSearchResults(sourceID, value),
+    },
   )
+}
+
+async function searchOnlineCachedWithTimeout(title, api, sourceID = 'jkanime-es') {
+  const timeoutMs = resolveSearchProbeTimeoutMs(sourceID, api)
+  if (!(timeoutMs > 0)) {
+    return searchOnlineCached(title, api, sourceID)
+  }
+
+  let timeoutID = null
+  const cacheKey = buildSearchCacheKey('jkanime-search', title, sourceID)
+
+  try {
+    return await Promise.race([
+      getOrLoad(
+        onlineSearchCache,
+        cacheKey,
+        () => api.searchOnline(title, sourceID, timeoutMs),
+        SEARCH_CACHE_TTL_MS,
+        {
+          shouldCache: (value) => shouldCacheSearchResults(sourceID, value),
+        },
+      ),
+      new Promise((_, reject) => {
+        timeoutID = globalThis.setTimeout(() => {
+          clearCacheEntry(inFlightCache, cacheKey)
+          clearCacheEntry(onlineSearchCache, cacheKey)
+          reject(new Error(`search probe timed out after ${timeoutMs}ms`))
+        }, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutID) {
+      globalThis.clearTimeout(timeoutID)
+    }
+  }
 }
 
 async function searchAniListCached(title, lang, api) {
@@ -815,11 +927,17 @@ async function getEpisodesCached(sourceID, animeID, api) {
     `episodes:${sourceID}:${animeID}`,
     () => api.getOnlineEpisodes(sourceID, animeID),
     SEARCH_CACHE_TTL_MS,
+    {
+      shouldCache: (value) => shouldCacheEpisodeResults(sourceID, value),
+    },
   )
 }
 
 async function getEpisodesCachedWithTimeout(sourceID, animeID, api) {
-  const timeoutMs = resolveEpisodeProbeTimeoutMs(sourceID, api)
+  return getEpisodesCachedWithTimeoutForBudget(sourceID, animeID, api, resolveEpisodeProbeTimeoutMs(sourceID, api))
+}
+
+async function getEpisodesCachedWithTimeoutForBudget(sourceID, animeID, api, timeoutMs) {
   let timeoutID = null
   const cacheKey = `episodes:${sourceID}:${animeID}`
 
@@ -841,6 +959,51 @@ async function getEpisodesCachedWithTimeout(sourceID, animeID, api) {
   }
 }
 
+function isTimeoutError(error) {
+  return /\b(?:timed out|timeout)\b/i.test(String(error?.message ?? error ?? ''))
+}
+
+function bestHitNeedleScore(hit, needles = []) {
+  let best = 0
+  for (const candidate of buildHitCandidates(hit)) {
+    best = Math.max(best, scoreTitleAgainstNeedles(candidate, needles))
+  }
+  return best
+}
+
+function shouldAbortAnimePaheSearchAfterTimeout(searchSourceID, timeoutCount, aggregatedHits = []) {
+  return String(searchSourceID || '').toLowerCase() === 'animepahe-en'
+    && aggregatedHits.length === 0
+    && timeoutCount >= 2
+}
+
+function isHighConfidenceAnimePaheHit(hit, media, sourceID = '', score = 0) {
+  if (String(sourceID || '').toLowerCase() !== 'animepahe-en') return false
+  if (score < Math.max(resolveMinScore(sourceID), 90)) return false
+
+  const needles = buildResolverTitleNeedles(media)
+  if (bestHitNeedleScore(hit, needles) < 96) return false
+
+  const targetKind = detectVariantKind(needles)
+  const candidateTitles = buildHitCandidates(hit)
+  const candidateKind = detectVariantKind(candidateTitles)
+  if (targetKind) {
+    if (candidateKind !== targetKind) return false
+  } else if (candidateKind) {
+    return false
+  }
+
+  const targetSeason = getSeasonHint(needles)
+  const candidateSeason = resolveCandidateSeason(targetSeason, candidateTitles, true)
+  if (targetSeason) {
+    if (!candidateSeason || candidateSeason !== targetSeason) return false
+  } else if (candidateSeason) {
+    return false
+  }
+
+  return true
+}
+
 export async function resolveAniListToJKAnime(media, api = wails, sourceFilter = null, lang = 'es') {
   const candidates = buildResolveSearchQueries(media, sourceFilter || '')
   const searchSourceID = sourceFilter || 'jkanime-es'
@@ -857,14 +1020,14 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
   const candidateTitles = candidates.slice(0, resolveSearchCandidateLimit(searchSourceID))
   const searchResults = []
   const allowShortCircuit = shouldShortCircuitSearch(searchSourceID)
-    && !getSeasonHint(buildResolverTitleNeedles(media))
-    && !detectVariantKind(buildResolverTitleNeedles(media))
 
   if (allowShortCircuit) {
+    let timeoutCount = 0
     for (const title of candidateTitles) {
       try {
-        const hits = (await searchOnlineCached(title, api, searchSourceID) ?? [])
+        const hits = (await searchOnlineCachedWithTimeout(title, api, searchSourceID) ?? [])
           .filter((result) => (sourceFilter ? result.source_id === sourceFilter : true))
+        timeoutCount = 0
 
         searchResults.push({ title, hits })
 
@@ -882,6 +1045,12 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
         const message = String(error?.message ?? error ?? '').trim()
         if (message) lastErrorMessage = message
         searchResults.push({ title, hits: [] })
+        if (isTimeoutError(error)) {
+          timeoutCount += 1
+          if (shouldAbortAnimePaheSearchAfterTimeout(searchSourceID, timeoutCount, aggregatedHits)) {
+            break
+          }
+        }
       }
     }
   } else {
@@ -923,8 +1092,35 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
 
   const resolvedHits = []
   for (const { hit, score } of rankedHits) {
+    const shouldRetryStrongHit = isHighConfidenceAnimePaheHit(hit, media, searchSourceID, score)
+    const probeTimeouts = [
+      resolveEpisodeProbeTimeoutMs(searchSourceID, api),
+      shouldRetryStrongHit ? resolveEpisodeProbeRetryTimeoutMs(searchSourceID, api) : 0,
+    ].filter((value) => value > 0)
+    let episodes = null
+    let finalProbeError = null
+
+    for (const timeoutMs of probeTimeouts) {
+      try {
+        episodes = await getEpisodesCachedWithTimeoutForBudget(hit.source_id, hit.id, api, timeoutMs)
+        finalProbeError = null
+        break
+      } catch (error) {
+        finalProbeError = error
+        const message = String(error?.message ?? error ?? '').trim()
+        if (message) lastErrorMessage = message
+        if (!isTimeoutError(error)) break
+      }
+    }
+
+    if (finalProbeError) {
+      if (shouldRetryStrongHit && isTimeoutError(finalProbeError)) {
+        break
+      }
+      continue
+    }
+
     try {
-      const episodes = await getEpisodesCachedWithTimeout(hit.source_id, hit.id, api)
       if (!episodes?.length) continue
 
       const episodeMatch = episodeCountMatchScore(media?.episodes, episodes.length, searchSourceID)

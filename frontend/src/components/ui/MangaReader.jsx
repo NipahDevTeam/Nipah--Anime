@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo, startTransition } from 'react'
+import { createPortal } from 'react-dom'
 import { proxyImage, wails } from '../../lib/wails'
 import {
   markMangaReaderChapterCompleted,
@@ -19,6 +20,9 @@ import {
   stepReaderIndex,
   toggleReaderBookmark,
 } from './mangaReaderLayout'
+import ReaderStageHeader from './reader/ReaderStageHeader'
+import ReaderSettingsSheet from './reader/ReaderSettingsSheet'
+import ReaderChapterBrowser from './reader/ReaderChapterBrowser'
 
 const INITIAL_VERTICAL_PAGE_BATCH = 8
 const VERTICAL_PAGE_BATCH_STEP = 6
@@ -66,6 +70,10 @@ function ReaderIcon({ kind }) {
       return <svg {...common}><path d="M8 2.8v10.4" /><path d="m6.2 4.5 1.8-1.7 1.8 1.7" /><path d="m6.2 11.5 1.8 1.7 1.8-1.7" /></svg>
     case 'original':
       return <svg {...common}><rect x="3" y="3" width="10" height="10" rx="1.4" /><path d="M5.3 5.3h5.4v5.4H5.3z" /></svg>
+    case 'cover':
+      return <svg {...common}><rect x="2.9" y="3.2" width="10.2" height="9.6" rx="1.2" /><path d="M4.4 5.1h7.2M4.4 10.9h7.2" /><path d="M6.1 3.2v9.6M9.9 3.2v9.6" /></svg>
+    case 'chapters':
+      return <svg {...common}><rect x="3" y="3" width="4.2" height="4.2" rx="0.8" /><rect x="8.8" y="3" width="4.2" height="4.2" rx="0.8" /><rect x="3" y="8.8" width="4.2" height="4.2" rx="0.8" /><rect x="8.8" y="8.8" width="4.2" height="4.2" rx="0.8" /></svg>
     case 'sun':
       return <svg {...common}><circle cx="8" cy="8" r="2.2" /><path d="M8 1.9v1.6M8 12.5v1.6M14.1 8h-1.6M3.5 8H1.9M12.4 3.6l-1.2 1.2M4.8 11.2l-1.2 1.2M12.4 12.4l-1.2-1.2M4.8 4.8 3.6 3.6" /></svg>
     case 'contrast':
@@ -196,14 +204,18 @@ export default function MangaReader({
   const [bookmark, setBookmark] = useState(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [spreadSize, setSpreadSize] = useState({ width: 0, height: 0 })
+  const [pageCanvasMetrics, setPageCanvasMetrics] = useState({ width: 0, height: 0 })
   const [pageIntrinsicSizes, setPageIntrinsicSizes] = useState({})
+  const [chapterBrowserOpen, setChapterBrowserOpen] = useState(false)
 
   const hideTimer = useRef(null)
   const persistTimer = useRef(null)
   const scrollFrame = useRef(0)
   const currentPageRef = useRef(0)
+  const chapterLoadGeneration = useRef(0)
   const pageRefs = useRef([])
   const verticalRef = useRef(null)
+  const pageCanvasRef = useRef(null)
   const spreadRef = useRef(null)
 
   const chapterIndex = chapters.findIndex((chapter) => chapter.id === chapterID)
@@ -221,6 +233,7 @@ export default function MangaReader({
     ? viewport.visiblePages[viewport.visiblePages.length - 1] + 1
     : Math.min(currentPage + 1, pages.length || 1)
   const qualityLabel = dataSaver ? (isEnglish ? 'Saver' : 'Ahorro') : 'HD'
+  const readerOverlayOpen = readerSettings.settingsOpen || chapterBrowserOpen
   const { continuousScrollMode, stripReadingMode, effectivePageFit, stripPageFitPreset } = useMemo(() => getReaderViewMode({
     readingMode: readerSettings.readingMode,
     pageFit: readerSettings.pageFit,
@@ -257,6 +270,9 @@ export default function MangaReader({
     if (verticalRef.current) {
       verticalRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' })
     }
+    if (pageCanvasRef.current) {
+      pageCanvasRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    }
     const firstPage = pageRefs.current[0]
     if (firstPage) {
       firstPage.scrollIntoView({ block: 'start' })
@@ -288,6 +304,18 @@ export default function MangaReader({
     setReaderSettings((current) => normalizeReaderSettings({ ...current, ...patch }))
   }, [])
 
+  const openChapterBrowser = useCallback(() => {
+    setChapterBrowserOpen(true)
+    if (readerSettings.settingsOpen) {
+      updateReaderSettings({ settingsOpen: false })
+    }
+  }, [readerSettings.settingsOpen, updateReaderSettings])
+
+  const toggleSettingsSheet = useCallback(() => {
+    setChapterBrowserOpen(false)
+    updateReaderSettings({ settingsOpen: !readerSettings.settingsOpen })
+  }, [readerSettings.settingsOpen, updateReaderSettings])
+
   const handleReaderPageLoad = useCallback((pageKey, event) => {
     const naturalWidth = Number(event?.currentTarget?.naturalWidth) || 0
     const naturalHeight = Number(event?.currentTarget?.naturalHeight) || 0
@@ -305,9 +333,25 @@ export default function MangaReader({
     })
   }, [])
 
-  const stopEvent = useCallback((event) => {
-    event.stopPropagation()
-  }, [])
+  const scrollReaderViewport = useCallback((direction, behavior = 'smooth') => {
+    const targetNode = readerSettings.readingMode === 'scroll' ? verticalRef.current : pageCanvasRef.current
+    if (!targetNode) return false
+
+    const maxScrollTop = Math.max(0, targetNode.scrollHeight - targetNode.clientHeight)
+    const currentScrollTop = targetNode.scrollTop
+    if (direction === 'up' && currentScrollTop <= 2) return false
+    if (direction === 'down' && currentScrollTop >= maxScrollTop - 2) return false
+
+    const scrollStep = Math.max(140, Math.round(targetNode.clientHeight * 0.72))
+    const targetScrollTop = direction === 'down'
+      ? Math.min(currentScrollTop + scrollStep, maxScrollTop)
+      : Math.max(currentScrollTop - scrollStep, 0)
+
+    if (Math.abs(targetScrollTop - currentScrollTop) < 2) return false
+
+    targetNode.scrollTo({ top: targetScrollTop, left: 0, behavior })
+    return true
+  }, [readerSettings.readingMode])
 
   const jumpToChapter = useCallback((chapter) => {
     if (!chapter || !onOpenChapter) return
@@ -426,9 +470,11 @@ export default function MangaReader({
     setTransitioningChapterID('')
     setPageIntrinsicSizes({})
     pageRefs.current = []
+    const loadGeneration = ++chapterLoadGeneration.current
 
     ;(async () => {
       const loadedPages = await wails.getChapterPagesSource(sourceID, chapterID, dataSaver)
+      if (chapterLoadGeneration.current !== loadGeneration) return
         const nextPages = normalizeReaderPages(loadedPages, chapterID).map((page) => ({
           ...page,
           proxy_url: proxyImage(page.url, { sourceID }),
@@ -446,14 +492,22 @@ export default function MangaReader({
             : (nextPages.length || INITIAL_VERTICAL_PAGE_BATCH),
         )
       })()
-      .catch((e) => setError(e?.message ?? (isEnglish ? 'Error loading pages' : 'Error al cargar paginas')))
-      .finally(() => setLoading(false))
+      .catch((e) => {
+        if (chapterLoadGeneration.current !== loadGeneration) return
+        setError(e?.message ?? (isEnglish ? 'Error loading pages' : 'Error al cargar paginas'))
+      })
+      .finally(() => {
+        if (chapterLoadGeneration.current !== loadGeneration) return
+        setLoading(false)
+      })
   }, [chapterID, dataSaver, isEnglish, mangaID, readerSettings.readingMode, reloadToken, sourceID])
 
   useEffect(() => {
     const handler = (event) => {
       if (event.key === 'Escape') {
-        if (readerSettings.settingsOpen) {
+        if (chapterBrowserOpen) {
+          setChapterBrowserOpen(false)
+        } else if (readerSettings.settingsOpen) {
           updateReaderSettings({ settingsOpen: false })
         } else if (document.fullscreenElement) {
           void document.exitFullscreen()
@@ -469,11 +523,25 @@ export default function MangaReader({
       const useForward = readerSettings.readingDirection === 'rtl' ? 'ArrowLeft' : 'ArrowRight'
       const useBackward = readerSettings.readingDirection === 'rtl' ? 'ArrowRight' : 'ArrowLeft'
 
+      if (event.key === 'ArrowDown') {
+        if (scrollReaderViewport('down')) {
+          event.preventDefault()
+        }
+        return
+      }
+
+      if (event.key === 'ArrowUp') {
+        if (scrollReaderViewport('up')) {
+          event.preventDefault()
+        }
+        return
+      }
+
       if (readerSettings.readingMode !== 'scroll') {
-        if (event.key === useForward || event.key === 'ArrowDown') {
+        if (event.key === useForward) {
           handlePageStep('next')
         }
-        if (event.key === useBackward || event.key === 'ArrowUp') {
+        if (event.key === useBackward) {
           handlePageStep('prev')
         }
       }
@@ -481,7 +549,7 @@ export default function MangaReader({
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [handlePageStep, readerSettings.readingDirection, readerSettings.readingMode, readerSettings.settingsOpen, toggleFullscreen, updateReaderSettings])
+  }, [chapterBrowserOpen, handlePageStep, readerSettings.readingDirection, readerSettings.readingMode, readerSettings.settingsOpen, scrollReaderViewport, toggleFullscreen, updateReaderSettings])
 
   useEffect(() => {
     if (loading || error || pages.length === 0) return
@@ -545,6 +613,34 @@ export default function MangaReader({
   }, [pages.length, readerSettings.readingMode, readerSettings.settingsOpen])
 
   useEffect(() => {
+    const node = pageCanvasRef.current
+    if (!node || typeof ResizeObserver === 'undefined') return undefined
+
+    const updatePageCanvasMetrics = () => {
+      const styles = window.getComputedStyle(node)
+      const horizontalPadding = (Number.parseFloat(styles.paddingLeft) || 0) + (Number.parseFloat(styles.paddingRight) || 0)
+      const verticalPadding = (Number.parseFloat(styles.paddingTop) || 0) + (Number.parseFloat(styles.paddingBottom) || 0)
+
+      setPageCanvasMetrics((current) => {
+        const nextWidth = Math.max(0, Math.round(node.clientWidth - horizontalPadding))
+        const nextHeight = Math.max(0, Math.round(node.clientHeight - verticalPadding))
+        if (current.width === nextWidth && current.height === nextHeight) {
+          return current
+        }
+        return { width: nextWidth, height: nextHeight }
+      })
+    }
+
+    updatePageCanvasMetrics()
+    const observer = new ResizeObserver(() => {
+      updatePageCanvasMetrics()
+    })
+    observer.observe(node)
+
+    return () => observer.disconnect()
+  }, [readerSettings.readingMode, readerSettings.settingsOpen])
+
+  useEffect(() => {
     return () => {
       clearTimeout(hideTimer.current)
       clearTimeout(persistTimer.current)
@@ -559,20 +655,20 @@ export default function MangaReader({
 
   const resetHideTimer = useCallback(() => {
     clearTimeout(hideTimer.current)
-    if (!readerSettings.autoHideUI || readerSettings.settingsOpen || !uiVisible) return
+    if (!readerSettings.autoHideUI || readerOverlayOpen || !uiVisible) return
     hideTimer.current = setTimeout(() => setUiVisible(false), readerSettings.autoHideDelaySec * 1000)
-  }, [readerSettings.autoHideDelaySec, readerSettings.autoHideUI, readerSettings.settingsOpen, uiVisible])
+  }, [readerOverlayOpen, readerSettings.autoHideDelaySec, readerSettings.autoHideUI, uiVisible])
 
   const toggleReaderChrome = useCallback(() => {
     setUiVisible((current) => {
       const next = !current
       clearTimeout(hideTimer.current)
-      if (next && readerSettings.autoHideUI && !readerSettings.settingsOpen) {
+      if (next && readerSettings.autoHideUI && !readerOverlayOpen) {
         hideTimer.current = setTimeout(() => setUiVisible(false), readerSettings.autoHideDelaySec * 1000)
       }
       return next
     })
-  }, [readerSettings.autoHideDelaySec, readerSettings.autoHideUI, readerSettings.settingsOpen])
+  }, [readerOverlayOpen, readerSettings.autoHideDelaySec, readerSettings.autoHideUI])
 
   useEffect(() => {
     if (!readerSettings.autoHideUI) {
@@ -584,7 +680,7 @@ export default function MangaReader({
       resetHideTimer()
     }
     return () => clearTimeout(hideTimer.current)
-  }, [readerSettings.autoHideUI, readerSettings.settingsOpen, resetHideTimer, uiVisible])
+  }, [readerOverlayOpen, readerSettings.autoHideUI, resetHideTimer, uiVisible])
 
   useEffect(() => {
     document.body.classList.add('reader-active')
@@ -592,6 +688,15 @@ export default function MangaReader({
       document.body.classList.remove('reader-active')
     }
   }, [])
+
+  useEffect(() => {
+    if (!readerOverlayOpen) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [readerOverlayOpen])
 
   const handleVerticalScroll = useCallback(() => {
     const container = verticalRef.current
@@ -656,79 +761,108 @@ export default function MangaReader({
   const pagedSlotMetrics = useMemo(() => {
     const columnCount = readerSettings.readingMode === 'double' ? 2 : 1
     const spreadGap = readerSettings.readingMode === 'double' ? 18 : 0
-    const safeSpreadWidth = Math.max(0, spreadSize.width - (spreadGap * (columnCount - 1)))
+    const stageWidth = spreadSize.width || pageCanvasMetrics.width
+    const stageHeight = readerSettings.readingMode === 'double'
+      ? (pageCanvasMetrics.height || spreadSize.height)
+      : spreadSize.height
+    const safeSpreadWidth = Math.max(0, stageWidth - (spreadGap * (columnCount - 1)))
 
     return {
       width: columnCount > 0 ? safeSpreadWidth / columnCount : 0,
-      height: spreadSize.height,
+      height: stageHeight,
     }
-  }, [readerSettings.readingMode, spreadSize.height, spreadSize.width])
+  }, [pageCanvasMetrics.height, pageCanvasMetrics.width, readerSettings.readingMode, spreadSize.height, spreadSize.width])
+
+  const chapterLineTitle = currentChapter?.title || `${isEnglish ? 'Chapter' : 'Capitulo'} ${currentChapter?.number || chapterIndex + 1 || ''}`
+
+  const readerOverlayLayer = readerOverlayOpen ? createPortal(
+    <div
+      className="reader-overlay-layer"
+      onClick={() => {
+        setChapterBrowserOpen(false)
+        if (readerSettings.settingsOpen) {
+          updateReaderSettings({ settingsOpen: false })
+        }
+      }}
+    >
+      <div className="reader-overlay-backdrop" />
+      {chapterBrowserOpen ? (
+        <ReaderChapterBrowser
+          isEnglish={isEnglish}
+          chapters={chapters}
+          currentChapterID={chapterID}
+          currentPageLabel={viewport.pageLabel}
+          onClose={() => setChapterBrowserOpen(false)}
+          onOpenChapter={(chapter) => {
+            setChapterBrowserOpen(false)
+            jumpToChapter(chapter)
+          }}
+        />
+      ) : null}
+      {readerSettings.settingsOpen ? (
+        <ReaderSettingsSheet
+          isEnglish={isEnglish}
+          readerSettings={readerSettings}
+          qualityLabel={qualityLabel}
+          onClose={() => updateReaderSettings({ settingsOpen: false })}
+          onSetReadingMode={(readingMode) => updateReaderSettings({ readingMode })}
+          onSetReadingDirection={(readingDirection) => updateReaderSettings({ readingDirection })}
+          onSetPageFit={(pageFit) => updateReaderSettings({ pageFit })}
+          onSetZoom={(zoomPercent) => updateReaderSettings({ zoomPercent })}
+          onSetEnhance={(enhance) => updateReaderSettings({ enhance })}
+          onSetBrightness={(brightness) => updateReaderSettings({ brightness })}
+          onSetContrast={(contrast) => updateReaderSettings({ contrast })}
+          onResetAdjustments={() => updateReaderSettings({ brightness: 0, contrast: 0 })}
+          onSetAutoHideUI={(autoHideUI) => updateReaderSettings({ autoHideUI })}
+          onSetAutoHideDelaySec={(autoHideDelaySec) => updateReaderSettings({ autoHideDelaySec })}
+          ReaderIconButton={ReaderIconButton}
+          ReaderToggleButton={ReaderToggleButton}
+          ReaderSliderRow={ReaderSliderRow}
+        />
+      ) : null}
+    </div>,
+    document.body,
+  ) : null
 
   return (
     <div
-      className={`reader-shell-v2${isFullscreen ? ' is-fullscreen' : ''}${uiVisible ? ' reader-ui-visible' : ' reader-ui-hidden'}${readerSettings.settingsOpen ? ' settings-open' : ' settings-closed'}${stripReadingMode ? ' reader-shell-v2--strip' : ''} reader-mode-${readerSettings.readingMode}`}
+      className={`reader-shell-v2${isFullscreen ? ' is-fullscreen' : ''}${uiVisible ? ' reader-ui-visible' : ' reader-ui-hidden'}${readerSettings.settingsOpen ? ' settings-open' : ' settings-closed'}${stripReadingMode ? ' reader-shell-v2--strip' : ''}${chapterBrowserOpen ? ' chapter-browser-open' : ''} reader-mode-${readerSettings.readingMode}`}
     >
-      <header className="reader-topbar-v2" onClick={stopEvent}>
-        <div className="reader-topbar-left">
-          <ReaderIconButton icon="back" label={isEnglish ? 'Back to chapter list' : 'Volver a la lista'} onClick={() => {
-            persistProgress(viewport.endIndex)
-            onBack()
-          }} />
-          <div className="reader-title-stack">
-            <div className="reader-series-title">{title}</div>
-            <div className="reader-chapter-line">
-              <span>{currentChapter?.title || `${isEnglish ? 'Chapter' : 'Capitulo'} ${currentChapter?.number || chapterIndex + 1 || ''}`}</span>
-              {chapters.length > 0 ? (
-                <label className="reader-chapter-select-shell">
-                  <select className="reader-chapter-select" value={chapterID} onChange={(event) => {
-                    const next = chapters.find((chapter) => chapter.id === event.target.value)
-                    if (next) jumpToChapter(next)
-                  }}>
-                    {chapters.map((chapter, index) => (
-                      <option key={chapter.id} value={chapter.id}>
-                        {chapter.title || `${isEnglish ? 'Chapter' : 'Capitulo'} ${chapter.number || index + 1}`}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        <div className="reader-topbar-center">
-          <div className="reader-toggle-group">
-            <ReaderToggleButton active={readerSettings.readingMode === 'scroll'} icon="scroll" label="Scroll" onClick={() => updateReaderSettings({ readingMode: 'scroll' })} />
-            <ReaderToggleButton active={readerSettings.readingMode === 'paged'} icon="paged" label="Paged" onClick={() => updateReaderSettings({ readingMode: 'paged' })} />
-            <ReaderToggleButton active={readerSettings.readingMode === 'double'} icon="double" label="Double Page" onClick={() => updateReaderSettings({ readingMode: 'double' })} />
-          </div>
-        </div>
-
-        <div className="reader-topbar-right">
-          <div className="reader-chapter-jump-group">
-            <button type="button" className="reader-chapter-btn" onClick={() => jumpToChapter(prevChapter)} disabled={!prevChapter}>
-              <ReaderIcon kind="chapter-prev" />
-              <span>{isEnglish ? 'Prev Chapter' : 'Capitulo previo'}</span>
-            </button>
-            <button type="button" className="reader-chapter-btn" onClick={handleNextChapter} disabled={!nextChapter || Boolean(transitioningChapterID)}>
-              <span>{transitioningChapterID ? (isEnglish ? 'Loading...' : 'Cargando...') : (isEnglish ? 'Next Chapter' : 'Siguiente capitulo')}</span>
-              <ReaderIcon kind="chapter-next" />
-            </button>
-          </div>
-
-          <div className="reader-icon-strip">
-            <ReaderIconButton
-              icon={bookmark ? 'bookmark-filled' : 'bookmark'}
-              active={Boolean(bookmark)}
-              label={bookmark ? (isEnglish ? 'Remove bookmark' : 'Quitar marcador') : (isEnglish ? 'Bookmark current page' : 'Guardar marcador')}
-              onClick={handleToggleBookmark}
-            />
-            <ReaderIconButton icon="reload" label={isEnglish ? 'Reload chapter pages' : 'Recargar paginas'} onClick={refreshChapter} />
-            <ReaderIconButton icon="fullscreen" label={isFullscreen ? (isEnglish ? 'Exit fullscreen' : 'Salir de pantalla completa') : (isEnglish ? 'Fullscreen' : 'Pantalla completa')} onClick={() => void toggleFullscreen()} />
-            <ReaderIconButton icon="settings" active={readerSettings.settingsOpen} label={isEnglish ? 'Reading settings' : 'Ajustes de lectura'} onClick={() => updateReaderSettings({ settingsOpen: !readerSettings.settingsOpen })} />
-          </div>
-        </div>
-      </header>
+      <ReaderStageHeader
+        title={title}
+        chapterTitle={chapterLineTitle}
+        chapterID={chapterID}
+        chapters={chapters}
+        isEnglish={isEnglish}
+        currentPageLabel={viewport.pageLabel}
+        qualityLabel={qualityLabel}
+        bookmarkActive={Boolean(bookmark)}
+        onBack={() => {
+          persistProgress(viewport.endIndex)
+          onBack()
+        }}
+        onSelectChapter={(nextChapterID) => {
+          const next = chapters.find((chapter) => chapter.id === nextChapterID)
+          if (next) jumpToChapter(next)
+        }}
+        onOpenChapterBrowser={openChapterBrowser}
+        onSetReadingMode={(readingMode) => updateReaderSettings({ readingMode })}
+        readingMode={readerSettings.readingMode}
+        prevChapter={prevChapter}
+        nextChapter={nextChapter}
+        onOpenPreviousChapter={() => jumpToChapter(prevChapter)}
+        onOpenNextChapter={handleNextChapter}
+        transitioningChapter={transitioningChapterID}
+        onToggleBookmark={handleToggleBookmark}
+        onReloadChapter={refreshChapter}
+        onToggleFullscreen={() => void toggleFullscreen()}
+        isFullscreen={isFullscreen}
+        onToggleSettings={toggleSettingsSheet}
+        settingsOpen={readerSettings.settingsOpen}
+        ReaderIcon={ReaderIcon}
+        ReaderIconButton={ReaderIconButton}
+        ReaderToggleButton={ReaderToggleButton}
+      />
 
       <div className="reader-workspace-v2">
         <section className={`reader-stage reader-stage--${readerSettings.readingMode} reader-fit--${effectivePageFit}`}>
@@ -795,7 +929,11 @@ export default function MangaReader({
           ) : null}
 
           {!loading && !error && !continuousScrollMode ? (
-            <div className={`reader-page-canvas${readerSettings.readingDirection === 'rtl' ? ' is-rtl' : ''}`} onClick={toggleReaderChrome}>
+            <div
+              ref={pageCanvasRef}
+              className={`reader-page-canvas${readerSettings.readingDirection === 'rtl' ? ' is-rtl' : ''}`}
+              onClick={toggleReaderChrome}
+            >
               <button type="button" className="reader-page-zone reader-page-zone--prev" aria-label={isEnglish ? 'Previous page' : 'Pagina anterior'} onClick={(event) => {
                 event.stopPropagation()
                 handlePageStep('prev')
@@ -813,7 +951,7 @@ export default function MangaReader({
               </button>
 
               <div ref={spreadRef} className={`reader-spread reader-spread--${readerSettings.readingMode}`} style={readerCanvasStyle}>
-                {(readerSettings.readingDirection === 'rtl' ? [...viewport.visiblePages].reverse() : viewport.visiblePages).map((pageIndex) => {
+                {(readerSettings.readingDirection === 'rtl' ? [...viewport.visiblePages].reverse() : viewport.visiblePages).map((pageIndex, spreadSlotIndex) => {
                   const page = pages[pageIndex]
                   if (!page) return null
                   const intrinsicPageSize = pageIntrinsicSizes[page.renderKey]
@@ -825,6 +963,9 @@ export default function MangaReader({
                     naturalWidth: intrinsicPageSize?.naturalWidth,
                     naturalHeight: intrinsicPageSize?.naturalHeight,
                   })
+                  const sheetClassName = readerSettings.readingMode === 'double'
+                    ? `reader-page-sheet--double ${spreadSlotIndex === 0 ? 'reader-page-sheet--double-left' : 'reader-page-sheet--double-right'}`
+                    : 'reader-page-sheet--paged'
                   return (
                     <ReaderPageSheet
                       key={page.renderKey}
@@ -832,7 +973,7 @@ export default function MangaReader({
                       alt={`${isEnglish ? 'Page' : 'Pagina'} ${pageIndex + 1}`}
                       pageStyle={pageLayout ? { width: `${pageLayout.width}px`, height: `${pageLayout.height}px` } : undefined}
                       pageMediaStyle={pageLayout ? { ...pageImageStyle, width: '100%', height: '100%' } : pageImageStyle}
-                      sheetClassName={readerSettings.readingMode === 'double' ? 'reader-page-sheet--double' : 'reader-page-sheet--paged'}
+                      sheetClassName={sheetClassName}
                       onImageLoad={(event) => handleReaderPageLoad(page.renderKey, event)}
                     />
                   )
@@ -848,98 +989,8 @@ export default function MangaReader({
             </div>
           ) : null}
         </section>
-
-        {readerSettings.settingsOpen ? (
-          <aside className="reader-settings-panel" onClick={stopEvent}>
-            <div className="reader-settings-head">
-              <div>
-                <h3>Reading Settings</h3>
-              </div>
-              <ReaderIconButton icon="close" label={isEnglish ? 'Close settings' : 'Cerrar ajustes'} onClick={() => updateReaderSettings({ settingsOpen: false })} />
-            </div>
-
-            <div className="reader-settings-section">
-              <div className="reader-settings-label">Reading Mode</div>
-              <div className="reader-settings-button-grid">
-                <ReaderToggleButton active={readerSettings.readingMode === 'scroll'} icon="scroll" label="Scroll" onClick={() => updateReaderSettings({ readingMode: 'scroll' })} />
-                <ReaderToggleButton active={readerSettings.readingMode === 'paged'} icon="paged" label="Paged" onClick={() => updateReaderSettings({ readingMode: 'paged' })} />
-                <ReaderToggleButton active={readerSettings.readingMode === 'double'} icon="double" label="Double Page" onClick={() => updateReaderSettings({ readingMode: 'double' })} />
-              </div>
-            </div>
-
-            <div className="reader-settings-section">
-              <div className="reader-settings-label">Reading Direction</div>
-              <div className="reader-settings-button-grid two-up">
-                <ReaderToggleButton active={readerSettings.readingDirection === 'ltr'} icon="chapter-next" label="Left to Right" onClick={() => updateReaderSettings({ readingDirection: 'ltr' })} />
-                <ReaderToggleButton active={readerSettings.readingDirection === 'rtl'} icon="chapter-prev" label="Right to Left" onClick={() => updateReaderSettings({ readingDirection: 'rtl' })} />
-              </div>
-            </div>
-
-            <div className="reader-settings-section">
-              <div className="reader-settings-label">Page Fit</div>
-              <div className="reader-settings-button-grid three-up">
-                <ReaderToggleButton active={readerSettings.pageFit === 'width'} icon="width" label="Fit Width" onClick={() => updateReaderSettings({ pageFit: 'width' })} />
-                <ReaderToggleButton active={readerSettings.pageFit === 'height'} icon="height" label="Fit Height" onClick={() => updateReaderSettings({ pageFit: 'height' })} />
-                <ReaderToggleButton active={readerSettings.pageFit === 'original'} icon="original" label="Original" onClick={() => updateReaderSettings({ pageFit: 'original' })} />
-              </div>
-            </div>
-
-            <div className="reader-settings-section">
-              <div className="reader-settings-label">Zoom</div>
-              <ReaderSliderRow
-                label="Zoom"
-                icon="expand"
-                value={readerSettings.zoomPercent}
-                min={60}
-                max={180}
-                onChange={(value) => updateReaderSettings({ zoomPercent: value })}
-                suffix="%"
-              />
-            </div>
-
-            <div className="reader-settings-section">
-              <div className="reader-settings-label">Image</div>
-              <div className="reader-settings-toggle-row">
-                <div>
-                  <div className="reader-settings-toggle-title">Upscaler / Enhance <span className="reader-settings-ai-tag">AI</span></div>
-                  <div className="reader-settings-toggle-copy">Improve clarity and reduce noise</div>
-                </div>
-                <label className="reader-switch">
-                  <input type="checkbox" checked={readerSettings.enhance} onChange={(event) => updateReaderSettings({ enhance: event.target.checked })} />
-                  <span className="reader-switch-track" />
-                </label>
-              </div>
-              <div className="reader-quality-chip">{qualityLabel}</div>
-            </div>
-
-            <div className="reader-settings-section">
-              <div className="reader-settings-label">Adjustments</div>
-              <ReaderSliderRow label="Brightness" icon="sun" value={readerSettings.brightness} min={-40} max={40} onChange={(value) => updateReaderSettings({ brightness: value })} suffix="%" />
-              <ReaderSliderRow label="Contrast" icon="contrast" value={readerSettings.contrast} min={-40} max={40} onChange={(value) => updateReaderSettings({ contrast: value })} suffix="%" />
-              <button type="button" className="reader-reset-btn" onClick={() => updateReaderSettings({ brightness: 0, contrast: 0 })}>Reset Adjustments</button>
-            </div>
-
-            <div className="reader-settings-section">
-              <div className="reader-settings-label">Auto-Hide UI</div>
-              <div className="reader-settings-toggle-row">
-                <div className="reader-settings-toggle-copy">Hide top and bottom bars after inactivity</div>
-                <label className="reader-switch">
-                  <input type="checkbox" checked={readerSettings.autoHideUI} onChange={(event) => updateReaderSettings({ autoHideUI: event.target.checked })} />
-                  <span className="reader-switch-track" />
-                </label>
-              </div>
-              <label className="reader-delay-select-shell">
-                <span>Delay</span>
-                <select value={readerSettings.autoHideDelaySec} onChange={(event) => updateReaderSettings({ autoHideDelaySec: Number(event.target.value) })}>
-                  {[2, 3, 4, 5, 6].map((value) => (
-                    <option key={value} value={value}>{value} sec</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </aside>
-        ) : null}
       </div>
+      {readerOverlayLayer}
     </div>
   )
 }

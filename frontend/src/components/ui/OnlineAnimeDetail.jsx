@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { wails, proxyImage } from '../../lib/wails'
+import { providerUsesExplicitEpisodeAudioVariant, shouldAllowAutomaticAudioFallback } from '../../lib/onlinePlaybackFallback'
 import { toastError, toastSuccess } from '../ui/Toast'
 import { useI18n } from '../../lib/i18n'
 import { extractAniListAnimeSearchMedia } from '../../lib/anilistSearch'
+import { enrichEpisodesWithAnimePaheArtwork, mergeEpisodeArtworkByNumber } from '../../lib/episodeArtwork'
 import IntegratedVideoPlayer from './IntegratedVideoPlayer'
 import { perfEnd, perfMark } from '../../lib/perfTrace'
+import { buildMotionVars } from '../../gui-v2/motion/gui2Motion'
 
 const SOURCE_LABELS = {
   'jkanime-es': { name: 'JKAnime', color: '#c084fc', flag: 'ES' },
@@ -59,23 +62,26 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
   const [desiredAudioFlavor, setDesiredAudioFlavor] = useState('sub')
   const [audioVariantSwitching, setAudioVariantSwitching] = useState(false)
   const [episodeFilter, setEpisodeFilter] = useState('unwatched')
+  const [providerCoverFailed, setProviderCoverFailed] = useState(false)
   const { t, lang } = useI18n()
   const autoVariantSyncKeyRef = useRef('')
+  const artworkEnrichmentKeyRef = useRef('')
   const isEnglish = lang === 'en'
   const isResolvingSource = Boolean(anime.pending_resolve)
   const sourceAnimeID = String(anime.id ?? anime.anime_id ?? anime.animeID ?? '').trim()
   const currentAniListID = Number(anime.anilist_id || anime.anilistID || anime.AniListID || anime.idAniList || 0)
   const currentMalID = Number(anime.mal_id || anime.malID || anime.MalID || 0)
-  const preferAniListCover = ['animegg-en', 'animepahe-en'].includes(anime.source_id)
   const supportsDownloads = anime.source_id === 'jkanime-es' || anime.source_id === 'animepahe-en' || anime.source_id === 'animegg-en'
   const variantProbeEpisodeID = String(episodes?.[0]?.id ?? anime.prefetchedEpisodes?.[0]?.id ?? '').trim()
 
   const source = SOURCE_LABELS[anime.source_id] ?? { name: anime.source_id, color: '#9090a8', flag: '' }
-  const sourceCover = anime.cover_url ? proxyImage(anime.cover_url) : null
-  const coverSrc = preferAniListCover
-    ? (anime.anilistCoverImage || sourceCover || null)
-    : (sourceCover || anime.anilistCoverImage || null)
-  const backdropSrc = anime.anilistBannerImage || anime.anilistCoverImage || coverSrc || ''
+  const coverSrc = providerCoverFailed ? null : (anime.anilistCoverImage || null)
+  const backdropSrc = anime.anilistBannerImage || coverSrc || ''
+  const handleProviderCoverError = useCallback(() => setProviderCoverFailed(true), [])
+
+  useEffect(() => {
+    setProviderCoverFailed(false)
+  }, [anime.anilistBannerImage, anime.anilistCoverImage])
 
   const ui = {
     openingEpisode: (num) => isEnglish ? `Opening episode ${num ?? ''}...` : `Abriendo episodio ${num ?? ''}...`,
@@ -363,6 +369,34 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
   }, [episodesQuery.data])
 
   useEffect(() => {
+    if (!Array.isArray(episodes) || episodes.length === 0) return
+    if (episodes.some((ep) => ep?.thumbnail)) return
+    if (!anime?.title && !anime?.anilist_id && !anime?.anilistID) return
+
+    const enrichmentKey = [
+      anime?.source_id || '',
+      sourceAnimeID,
+      Number(anime?.anilist_id || anime?.anilistID || 0),
+      episodes.length,
+    ].join(':')
+
+    if (artworkEnrichmentKeyRef.current === enrichmentKey) return
+    artworkEnrichmentKeyRef.current = enrichmentKey
+
+    let cancelled = false
+    enrichEpisodesWithAnimePaheArtwork(anime, episodes, wails, lang === 'en' ? 'en' : 'es')
+      .then((enriched) => {
+        if (cancelled || !Array.isArray(enriched)) return
+        setEpisodes((current) => mergeEpisodeArtworkByNumber(current, enriched))
+      })
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [anime, episodes, lang, sourceAnimeID])
+
+  useEffect(() => {
     setEpisodeFilter('unwatched')
   }, [anime.source_id, sourceAnimeID])
 
@@ -455,7 +489,9 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
   const launchEpisode = useCallback(async (ep, modeOverride = null, audioOverride = '') => {
     const openWithAudio = async (targetAudio, allowFallback) => {
       const effectiveMode = modeOverride === 'integrated' ? 'integrated' : 'mpv'
-      const useExplicitVariant = anime.source_id === 'animegg-en' && supportsAudioVariants && ['sub', 'dub'].includes(targetAudio)
+      const useExplicitVariant = providerUsesExplicitEpisodeAudioVariant(anime.source_id)
+        && supportsAudioVariants
+        && ['sub', 'dub'].includes(targetAudio)
       const effectiveEpisodeID = useExplicitVariant
         ? `${ep.id}::audio=${targetAudio}`
         : ep.id
@@ -502,10 +538,16 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
 
         if (allowFallback && supportsAudioVariants) {
           const fallbackAudio = targetAudio === 'dub' ? 'sub' : 'dub'
+          const shouldRetryWithFallback = shouldAllowAutomaticAudioFallback({
+            sourceID: anime.source_id,
+            supportsAudioVariants,
+            currentAudio: targetAudio,
+            fallbackAudio,
+          })
           const fallbackAllowed = fallbackAudio === 'dub'
             ? Boolean(audioVariantAvailability?.dub)
             : Boolean(audioVariantAvailability?.sub)
-          if (fallbackAllowed) {
+          if (shouldRetryWithFallback && fallbackAllowed) {
             toastError(
               targetAudio === 'dub'
                 ? (isEnglish
@@ -731,7 +773,10 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
   }
 
   return (
-    <div className="fade-in media-detail-page media-detail-page--online gui2-landing-page gui2-landing-page--anime">
+    <div
+      className="fade-in media-detail-page media-detail-page--online gui2-landing-page gui2-landing-page--anime gui2-motion-enter"
+      style={buildMotionVars('page')}
+    >
       <IntegratedVideoPlayer
         open={Boolean(integratedPlayback?.url)}
         title={integratedPlayback?.title}
@@ -762,7 +807,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
       />
 
       <section
-        className="gui2-landing-hero"
+        className="gui2-landing-hero gui2-landing-hero-premium"
         style={backdropSrc ? {
           backgroundImage: `linear-gradient(180deg, rgba(7,7,10,0.16) 0%, rgba(7,7,10,0.76) 44%, rgba(7,7,10,0.97) 82%, rgba(7,7,10,0.99) 100%), radial-gradient(circle at top right, rgba(63, 116, 189, 0.2) 0%, rgba(63, 116, 189, 0) 34%), url(${backdropSrc})`,
         } : {}}
@@ -773,10 +818,10 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
           </button>
         </div>
 
-        <div className="gui2-landing-hero-grid gui2-landing-hero-grid--anime">
+        <div className={`gui2-landing-hero-grid gui2-landing-hero-grid--anime${coverSrc ? '' : ' gui2-landing-hero-grid--coverless'}`}>
           {coverSrc ? (
             <div className="gui2-landing-cover-wrap">
-              <img src={coverSrc} alt={anime.title} className="gui2-landing-cover gui2-landing-cover--round" />
+              <img src={coverSrc} alt={anime.title} className="gui2-landing-cover gui2-landing-cover--round" onError={handleProviderCoverError} />
             </div>
           ) : null}
 
@@ -897,7 +942,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
 
             {!loading && !error ? (
               visibleEpisodes.length > 0 ? (
-                <div className="gui2-landing-episode-list">
+                <div className="gui2-landing-episode-list gui2-landing-episodes-mediafirst">
                   {visibleEpisodes.map((ep) => {
                     const isStreaming = streaming === ep.id
                     const isDownloading = downloading === ep.id
@@ -1012,7 +1057,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
         <div className="media-detail-hero-grid online-detail-hero-grid">
           {coverSrc ? (
             <div className="media-detail-cover-wrap online-detail-cover-wrap">
-              <img src={coverSrc} alt={anime.title} className="media-detail-cover" />
+              <img src={coverSrc} alt={anime.title} className="media-detail-cover" onError={handleProviderCoverError} />
             </div>
           ) : null}
 
@@ -1295,7 +1340,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
         </button>
 
         <div className="detail-hero-content">
-          {coverSrc ? <img src={coverSrc} alt={anime.title} className="detail-cover" /> : null}
+          {coverSrc ? <img src={coverSrc} alt={anime.title} className="detail-cover" onError={handleProviderCoverError} /> : null}
 
           <div className="detail-info">
             <div className="detail-kicker">

@@ -6,7 +6,6 @@ import MangaSearch from '../pages/MangaSearch'
 import Local from '../pages/Local'
 import { ToastContainer } from '../components/ui/Toast'
 import NowPlaying from '../components/ui/NowPlaying'
-import AppUpdateNotifier from './AppUpdateNotifier'
 import Gui2Shell from './shell/Gui2Shell'
 import { getGui2RouteMeta, getGui2RouteParams, isGui2PreviewPath } from './routeRegistry'
 import Gui2HomeRoute from './routes/Gui2HomeRoute'
@@ -46,7 +45,6 @@ export default function Gui2App() {
 
   return (
     <Gui2Shell routeMeta={routeMeta} preview={preview}>
-      <AppUpdateNotifier />
       {content}
       <NowPlaying />
       <ToastContainer />

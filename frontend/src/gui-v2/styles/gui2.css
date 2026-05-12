@@ -21,6 +21,7 @@
   --gui2-gap: 16px;
   --gui2-soft: rgba(243, 239, 232, 0.72);
   --gui2-muted: rgba(243, 239, 232, 0.42);
+  --gui2-ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 *,
@@ -51,6 +52,35 @@ body {
 
 body.gui2-boot-active {
   overflow: hidden;
+}
+
+.gui2-motion-enter {
+  opacity: 0;
+  transform: translateY(var(--gui2-shift-y, 8px));
+  animation: gui2FadeLift var(--gui2-enter-ms, 200ms) var(--gui2-ease-premium) forwards;
+}
+
+.gui2-motion-enter[data-motion-ready="true"] {
+  opacity: 1;
+}
+
+@keyframes gui2FadeLift {
+  from {
+    opacity: 0;
+    transform: translateY(var(--gui2-shift-y, 8px));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gui2-motion-enter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }
 
 button,
@@ -858,6 +888,11 @@ a {
   width: 100%;
   display: grid;
   gap: 16px;
+}
+
+.fade-in {
+  animation: gui2FadeLift 220ms var(--gui2-ease-premium) both;
+  will-change: opacity, transform;
 }
 
 .gui2-shell[data-route='home'] .gui2-content-frame,
@@ -2371,24 +2406,30 @@ body.reader-active .gui2-content {
 .gui2-user-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
+  justify-content: center;
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
 }
 
 .gui2-user-avatar {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
+  overflow: hidden;
+  border-radius: 999px;
   background: rgba(215, 163, 90, 0.14);
   color: var(--gui2-gold);
   font-size: 11px;
   font-weight: 800;
 }
 
-.gui2-user-name {
-  font-size: 12px;
-  font-weight: 700;
+.gui2-user-avatar-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .gui2-home {
@@ -2772,6 +2813,18 @@ body.reader-active .gui2-content {
   gap: 16px;
 }
 
+.gui2-homev2-shell-premium {
+  gap: 34px;
+}
+
+.gui2-homev2-hero-band {
+  position: relative;
+  padding: 28px 0 18px;
+  background:
+    linear-gradient(180deg, rgba(255,145,56,0.12) 0%, rgba(8,8,11,0) 42%),
+    linear-gradient(180deg, rgba(8,8,11,0.08) 0%, rgba(8,8,11,0.88) 100%);
+}
+
 .gui2-homev2-hero-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
@@ -2782,13 +2835,18 @@ body.reader-active .gui2-content {
 .gui2-homev2-hero,
 .gui2-homev2-recent,
 .gui2-homev2-band {
-  border: 1px solid rgba(215, 163, 90, 0.12);
-  background: linear-gradient(180deg, rgba(18, 19, 22, 0.98), rgba(11, 12, 15, 0.99));
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.gui2-homev2-band {
+  padding-inline: 0;
 }
 
 .gui2-homev2-hero {
   display: flex;
-  padding: 12px;
+  padding: 0 10px 0 0;
   min-height: 100%;
 }
 
@@ -2801,6 +2859,15 @@ body.reader-active .gui2-content {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-homev2-continue-shell-premium .gui2-homev2-continue {
+  min-height: 336px;
+}
+
+.gui2-homev2-poster {
+  border: none;
+  background: transparent;
 }
 
 .gui2-homev2-hero-stage-loading {
@@ -2967,7 +3034,7 @@ body.reader-active .gui2-content {
   display: grid;
   align-content: start;
   gap: 8px;
-  padding: 12px;
+  padding: 6px 0 0 8px;
 }
 
 .gui2-homev2-band-head {
@@ -3010,6 +3077,28 @@ body.reader-active .gui2-content {
 .gui2-homev2-recent-list {
   display: grid;
   gap: 8px;
+}
+
+.gui2-homev2-recent-shell,
+.gui2-homev2-poster-shell,
+.gui2-homev2-continue-shell-item {
+  display: grid;
+  position: relative;
+  z-index: 0;
+  transition:
+    transform 220ms var(--gui2-ease-premium),
+    filter 220ms var(--gui2-ease-premium),
+    z-index 0ms linear 220ms;
+  will-change: transform, filter;
+}
+
+.gui2-homev2-recent-shell:hover,
+.gui2-homev2-poster-shell:hover,
+.gui2-homev2-continue-shell-item:hover {
+  transform: translateY(-8px) scale(1.03);
+  filter: saturate(1.08);
+  z-index: 10;
+  transition-delay: 0ms;
 }
 
 .gui2-homev2-loading-recent-row {
@@ -3064,6 +3153,13 @@ body.reader-active .gui2-content {
   text-align: left;
   font: inherit;
   cursor: pointer;
+  transition:
+    background 180ms var(--gui2-ease-premium),
+    color 220ms var(--gui2-ease-premium);
+}
+
+.gui2-homev2-recent-row:hover {
+  background: rgba(255, 255, 255, 0.024);
 }
 
 .gui2-homev2-recent-row:first-of-type {
@@ -3074,6 +3170,10 @@ body.reader-active .gui2-content {
   aspect-ratio: 1.55 / 1;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.02);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.2);
+  transition:
+    box-shadow 220ms var(--gui2-ease-premium),
+    filter 220ms var(--gui2-ease-premium);
 }
 
 .gui2-homev2-recent-image,
@@ -3103,6 +3203,10 @@ body.reader-active .gui2-content {
   font-weight: 800;
   line-height: 1.22;
   text-transform: uppercase;
+  transition:
+    color 220ms var(--gui2-ease-premium),
+    transform 220ms var(--gui2-ease-premium),
+    text-shadow 220ms var(--gui2-ease-premium);
 }
 
 .gui2-homev2-recent-episode {
@@ -3115,6 +3219,17 @@ body.reader-active .gui2-content {
   font-size: 13px;
 }
 
+.gui2-homev2-recent-shell:hover .gui2-homev2-recent-thumb {
+  box-shadow: 0 24px 44px rgba(0, 0, 0, 0.32);
+  filter: saturate(1.05) brightness(1.02);
+}
+
+.gui2-homev2-recent-shell:hover .gui2-homev2-recent-title {
+  color: #fff8f0;
+  transform: translateY(-1px);
+  text-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
 .gui2-homev2-stack {
   display: grid;
   gap: 12px;
@@ -3123,7 +3238,7 @@ body.reader-active .gui2-content {
 .gui2-homev2-band {
   display: grid;
   gap: 10px;
-  padding: 12px;
+  padding: 6px 0 12px;
 }
 
 .gui2-homev2-band-loading {
@@ -3150,7 +3265,7 @@ body.reader-active .gui2-content {
 .gui2-homev2-poster-rail {
   display: grid;
   grid-template-columns: repeat(var(--gui2-homev2-poster-columns, 10), minmax(0, 1fr));
-  gap: 8px;
+  gap: 14px;
   justify-content: start;
 }
 
@@ -3167,8 +3282,8 @@ body.reader-active .gui2-content {
   display: grid;
   grid-template-rows: auto auto;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.015);
+  border: 0;
+  background: transparent;
   color: inherit;
   text-align: left;
   font: inherit;
@@ -3180,6 +3295,10 @@ body.reader-active .gui2-content {
   aspect-ratio: 0.7;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.03);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.24);
+  transition:
+    box-shadow 220ms var(--gui2-ease-premium),
+    filter 220ms var(--gui2-ease-premium);
 }
 
 .gui2-homev2-poster-image,
@@ -3200,26 +3319,46 @@ body.reader-active .gui2-content {
 .gui2-homev2-poster-copy {
   display: grid;
   gap: 4px;
-  padding: 8px 8px 10px;
+  padding: 10px 2px 0;
 }
 
 .gui2-homev2-poster-title {
   color: var(--gui2-text);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 760;
   line-height: 1.24;
   text-transform: uppercase;
+  transition:
+    color 220ms var(--gui2-ease-premium),
+    transform 220ms var(--gui2-ease-premium),
+    text-shadow 220ms var(--gui2-ease-premium);
 }
 
 .gui2-homev2-poster-meta {
   color: rgba(243, 239, 232, 0.66);
   font-size: 12px;
+  transition: color 220ms var(--gui2-ease-premium);
+}
+
+.gui2-homev2-poster-shell:hover .gui2-homev2-poster-art {
+  box-shadow: 0 26px 48px rgba(0, 0, 0, 0.34);
+  filter: saturate(1.05) brightness(1.02);
+}
+
+.gui2-homev2-poster-shell:hover .gui2-homev2-poster-title {
+  color: #fff8f0;
+  transform: translateY(-1px);
+  text-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
+.gui2-homev2-poster-shell:hover .gui2-homev2-poster-meta {
+  color: rgba(243, 239, 232, 0.8);
 }
 
 .gui2-homev2-continue-rail {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
+  gap: 14px;
   justify-content: start;
 }
 
@@ -3273,8 +3412,8 @@ body.reader-active .gui2-content {
   display: grid;
   grid-template-rows: auto auto;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.015);
+  border: 0;
+  background: transparent;
   color: inherit;
   text-align: left;
   font: inherit;
@@ -3287,6 +3426,10 @@ body.reader-active .gui2-content {
   aspect-ratio: 1.64 / 1;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.03);
+  box-shadow: 0 18px 32px rgba(0, 0, 0, 0.24);
+  transition:
+    box-shadow 220ms var(--gui2-ease-premium),
+    filter 220ms var(--gui2-ease-premium);
 }
 
 .gui2-homev2-continue-image,
@@ -3322,20 +3465,25 @@ body.reader-active .gui2-content {
 .gui2-homev2-continue-copy {
   display: grid;
   gap: 6px;
-  padding: 8px 10px 10px;
+  padding: 10px 2px 0;
 }
 
 .gui2-homev2-continue-title {
   color: var(--gui2-text);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 760;
   line-height: 1.22;
   text-transform: uppercase;
+  transition:
+    color 220ms var(--gui2-ease-premium),
+    transform 220ms var(--gui2-ease-premium),
+    text-shadow 220ms var(--gui2-ease-premium);
 }
 
 .gui2-homev2-continue-meta {
   color: rgba(243, 239, 232, 0.72);
   font-size: 12px;
+  transition: color 220ms var(--gui2-ease-premium);
 }
 
 .gui2-homev2-progress {
@@ -3360,6 +3508,21 @@ body.reader-active .gui2-content {
   color: rgba(243, 239, 232, 0.74);
   font-size: 12px;
   font-weight: 600;
+}
+
+.gui2-homev2-continue-shell-item:hover .gui2-homev2-continue-art {
+  box-shadow: 0 28px 52px rgba(0, 0, 0, 0.36);
+  filter: saturate(1.06) brightness(1.02);
+}
+
+.gui2-homev2-continue-shell-item:hover .gui2-homev2-continue-title {
+  color: #fff8f0;
+  transform: translateY(-1px);
+  text-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
+.gui2-homev2-continue-shell-item:hover .gui2-homev2-continue-meta {
+  color: rgba(243, 239, 232, 0.82);
 }
 
 @media (max-width: 1280px) {
@@ -3452,9 +3615,16 @@ body.reader-active .gui2-content {
 .gui2-catalog-shell {
   display: grid;
   gap: 12px;
-  padding: 14px 16px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: linear-gradient(180deg, rgba(14, 15, 18, 0.98), rgba(11, 12, 15, 0.98));
+  padding: 8px 6px 18px;
+  border: 0;
+  background: transparent;
+  position: relative;
+  isolation: isolate;
+  overflow: visible;
+}
+
+.gui2-catalog-shell-premium {
+  gap: 22px;
 }
 
 .gui2-catalog-header {
@@ -3495,6 +3665,15 @@ body.reader-active .gui2-content {
   display: grid;
 }
 
+.gui2-catalog-filterbar-quiet {
+  backdrop-filter: blur(10px);
+}
+
+.gui2-catalog-status-strip,
+.gui2-catalog-query-row {
+  backdrop-filter: blur(10px);
+}
+
 .gui2-catalog-query {
   min-height: 40px;
   display: grid;
@@ -3502,8 +3681,8 @@ body.reader-active .gui2-content {
   align-items: center;
   gap: 10px;
   padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.015);
 }
 
 .gui2-catalog-query-icon,
@@ -3601,10 +3780,12 @@ body.reader-active .gui2-content {
 .gui2-catalog-filterbar {
   display: grid;
   grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(140px, 0.7fr)) minmax(190px, 0.9fr);
-  gap: 0;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  gap: 10px;
+  border: 0;
+  background: transparent;
   overflow: visible;
+  position: relative;
+  z-index: 6;
 }
 
 .gui2-catalog-filter-cell {
@@ -3612,13 +3793,14 @@ body.reader-active .gui2-content {
   display: grid;
   gap: 6px;
   padding: 12px 16px 13px;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.015);
   position: relative;
   overflow: visible;
 }
 
 .gui2-catalog-filter-cell:last-child {
-  border-right: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .gui2-catalog-filter-labelrow {
@@ -3782,7 +3964,7 @@ body.reader-active .gui2-content {
 .gui2-catalog-activebar {
   justify-content: space-between;
   flex-wrap: wrap;
-  padding: 4px 0 0;
+  padding: 6px 0 0;
 }
 
 .gui2-catalog-activebar-copy {
@@ -3821,6 +4003,29 @@ body.reader-active .gui2-content {
 .gui2-catalog-results-shell {
   display: grid;
   gap: 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.gui2-catalog-results-shell-premium {
+  padding: 10px 0 0;
+}
+
+.gui2-catalog-results-shell-premium .online-poster-card,
+.gui2-catalog-results-shell-premium .virtual-media-card {
+  transform: none;
+  transition: opacity 180ms var(--gui2-ease-premium), transform 180ms var(--gui2-ease-premium);
+}
+
+.gui2-catalog-results-shell-premium .online-poster-card:hover,
+.gui2-catalog-results-shell-premium .virtual-media-card:hover {
+  transform: translateY(-3px);
+}
+
+.gui2-catalog-grid-motion {
+  display: grid;
+  gap: 0;
+  animation-delay: 48ms;
 }
 
 .gui2-catalog-results-head {
@@ -3844,8 +4049,8 @@ body.reader-active .gui2-content {
 
 .gui2-catalog-grid {
   display: grid !important;
-  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)) !important;
-  gap: 10px !important;
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)) !important;
+  gap: 14px !important;
   align-items: stretch;
 }
 
@@ -3854,14 +4059,33 @@ body.reader-active .gui2-content {
   display: flex;
 }
 
+.gui2-catalog-card-shell {
+  display: grid;
+  width: 100%;
+  position: relative;
+  z-index: 0;
+  transition:
+    transform 220ms var(--gui2-ease-premium),
+    filter 220ms var(--gui2-ease-premium),
+    z-index 0ms linear 220ms;
+  will-change: transform, filter;
+}
+
+.gui2-catalog-card-shell:hover {
+  transform: translateY(-9px) scale(1.028);
+  filter: saturate(1.09);
+  z-index: 8;
+  transition-delay: 0ms;
+}
+
 .gui2-catalog-card {
   width: 100%;
   display: grid;
   grid-template-rows: auto auto;
   height: 100%;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.015);
+  border: 0;
+  background: transparent;
   color: inherit;
   text-align: left;
   font: inherit;
@@ -3877,6 +4101,11 @@ body.reader-active .gui2-content {
   display: block;
   object-fit: cover;
   background: rgba(255, 255, 255, 0.03);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.24);
+  transition:
+    box-shadow 220ms var(--gui2-ease-premium),
+    transform 220ms var(--gui2-ease-premium),
+    filter 220ms var(--gui2-ease-premium);
 }
 
 .gui2-catalog-card-cover-placeholder {
@@ -3902,21 +4131,25 @@ body.reader-active .gui2-content {
 .gui2-catalog-card-body {
   display: grid;
   align-content: start;
-  grid-template-rows: minmax(36px, auto) auto;
-  gap: 7px;
-  padding: 10px 10px 12px;
-  min-height: 78px;
+  grid-template-rows: minmax(40px, auto) auto;
+  gap: 8px;
+  padding: 12px 8px 8px;
+  min-height: 82px;
 }
 
 .gui2-catalog-card-title {
   color: #f5f1ea;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 650;
   line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  transition:
+    color 220ms var(--gui2-ease-premium),
+    transform 220ms var(--gui2-ease-premium),
+    text-shadow 220ms var(--gui2-ease-premium);
 }
 
 .gui2-catalog-card-meta {
@@ -3924,9 +4157,10 @@ body.reader-active .gui2-content {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  color: rgba(243, 239, 232, 0.46);
+  color: rgba(243, 239, 232, 0.54);
   font-size: 11px;
   line-height: 1.2;
+  transition: color 220ms var(--gui2-ease-premium);
 }
 
 .gui2-catalog-card-meta span {
@@ -3942,6 +4176,22 @@ body.reader-active .gui2-content {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='black' d='M5.1 2.5h5.8a1 1 0 0 1 1 1V14L8 11.6 4.1 14V3.5a1 1 0 0 1 1-1Z'/%3E%3C/svg%3E") center / contain no-repeat;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='black' d='M5.1 2.5h5.8a1 1 0 0 1 1 1V14L8 11.6 4.1 14V3.5a1 1 0 0 1 1-1Z'/%3E%3C/svg%3E") center / contain no-repeat;
   background: rgba(243, 239, 232, 0.44);
+}
+
+.gui2-catalog-card-shell:hover .gui2-catalog-card-cover,
+.gui2-catalog-card-shell:hover .gui2-catalog-card-cover-placeholder {
+  box-shadow: 0 28px 54px rgba(0, 0, 0, 0.4);
+  filter: saturate(1.06) brightness(1.025);
+}
+
+.gui2-catalog-card-shell:hover .gui2-catalog-card-title {
+  color: #fff8f0;
+  transform: translateY(-1px);
+  text-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+
+.gui2-catalog-card-shell:hover .gui2-catalog-card-meta {
+  color: rgba(243, 239, 232, 0.72);
 }
 
 .gui2-catalog-status-badge,
@@ -4075,6 +4325,18 @@ body.reader-active .gui2-content {
   padding: 18px 18px 20px;
 }
 
+.gui2-landing-hero-premium {
+  background:
+    linear-gradient(180deg, rgba(255,145,56,0.1) 0%, rgba(7,7,10,0) 38%),
+    linear-gradient(180deg, rgba(7,7,10,0.08) 0%, rgba(7,7,10,0.92) 100%);
+}
+
+.gui2-manga-landing-hero-premium {
+  background:
+    linear-gradient(180deg, rgba(255,145,56,0.1) 0%, rgba(7,7,10,0) 38%),
+    linear-gradient(180deg, rgba(7,7,10,0.08) 0%, rgba(7,7,10,0.92) 100%);
+}
+
 .gui2-landing-toolbar {
   display: flex;
   justify-content: flex-start;
@@ -4083,9 +4345,22 @@ body.reader-active .gui2-content {
 
 .gui2-landing-hero-grid {
   display: grid;
-  grid-template-columns: 176px minmax(0, 1fr) 286px;
-  gap: 22px;
+  grid-template-columns: 244px minmax(0, 1fr) 220px;
+  gap: 26px;
   align-items: start;
+}
+
+.gui2-landing-hero-grid--anime {
+  grid-template-columns: 244px minmax(0, 1fr);
+}
+
+.gui2-landing-hero-grid--coverless {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.gui2-landing-cover-wrap {
+  width: 100%;
+  max-width: 244px;
 }
 
 .gui2-landing-cover {
@@ -4093,8 +4368,9 @@ body.reader-active .gui2-content {
   display: block;
   aspect-ratio: 3 / 4;
   object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 20px 38px rgba(0, 0, 0, 0.28);
 }
 
 .gui2-landing-cover--round {
@@ -4144,7 +4420,7 @@ body.reader-active .gui2-content {
 }
 
 .gui2-landing-inline-fact:not(:last-child)::after {
-  content: '•';
+  content: 'â€¢';
   margin-left: 14px;
   color: rgba(255, 255, 255, 0.3);
 }
@@ -4329,7 +4605,8 @@ body.reader-active .gui2-content {
 
 .gui2-landing-character-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(132px, 132px));
+  justify-content: start;
   gap: 10px;
 }
 
@@ -4343,7 +4620,7 @@ body.reader-active .gui2-content {
 
 .gui2-landing-character-art {
   width: 100%;
-  aspect-ratio: 1.2 / 1;
+  aspect-ratio: 1 / 1;
   object-fit: cover;
   display: block;
   background: rgba(255, 255, 255, 0.04);
@@ -4379,6 +4656,10 @@ body.reader-active .gui2-content {
 .gui2-landing-chapter-list {
   display: grid;
   gap: 12px;
+}
+
+.gui2-landing-episodes-mediafirst {
+  gap: 14px;
 }
 
 .gui2-local-folder-grid {
@@ -4433,8 +4714,13 @@ body.reader-active .gui2-content {
   gap: 16px;
   align-items: stretch;
   padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  border: 0;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.gui2-landing-episodes-mediafirst .gui2-landing-episode-row {
+  background: rgba(255,255,255,0.025);
+  border-color: rgba(255,255,255,0.05);
 }
 
 .gui2-landing-episode-media {
@@ -4447,6 +4733,12 @@ body.reader-active .gui2-content {
   background-size: cover;
   background-position: center;
   border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gui2-landing-episode-thumb,
+.anime-episode-thumb {
+  border-radius: 16px;
+  overflow: hidden;
 }
 
 .gui2-landing-episode-thumb--placeholder {
@@ -4556,6 +4848,10 @@ body.reader-active .gui2-content {
   gap: 10px;
 }
 
+.gui2-manga-landing-chapters-editorial {
+  gap: 14px;
+}
+
 .gui2-landing-chapter-header,
 .gui2-landing-chapter-row {
   display: grid;
@@ -4577,6 +4873,11 @@ body.reader-active .gui2-content {
   padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.02);
+}
+
+.gui2-manga-landing-chapters-editorial .gui2-landing-chapter-row {
+  background: rgba(255,255,255,0.025);
+  border-color: rgba(255,255,255,0.05);
 }
 
 .gui2-landing-chapter-index {
@@ -5294,6 +5595,21 @@ body.reader-active .gui2-content {
   white-space: nowrap;
 }
 
+.gui2-lists-hero-premium {
+  background:
+    linear-gradient(180deg, rgba(255, 145, 56, 0.08) 0%, rgba(7, 7, 10, 0) 42%),
+    linear-gradient(180deg, rgba(7, 7, 10, 0.14) 0%, rgba(7, 7, 10, 0.88) 100%);
+}
+
+.gui2-lists-shelf {
+  padding-block: 18px 12px;
+}
+
+.gui2-lists-shell-premium {
+  border-top: 1px solid rgba(214, 190, 154, 0.12);
+  padding-top: 24px;
+}
+
 @media (max-width: 1200px) {
   .gui2-localv2-content {
     grid-template-columns: minmax(0, 1.28fr) minmax(320px, 0.92fr);
@@ -5362,11 +5678,22 @@ body.reader-active .gui2-content {
 
 .gui2-mylist-header {
   display: grid;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.gui2-mylist-hero-main,
+.gui2-mylist-header-copy {
+  display: grid;
+}
+
+.gui2-mylist-hero-main {
+  gap: 16px;
+  align-content: start;
 }
 
 .gui2-mylist-header-copy {
-  display: grid;
   gap: 8px;
 }
 
@@ -5386,8 +5713,8 @@ body.reader-active .gui2-content {
   display: flex;
   align-items: center;
   gap: 22px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid rgba(214, 190, 154, 0.18);
+  flex-wrap: wrap;
+  padding-top: 4px;
 }
 
 .gui2-mylist-media-tab {
@@ -5406,11 +5733,111 @@ body.reader-active .gui2-content {
   color: var(--gui2-gold-strong);
 }
 
+.gui2-mylist-hero-feature {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr);
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.012));
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    transform 220ms var(--gui2-ease-premium),
+    border-color 220ms var(--gui2-ease-premium),
+    background 220ms var(--gui2-ease-premium);
+}
+
+.gui2-mylist-hero-feature:hover {
+  transform: translateY(-4px);
+  border-color: rgba(214, 190, 154, 0.18);
+  background: linear-gradient(180deg, rgba(214, 190, 154, 0.08), rgba(255, 255, 255, 0.02));
+}
+
+.gui2-mylist-hero-feature-cover,
+.gui2-mylist-hero-feature-cover-fallback {
+  width: 124px;
+  aspect-ratio: 0.72;
+  object-fit: cover;
+  display: block;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
+}
+
+.gui2-mylist-hero-feature-cover-fallback {
+  display: grid;
+  place-items: center;
+  color: rgba(243, 239, 232, 0.8);
+  font-size: 36px;
+  font-weight: 800;
+}
+
+.gui2-mylist-hero-feature-copy {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.gui2-mylist-hero-feature-kicker {
+  color: var(--gui2-gold-strong);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.gui2-mylist-hero-feature-title {
+  color: var(--gui2-text);
+  font-size: 22px;
+  font-weight: 750;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+
+.gui2-mylist-hero-feature-subtitle {
+  color: rgba(243, 239, 232, 0.62);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.gui2-mylist-hero-feature-meta {
+  color: rgba(243, 239, 232, 0.7);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.gui2-mylist-hero-feature-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.gui2-mylist-hero-feature-progress-label {
+  color: rgba(243, 239, 232, 0.82);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gui2-mylist-hero-feature-progressbar {
+  width: 100%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.gui2-mylist-hero-feature-progressfill {
+  display: block;
+  height: 100%;
+}
+
 .gui2-mylist-toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
+  padding: 2px 0 6px;
 }
 
 .gui2-mylist-status-tabs {
@@ -5450,8 +5877,8 @@ body.reader-active .gui2-content {
   align-items: center;
   gap: 10px;
   padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.015);
 }
 
 .gui2-mylist-search-icon {
@@ -5474,6 +5901,7 @@ body.reader-active .gui2-content {
 }
 
 .gui2-mylist-actions-menu-wrap {
+  margin-left: auto;
   position: relative;
 }
 
@@ -5532,8 +5960,8 @@ body.reader-active .gui2-content {
   display: grid;
   gap: 12px;
   padding: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.015);
 }
 
 .gui2-mylist-add-controls {
@@ -5612,20 +6040,15 @@ body.reader-active .gui2-content {
 .gui2-mylist-metrics {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  gap: 10px;
 }
 
 .gui2-mylist-metric {
   display: grid;
   gap: 6px;
-  padding: 16px 18px;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.gui2-mylist-metric:last-child {
-  border-right: 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.01));
 }
 
 .gui2-mylist-metric-label {
@@ -5648,16 +6071,16 @@ body.reader-active .gui2-content {
 
 .gui2-mylist-table-wrap,
 .gui2-mylist-editor {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.014);
 }
 
 .gui2-mylist-table-head,
 .gui2-mylist-row {
   display: grid;
-  grid-template-columns: minmax(280px, 1.5fr) 120px 140px 92px 72px 46px;
+  grid-template-columns: minmax(330px, 1.7fr) 112px 154px 88px 64px 34px;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .gui2-mylist-table-head {
@@ -5675,19 +6098,29 @@ body.reader-active .gui2-content {
 }
 
 .gui2-mylist-row {
-  min-height: 76px;
-  padding: 0 14px;
+  min-height: 112px;
+  padding: 10px 14px;
   border: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
   background: transparent;
   color: var(--gui2-text);
   text-align: left;
   font: inherit;
+  transition:
+    background 220ms var(--gui2-ease-premium),
+    transform 220ms var(--gui2-ease-premium),
+    box-shadow 220ms var(--gui2-ease-premium);
+}
+
+.gui2-mylist-row:hover {
+  background: rgba(255, 255, 255, 0.02);
+  transform: translateY(-2px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 .gui2-mylist-row.active {
-  background: rgba(214, 190, 154, 0.06);
-  box-shadow: inset 0 0 0 1px rgba(214, 190, 154, 0.62);
+  background: rgba(214, 190, 154, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(214, 190, 154, 0.32);
 }
 
 .gui2-mylist-row:last-child {
@@ -5697,17 +6130,18 @@ body.reader-active .gui2-content {
 .gui2-mylist-row-title {
   min-width: 0;
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
+  grid-template-columns: 68px minmax(0, 1fr);
   align-items: center;
-  gap: 14px;
+  gap: 16px;
 }
 
 .gui2-mylist-row-cover,
 .gui2-mylist-row-cover-fallback {
-  width: 84px;
-  height: 54px;
+  width: 68px;
+  height: 96px;
   object-fit: cover;
   background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
 }
 
 .gui2-mylist-row-cover-fallback {
@@ -5721,18 +6155,27 @@ body.reader-active .gui2-content {
 .gui2-mylist-row-copy {
   min-width: 0;
   display: grid;
-  gap: 5px;
+  gap: 6px;
 }
 
 .gui2-mylist-row-copy strong {
   color: var(--gui2-text);
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.22;
+}
+
+.gui2-mylist-row-copy em {
+  color: rgba(243, 239, 232, 0.6);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
 }
 
 .gui2-mylist-row-copy small {
-  color: rgba(243, 239, 232, 0.5);
+  color: rgba(243, 239, 232, 0.48);
   font-size: 12px;
+  line-height: 1.45;
 }
 
 .gui2-mylist-row-status,
@@ -5769,6 +6212,645 @@ body.reader-active .gui2-content {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.gui2-mylist-switchline {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 52px;
+  padding: 2px 0 8px;
+}
+
+.gui2-mylist-page {
+  position: relative;
+  gap: 20px;
+  padding: 4px 0 18px;
+}
+
+.gui2-mylist-toolbar {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  padding: 0;
+  position: relative;
+  z-index: 22;
+  overflow: visible;
+}
+
+.gui2-mylist-toolbar-actions {
+  position: relative;
+  z-index: 24;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 16px;
+  overflow: visible;
+}
+
+.gui2-mylist-status-tabs {
+  gap: 14px;
+}
+
+.gui2-mylist-status-tab {
+  min-height: 34px;
+  padding: 0 4px 10px;
+  color: rgba(243, 239, 232, 0.62);
+}
+
+.gui2-mylist-search {
+  min-width: min(420px, 100%);
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.018);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.gui2-mylist-search-icon {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gui2-mylist-sort-wrap {
+  position: relative;
+  z-index: 28;
+}
+
+.gui2-mylist-sort-toggle {
+  min-width: 228px;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.018);
+  color: rgba(243, 239, 232, 0.88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  transition:
+    border-color 180ms var(--gui2-ease-premium),
+    background 180ms var(--gui2-ease-premium),
+    transform 180ms var(--gui2-ease-premium);
+}
+
+.gui2-mylist-sort-toggle:hover,
+.gui2-mylist-sort-toggle:focus-visible {
+  border-color: rgba(214, 190, 154, 0.2);
+  background: rgba(255, 255, 255, 0.032);
+  transform: translateY(-1px);
+}
+
+.gui2-mylist-sort-icon {
+  color: var(--gui2-gold-strong);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.gui2-mylist-sort-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.gui2-mylist-sort-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 16;
+  width: min(290px, 72vw);
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.014)),
+    rgba(8, 8, 11, 0.98);
+  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(18px);
+}
+
+.gui2-mylist-sort-item {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(243, 239, 232, 0.8);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  transition:
+    background 180ms var(--gui2-ease-premium),
+    color 180ms var(--gui2-ease-premium),
+    transform 180ms var(--gui2-ease-premium);
+}
+
+.gui2-mylist-sort-item:hover,
+.gui2-mylist-sort-item:focus-visible,
+.gui2-mylist-sort-item.active {
+  background: rgba(214, 190, 154, 0.12);
+  color: #fff7ec;
+  transform: translateX(2px);
+}
+
+.gui2-mylist-actions-toggle {
+  height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.gui2-mylist-add-panel {
+  border: 1px solid rgba(255, 255, 255, 0.045);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.012));
+}
+
+.gui2-mylist-grid-shell {
+  position: relative;
+  display: block;
+  min-height: 0;
+  overflow: visible;
+  border-top: 0;
+  padding-top: 0;
+  z-index: 1;
+}
+
+.gui2-mylist-grid-wrap {
+  display: grid;
+  gap: 16px;
+}
+
+.gui2-mylist-content-stage {
+  display: grid;
+  gap: 16px;
+}
+
+.gui2-mylist-grid-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: rgba(243, 239, 232, 0.56);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.gui2-mylist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 22px 18px;
+  align-items: start;
+  overflow: visible;
+}
+
+.gui2-mylist-status-shelves {
+  display: grid;
+  gap: 26px;
+}
+
+.gui2-mylist-status-shelf {
+  display: grid;
+  gap: 14px;
+}
+
+.gui2-mylist-status-shelf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.gui2-mylist-status-shelf-title {
+  margin: 0;
+  color: var(--gui2-text);
+  font-size: 18px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+}
+
+.gui2-mylist-status-shelf-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(243, 239, 232, 0.74);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.gui2-mylist-status-shelf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 22px 18px;
+}
+
+.gui2-mylist-card {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  overflow: visible;
+  z-index: 0;
+  transition: z-index 160ms linear;
+}
+
+.gui2-mylist-card:hover,
+.gui2-mylist-card:focus-within {
+  z-index: 8;
+}
+
+.gui2-mylist-card:hover {
+  z-index: 8;
+}
+
+.gui2-mylist-card-hitarea {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    transform 260ms var(--gui2-ease-premium),
+    filter 260ms var(--gui2-ease-premium);
+}
+
+.gui2-mylist-card-art {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow:
+    0 24px 42px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition:
+    transform 260ms var(--gui2-ease-premium),
+    box-shadow 260ms var(--gui2-ease-premium),
+    filter 260ms var(--gui2-ease-premium);
+}
+
+.gui2-mylist-card-image,
+.gui2-mylist-card-image-fallback {
+  display: block;
+  width: 100%;
+  aspect-ratio: 0.71;
+  object-fit: cover;
+}
+
+.gui2-mylist-card-image-fallback {
+  display: grid;
+  place-items: center;
+  color: rgba(243, 239, 232, 0.8);
+  font-size: 40px;
+  font-weight: 800;
+}
+
+.gui2-mylist-card-image-shade {
+  position: absolute;
+  inset: auto 0 0;
+  height: 46%;
+  background: linear-gradient(180deg, rgba(7, 7, 10, 0) 0%, rgba(7, 7, 10, 0.82) 100%);
+  pointer-events: none;
+}
+
+.gui2-mylist-card-status,
+.gui2-mylist-card-score {
+  position: absolute;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(7, 7, 10, 0.74);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.gui2-mylist-card-status {
+  left: 12px;
+  bottom: 14px;
+}
+
+.gui2-mylist-card-edit-icon {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(7, 7, 10, 0.74);
+  color: rgba(243, 239, 232, 0.9);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.gui2-mylist-card-score {
+  top: 12px;
+  right: 12px;
+  color: rgba(243, 239, 232, 0.92);
+}
+
+.gui2-mylist-card-copy {
+  display: grid;
+  gap: 5px;
+  padding: 0 4px;
+}
+
+.gui2-mylist-card-title {
+  color: var(--gui2-text);
+  font-size: 17px;
+  font-weight: 730;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
+  min-height: calc(1.18em * 3);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transition:
+    color 220ms var(--gui2-ease-premium),
+    transform 220ms var(--gui2-ease-premium);
+}
+
+.gui2-mylist-card-meta {
+  color: rgba(243, 239, 232, 0.58);
+  font-size: 12px;
+  line-height: 1.4;
+  min-height: calc(1.4em * 2);
+}
+
+.gui2-mylist-card-progressbar {
+  width: 100%;
+  height: 5px;
+  margin-top: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.gui2-mylist-card-progressfill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.gui2-mylist-card-edit {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: transparent;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  pointer-events: auto;
+  transform: translateY(10px) scale(0.96);
+  transition:
+    opacity 220ms var(--gui2-ease-premium),
+    transform 220ms var(--gui2-ease-premium),
+    background 220ms var(--gui2-ease-premium);
+  font-size: 0;
+}
+
+.gui2-mylist-card:hover .gui2-mylist-card-hitarea,
+.gui2-mylist-card:focus-within .gui2-mylist-card-hitarea {
+  transform: translateY(-8px) scale(1.05);
+  filter: saturate(1.06);
+}
+
+.gui2-mylist-card:hover .gui2-mylist-card-art,
+.gui2-mylist-card:focus-within .gui2-mylist-card-art {
+  box-shadow:
+    0 34px 56px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(214, 190, 154, 0.12);
+}
+
+.gui2-mylist-card:hover .gui2-mylist-card-title,
+.gui2-mylist-card:focus-within .gui2-mylist-card-title {
+  color: #fff7ec;
+  transform: translateY(-1px);
+}
+
+.gui2-mylist-card:hover .gui2-mylist-card-edit,
+.gui2-mylist-card:focus-within .gui2-mylist-card-edit {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.gui2-mylist-card.active .gui2-mylist-card-art {
+  box-shadow:
+    0 28px 48px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(214, 190, 154, 0.18);
+}
+
+.gui2-mylist-grid-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 8px;
+}
+
+.gui2-mylist-editor-drawer {
+  position: fixed;
+  top: 62px;
+  bottom: 18px;
+  right: 18px;
+  width: min(560px, calc(100vw - 36px));
+  height: calc(100vh - 80px);
+  max-height: none;
+  display: flex;
+  z-index: 58;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(100% + 24px));
+  transition:
+    opacity 260ms var(--gui2-ease-premium),
+    transform 320ms var(--gui2-ease-premium);
+}
+
+.gui2-mylist-editor-drawer.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.gui2-mylist-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 54;
+  border: 0;
+  background: rgba(5, 6, 9, 0.42);
+  backdrop-filter: blur(4px);
+  cursor: default;
+}
+
+.gui2-mylist-editor {
+  display: grid;
+  gap: 16px;
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.032) 0%, rgba(255, 255, 255, 0.018) 100%),
+    rgba(8, 8, 11, 0.96);
+  box-shadow: 0 28px 60px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(18px);
+}
+
+.gui2-mylist-editor-visual {
+  position: relative;
+}
+
+.gui2-mylist-editor-image,
+.gui2-mylist-editor-image-fallback {
+  width: 100%;
+  aspect-ratio: 1.48;
+  object-fit: cover;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gui2-mylist-editor-image-fallback {
+  display: grid;
+  place-items: center;
+  color: rgba(243, 239, 232, 0.8);
+  font-size: 42px;
+  font-weight: 800;
+}
+
+.gui2-mylist-editor-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(176, 38, 38, 0.92);
+  color: rgba(255, 242, 242, 0.96);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.34);
+}
+
+.gui2-mylist-editor-header {
+  display: grid;
+  gap: 6px;
+}
+
+.gui2-mylist-editor-title {
+  margin: 0;
+  color: var(--gui2-text);
+  font-size: 26px;
+  font-weight: 760;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+}
+
+.gui2-mylist-editor-meta {
+  color: rgba(243, 239, 232, 0.6);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.gui2-mylist-editor-footer {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 1200px) {
+  .gui2-mylist-grid {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  }
+
+  .gui2-mylist-status-shelf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  }
+
+  .gui2-mylist-editor-drawer {
+    width: min(500px, calc(100vw - 28px));
+  }
+}
+
+@media (max-width: 960px) {
+  .gui2-mylist-toolbar-actions,
+  .gui2-mylist-grid-meta,
+  .gui2-mylist-grid-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-mylist-search {
+    min-width: 0;
+  }
+
+  .gui2-mylist-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 18px 14px;
+  }
+
+  .gui2-mylist-status-shelf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 18px 14px;
+  }
+
+  .gui2-mylist-editor-drawer {
+    top: 62px;
+    bottom: 10px;
+    right: 10px;
+    width: calc(100vw - 20px);
+    height: calc(100vh - 72px);
+    max-height: none;
+  }
+
+  .gui2-mylist-editor {
+    max-height: none;
+  }
+
+  .gui2-mylist-editor-footer {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .gui2-mylist-row-star,
@@ -5819,22 +6901,48 @@ body.reader-active .gui2-content {
 .gui2-mylist-editor {
   display: grid;
   grid-template-rows: auto auto 1fr auto;
-  min-height: 820px;
+  min-height: 100%;
+  height: 100%;
+  width: 100%;
+  position: relative;
+  top: auto;
 }
 
 .gui2-mylist-editor-visual {
   position: relative;
-  min-height: 296px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: 500px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 24px;
+  background: rgba(6, 6, 8, 0.96);
+  isolation: isolate;
+}
+
+.gui2-mylist-editor-image-backdrop {
+  position: absolute;
+  inset: -10%;
+  z-index: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: blur(26px) saturate(0.94);
+  opacity: 0.66;
+  transform: scale(1.08);
 }
 
 .gui2-mylist-editor-image,
 .gui2-mylist-editor-image-fallback {
+  position: relative;
+  z-index: 1;
   width: 100%;
-  height: 296px;
-  object-fit: cover;
+  height: 500px;
+  max-width: 100%;
+  padding: 26px 22px 18px;
+  object-fit: contain;
   display: block;
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
 }
 
 .gui2-mylist-editor-image-fallback {
@@ -5849,12 +6957,16 @@ body.reader-active .gui2-content {
   position: absolute;
   top: 12px;
   right: 12px;
-  width: 28px;
-  height: 28px;
+  z-index: 3;
+  width: 38px;
+  height: 38px;
   border: 0;
-  background: rgba(0, 0, 0, 0.36);
-  color: var(--gui2-text);
-  font-size: 22px;
+  border-radius: 999px;
+  background: rgba(176, 38, 38, 0.92);
+  color: rgba(255, 242, 242, 0.96);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.34);
   line-height: 1;
 }
 
@@ -5867,7 +6979,7 @@ body.reader-active .gui2-content {
 .gui2-mylist-editor-header {
   display: grid;
   gap: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .gui2-mylist-editor-title {
@@ -5996,7 +7108,7 @@ body.reader-active .gui2-content {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
   gap: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .gui2-mylist-remove-btn {
@@ -6009,12 +7121,17 @@ body.reader-active .gui2-content {
 }
 
 @media (max-width: 1400px) {
+  .gui2-mylist-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .gui2-mylist-shell {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .gui2-mylist-editor {
     min-height: 0;
+    position: static;
   }
 }
 
@@ -6038,16 +7155,14 @@ body.reader-active .gui2-content {
 
   .gui2-mylist-table-head,
   .gui2-mylist-row {
-    grid-template-columns: minmax(220px, 1.4fr) 110px 132px 86px 66px 38px;
+    grid-template-columns: minmax(220px, 1.4fr) 104px 128px 78px 58px 28px;
   }
 }
 
 .reader-shell-v2 {
   position: relative;
-  min-height: calc(100dvh - var(--gui2-topbar-h) - 24px);
-  height: calc(100dvh - var(--gui2-topbar-h) - 24px);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  min-height: calc(100dvh - var(--gui2-topbar-h) - 12px);
+  height: calc(100dvh - var(--gui2-topbar-h) - 12px);
   background:
     linear-gradient(180deg, rgba(18, 21, 28, 0.98) 0%, rgba(10, 12, 18, 0.995) 100%),
     radial-gradient(circle at top left, rgba(214, 190, 154, 0.1) 0%, transparent 30%);
@@ -6056,7 +7171,8 @@ body.reader-active .gui2-content {
 }
 
 .reader-topbar-v2,
-.reader-settings-panel {
+.reader-settings-panel,
+.reader-chapter-browser {
   transition:
     opacity 180ms ease,
     transform 180ms ease,
@@ -6064,7 +7180,8 @@ body.reader-active .gui2-content {
 }
 
 .reader-ui-hidden .reader-topbar-v2,
-.reader-ui-hidden .reader-settings-panel {
+.reader-ui-hidden .reader-settings-panel,
+.reader-ui-hidden .reader-chapter-browser {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -6088,29 +7205,19 @@ body.reader-active .reader-shell-v2 {
   height: 100dvh;
 }
 
-.reader-shell-v2.reader-ui-hidden {
-  grid-template-rows: 0 minmax(0, 1fr) 0;
-}
-
-.reader-shell-v2.reader-ui-hidden .reader-workspace-v2 {
-  grid-template-columns: minmax(0, 1fr);
-}
-
 .reader-topbar-v2 {
-  position: relative;
-  z-index: 6;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 7;
   display: grid;
-  grid-template-columns: minmax(260px, 1.15fr) auto minmax(360px, 1fr);
+  grid-template-columns: minmax(280px, 1.15fr) auto minmax(380px, 1fr);
   align-items: center;
   gap: 18px;
-  padding: 20px 24px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(17, 20, 28, 0.96), rgba(17, 20, 28, 0.82));
-  backdrop-filter: blur(18px);
-}
-
-.reader-shell-v2.settings-open .reader-topbar-v2 {
-  margin-right: min(360px, 92vw);
+  padding: 20px 22px 14px;
+  background: linear-gradient(180deg, rgba(12, 14, 19, 0.94), rgba(12, 14, 19, 0.46) 72%, rgba(12, 14, 19, 0));
+  backdrop-filter: blur(12px);
 }
 
 .reader-topbar-left,
@@ -6143,6 +7250,32 @@ body.reader-active .reader-shell-v2 {
   min-width: 0;
   display: grid;
   gap: 6px;
+}
+
+.reader-topbar-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.reader-status-chip,
+.reader-inline-browser-btn {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(243, 239, 232, 0.82);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reader-inline-browser-btn {
+  border: 0;
+  background: rgba(214, 190, 154, 0.12);
+  color: #fff2dc;
 }
 
 .reader-series-title {
@@ -6292,18 +7425,13 @@ body.reader-active .reader-shell-v2 {
 
 .reader-workspace-v2 {
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-}
-
-.reader-shell-v2.settings-closed .reader-workspace-v2 {
-  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
 }
 
 .reader-stage {
   position: relative;
-  min-width: 0;
-  min-height: 0;
+  width: 100%;
+  height: 100%;
   background:
     linear-gradient(180deg, rgba(11, 14, 20, 0.98), rgba(7, 9, 14, 1)),
     repeating-linear-gradient(
@@ -6373,11 +7501,11 @@ body.reader-active .reader-shell-v2 {
   height: 100%;
   overflow-x: auto;
   overflow-y: auto;
-  padding: 26px 0 60px;
+  padding: 104px 0 52px;
 }
 
 .reader-scroll-canvas--strip {
-  padding: 0 22px;
+  padding: 88px 18px 18px;
 }
 
 .reader-scroll-stack {
@@ -6459,9 +7587,12 @@ body.reader-active .reader-shell-v2 {
   position: relative;
   height: 100%;
   display: grid;
-  place-items: center;
-  padding: 28px 86px 60px;
-  overflow: hidden;
+  justify-items: center;
+  align-items: start;
+  padding: 102px 40px 38px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
 }
 
 .reader-page-canvas.is-rtl {
@@ -6508,15 +7639,17 @@ body.reader-active .reader-shell-v2 {
 
 .reader-spread {
   width: 100%;
-  height: 100%;
-  max-width: 1280px;
-  min-height: 0;
+  min-height: 100%;
+  height: fit-content;
+  max-width: min(1560px, 100%);
   max-height: 100%;
   display: grid;
-  align-items: center;
+  align-items: start;
+  align-content: start;
   justify-content: center;
   justify-items: center;
   gap: 18px;
+  padding-bottom: 18px;
 }
 
 .reader-spread--paged {
@@ -6543,25 +7676,113 @@ body.reader-active .reader-shell-v2 {
   overflow: visible;
 }
 
-.reader-settings-panel {
-  position: fixed;
-  top: var(--gui2-topbar-h);
-  right: 0;
-  width: 360px;
-  min-width: 0;
-  height: calc(100dvh - var(--gui2-topbar-h));
-  max-height: calc(100dvh - var(--gui2-topbar-h));
-  overflow-y: auto;
-  padding: 22px 20px 28px;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(14, 17, 23, 0.98), rgba(11, 14, 20, 1));
-  z-index: 12;
+.reader-page-sheet--double-left {
+  justify-self: end;
 }
 
-body.reader-active .reader-settings-panel {
+.reader-page-sheet--double-right {
+  justify-self: start;
+}
+
+.reader-overlay-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.reader-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 5, 7, 0.62);
+  backdrop-filter: blur(6px);
+}
+
+.reader-settings-panel,
+.reader-chapter-browser {
+  position: absolute;
   top: 0;
+  right: 0;
+  width: min(440px, 92vw);
+  min-width: 0;
   height: 100dvh;
   max-height: 100dvh;
+  overflow-y: auto;
+  padding: 22px 22px 28px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(14, 17, 23, 0.98), rgba(11, 14, 20, 1));
+  box-shadow: -28px 0 60px rgba(0, 0, 0, 0.42);
+  z-index: 2;
+}
+
+.reader-chapter-browser {
+  width: min(620px, 94vw);
+}
+
+.reader-chapter-browser-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.reader-chapter-browser-head h3,
+.reader-settings-head h3 {
+  margin: 0;
+}
+
+.reader-chapter-browser-head p {
+  margin: 8px 0 0;
+  color: rgba(243, 239, 232, 0.56);
+  font-size: 12px;
+}
+
+.reader-browser-close {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: rgba(255, 96, 96, 0.14);
+  color: #ff8a8a;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.reader-chapter-browser-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.reader-chapter-browser-card {
+  min-height: 90px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.032);
+  color: #f3efe8;
+  text-align: left;
+}
+
+.reader-chapter-browser-card.is-active {
+  border-color: rgba(214, 190, 154, 0.38);
+  background: rgba(214, 190, 154, 0.1);
+}
+
+.reader-chapter-browser-index {
+  color: rgba(214, 190, 154, 0.88);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.reader-chapter-browser-title {
+  color: #f8f3ea;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .reader-settings-head {
@@ -6611,6 +7832,10 @@ body.reader-active .reader-settings-panel {
 
 .reader-settings-button-grid.three-up {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.reader-settings-button-grid--fit {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .reader-settings-button-grid .reader-toggle-btn {
@@ -6808,33 +8033,19 @@ body.reader-active .reader-settings-panel {
     justify-content: space-between;
     flex-wrap: wrap;
   }
-
-  .reader-workspace-v2 {
-    grid-template-columns: minmax(0, 1fr) 320px;
-  }
 }
 
 @media (max-width: 1240px) {
-  .reader-workspace-v2,
-  .reader-shell-v2.settings-open .reader-workspace-v2 {
+  .reader-spread--double {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .reader-shell-v2.settings-open .reader-topbar-v2 {
-    margin-right: 0;
+  .reader-page-sheet--double-left,
+  .reader-page-sheet--double-right {
+    justify-self: center;
   }
 
-  .reader-settings-panel {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 72px;
-    width: min(360px, 92vw);
-    z-index: 5;
-    box-shadow: -18px 0 44px rgba(0, 0, 0, 0.34);
-  }
-
-  .reader-spread--double {
+  .reader-chapter-browser-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -6851,11 +8062,19 @@ body.reader-active .reader-settings-panel {
   }
 
   .reader-page-canvas {
-    padding: 22px 18px 50px;
+    padding: 112px 18px 30px;
   }
 
   .reader-page-arrow {
     display: none;
+  }
+
+  .reader-scroll-canvas {
+    padding-top: 118px;
+  }
+
+  .reader-scroll-canvas--strip {
+    padding-top: 106px;
   }
 
 }

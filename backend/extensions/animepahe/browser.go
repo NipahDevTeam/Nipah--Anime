@@ -12,6 +12,7 @@ package animepahe
 //  6. If a request gets 403 again, refresh cookies automatically
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -28,46 +29,149 @@ import (
 
 var browserLog = logger.For("AnimePahe")
 
+type animePaheCookieCacheEntry struct {
+	cookies   []*http.Cookie
+	expiresAt time.Time
+}
+
+type animePaheCookieSolveState struct {
+	done    chan struct{}
+	cookies []*http.Cookie
+	err     error
+}
+
 var (
-	cachedCookies []*http.Cookie
-	cachedMu      sync.Mutex
-	cachedExpiry  time.Time
-	cookieTTL     = 2 * time.Hour
-	cachedBase    string
+	cachedMu            sync.Mutex
+	cachedCookiesByBase = map[string]animePaheCookieCacheEntry{}
+	inflightSolveByBase = map[string]*animePaheCookieSolveState{}
+	cookieTTL           = 2 * time.Hour
+
+	getAnimePaheValidCookies = getValidCookies
+	solveAnimePaheDDoSGuard  = solveDDoSGuard
 )
 
 // getValidCookies returns cached DDoS-Guard cookies, refreshing if expired.
 func getValidCookies(targetBase string) ([]*http.Cookie, error) {
-	cachedMu.Lock()
-	defer cachedMu.Unlock()
+	return getValidCookiesWithContext(context.Background(), targetBase)
+}
 
-	if len(cachedCookies) > 0 && cachedBase == targetBase && time.Now().Before(cachedExpiry) {
-		return cachedCookies, nil
+func getValidCookiesWithContext(ctx context.Context, targetBase string) ([]*http.Cookie, error) {
+	targetBase = animePaheOrigin(targetBase)
+
+	cachedMu.Lock()
+	if entry, ok := cachedCookiesByBase[targetBase]; ok && time.Now().Before(entry.expiresAt) && animePaheHasUsableCookies(entry.cookies) {
+		cookies := cloneAnimePaheCookies(entry.cookies)
+		cachedMu.Unlock()
+		return cookies, nil
 	}
 
-	cookies, err := solveDDoSGuard(targetBase)
+	if inflight, ok := inflightSolveByBase[targetBase]; ok {
+		cachedMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-inflight.done:
+			if inflight.err != nil {
+				return nil, inflight.err
+			}
+			return cloneAnimePaheCookies(inflight.cookies), nil
+		}
+	}
+
+	inflight := &animePaheCookieSolveState{done: make(chan struct{})}
+	inflightSolveByBase[targetBase] = inflight
+	cachedMu.Unlock()
+
+	cookies, err := solveAnimePaheDDoSGuard(ctx, targetBase)
+	if err == nil && !animePaheHasUsableCookies(cookies) {
+		err = fmt.Errorf("animepahe: DDoS-Guard challenge solved but no usable cookies obtained")
+	}
+
+	storedCookies := cloneAnimePaheCookies(cookies)
+
+	cachedMu.Lock()
+	delete(inflightSolveByBase, targetBase)
+	if err == nil {
+		cachedCookiesByBase[targetBase] = animePaheCookieCacheEntry{
+			cookies:   cloneAnimePaheCookies(storedCookies),
+			expiresAt: time.Now().Add(cookieTTL),
+		}
+		browserLog.Info().Str("base", targetBase).Int("cookies", len(storedCookies)).Dur("ttl", cookieTTL).Msg("DDoS-Guard solved")
+	} else {
+		delete(cachedCookiesByBase, targetBase)
+	}
+	inflight.cookies = storedCookies
+	inflight.err = err
+	close(inflight.done)
+	cachedMu.Unlock()
+
 	if err != nil {
 		return nil, err
 	}
-
-	cachedCookies = cookies
-	cachedBase = targetBase
-	cachedExpiry = time.Now().Add(cookieTTL)
-	browserLog.Info().Str("base", targetBase).Int("cookies", len(cookies)).Dur("ttl", cookieTTL).Msg("DDoS-Guard solved")
-	return cookies, nil
+	return cloneAnimePaheCookies(storedCookies), nil
 }
 
 // invalidateCookies clears the cached cookies so the next request triggers a refresh.
-func invalidateCookies() {
+func invalidateCookies(targetBases ...string) {
 	cachedMu.Lock()
-	cachedCookies = nil
-	cachedBase = ""
-	cachedMu.Unlock()
+	defer cachedMu.Unlock()
+
+	if len(targetBases) == 0 {
+		cachedCookiesByBase = map[string]animePaheCookieCacheEntry{}
+		return
+	}
+
+	for _, base := range targetBases {
+		delete(cachedCookiesByBase, animePaheOrigin(base))
+	}
+}
+
+func animePaheHasUsableCookies(cookies []*http.Cookie) bool {
+	for _, cookie := range cookies {
+		name := strings.ToLower(strings.TrimSpace(cookie.Name))
+		if strings.HasPrefix(name, "__ddg") || strings.Contains(name, "ddg") {
+			return true
+		}
+	}
+	return false
+}
+
+func animePaheBrowserReady(cookies []*http.Cookie, title string) bool {
+	if !animePaheHasUsableCookies(cookies) {
+		return false
+	}
+	value := strings.ToLower(strings.TrimSpace(title))
+	return !strings.Contains(value, "ddos") &&
+		!strings.Contains(value, "checking your browser") &&
+		!strings.Contains(value, "access denied")
+}
+
+func cloneAnimePaheCookies(cookies []*http.Cookie) []*http.Cookie {
+	if len(cookies) == 0 {
+		return nil
+	}
+	cloned := make([]*http.Cookie, 0, len(cookies))
+	for _, cookie := range cookies {
+		if cookie == nil {
+			continue
+		}
+		copyCookie := *cookie
+		cloned = append(cloned, &copyCookie)
+	}
+	return cloned
 }
 
 // solveDDoSGuard launches a headless browser to solve the DDoS-Guard challenge.
 // Uses the system's Edge or Chrome — no extra browser download needed.
-func solveDDoSGuard(targetBase string) ([]*http.Cookie, error) {
+func solveDDoSGuard(ctx context.Context, targetBase string) ([]*http.Cookie, error) {
+	targetBase = animePaheOrigin(targetBase)
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Find a Chromium-based browser on the system
 	browserPath, found := launcher.LookPath()
 	if !found {
@@ -108,6 +212,7 @@ func solveDDoSGuard(targetBase string) ([]*http.Cookie, error) {
 	if err != nil {
 		return nil, fmt.Errorf("animepahe: page open failed: %w", err)
 	}
+	defer page.Close()
 
 	// Give the page a brief chance to settle, then poll until cookies are ready.
 	err = page.WaitStable(500 * time.Millisecond)
@@ -116,21 +221,27 @@ func solveDDoSGuard(targetBase string) ([]*http.Cookie, error) {
 	}
 
 	deadline := time.Now().Add(12 * time.Second)
-	for {
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		info, _ := page.Info()
 		rodCookies, cookieErr := page.Cookies([]string{targetBase})
 		if cookieErr == nil {
 			httpCookies := convertCookies(rodCookies)
-			// Exit early as soon as we have cookies and we're no longer visibly on the challenge page.
-			if len(httpCookies) > 0 && (info == nil || !strings.Contains(strings.ToLower(info.Title), "ddos")) {
+			if animePaheBrowserReady(httpCookies, pageTitle(info)) {
 				return httpCookies, nil
 			}
 		}
 
-		if time.Now().After(deadline) {
-			break
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(500 * time.Millisecond):
 		}
-		time.Sleep(500 * time.Millisecond)
 	}
 
 	rodCookies, err := page.Cookies([]string{targetBase})
@@ -138,11 +249,18 @@ func solveDDoSGuard(targetBase string) ([]*http.Cookie, error) {
 		return nil, fmt.Errorf("animepahe: cookie extraction failed: %w", err)
 	}
 	httpCookies := convertCookies(rodCookies)
-	if len(httpCookies) == 0 {
-		return nil, fmt.Errorf("animepahe: DDoS-Guard challenge solved but no cookies obtained")
+	if !animePaheHasUsableCookies(httpCookies) {
+		return nil, fmt.Errorf("animepahe: DDoS-Guard challenge solved but no usable cookies obtained")
 	}
 
 	return httpCookies, nil
+}
+
+func pageTitle(info *proto.TargetTargetInfo) string {
+	if info == nil {
+		return ""
+	}
+	return info.Title
 }
 
 func convertCookies(rodCookies []*proto.NetworkCookie) []*http.Cookie {

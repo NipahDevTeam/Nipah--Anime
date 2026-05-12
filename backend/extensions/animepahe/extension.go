@@ -796,7 +796,8 @@ func fetchWithCookies(rawURL, referer string, extraHeaders map[string]string, re
 		return body, nil
 	}
 
-	cookies, cookieErr := getValidCookies(animePaheOrigin(rawURL))
+	targetBase := animePaheOrigin(rawURL)
+	cookies, cookieErr := getAnimePaheValidCookies(targetBase)
 	if cookieErr != nil {
 		if err != nil {
 			return "", err
@@ -818,7 +819,7 @@ func fetchWithCookies(rawURL, referer string, extraHeaders map[string]string, re
 	// DDoS-Guard blocked us again — invalidate cookies and retry once
 	if (status == 403 || animePaheBlockedBody(body)) && retryOnBlock {
 		log.Warn().Msg("got blocked response, refreshing DDoS-Guard cookies")
-		invalidateCookies()
+		invalidateCookies(targetBase)
 		return fetchWithCookies(rawURL, referer, extraHeaders, false)
 	}
 

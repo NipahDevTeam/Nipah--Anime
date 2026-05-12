@@ -673,6 +673,14 @@ export const wails = {
     if (isWailsRuntimeUnavailable()) return null
     return window.go.main.App.CompleteStartupLaunch()
   },
+  async quitApp() {
+    if (isWailsRuntimeUnavailable()) return null
+    return window.go.main.App.QuitApp()
+  },
+  async restoreMainWindow() {
+    if (isWailsRuntimeUnavailable()) return null
+    return window.go.main.App.RestoreMainWindow()
+  },
   async checkForAppUpdate() {
     if (isWailsRuntimeUnavailable()) {
       return {
@@ -849,13 +857,21 @@ export const wails = {
     }
     return window.go.main.App.ListExtensions()
   },
-  async searchOnline(query, sourceID = '') {
+  async searchOnline(query, sourceID = '', timeoutMs = 0) {
     if (isWailsRuntimeUnavailable()) return buildPreviewAnimeSearchResults(query, sourceID)
+    if (timeoutMs > 0 && typeof window?.go?.main?.App?.SearchOnlineWithTimeout === 'function') {
+      return window.go.main.App.SearchOnlineWithTimeout(query, sourceID, timeoutMs)
+    }
     return window.go.main.App.SearchOnline(query, sourceID)
   },
-  async getOnlineEpisodes(sourceID, animeID) {
+  async getOnlineEpisodes(sourceID, animeID, timeoutMs = 0) {
     if (isWailsRuntimeUnavailable()) return buildPreviewAnimeEpisodes(sourceID, animeID)
-    return rememberRuntimeCache(['online-episodes', sourceID, animeID], SOURCE_METADATA_CACHE_TTL_MS, () => window.go.main.App.GetOnlineEpisodes(sourceID, animeID))
+    return rememberRuntimeCache(['online-episodes', sourceID, animeID], SOURCE_METADATA_CACHE_TTL_MS, () => {
+      if (timeoutMs > 0 && typeof window?.go?.main?.App?.GetOnlineEpisodesWithTimeout === 'function') {
+        return window.go.main.App.GetOnlineEpisodesWithTimeout(sourceID, animeID, timeoutMs)
+      }
+      return window.go.main.App.GetOnlineEpisodes(sourceID, animeID)
+    })
   },
   async getOnlineAudioVariants(sourceID, animeID, episodeID = '') {
     if (isWailsRuntimeUnavailable()) {

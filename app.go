@@ -83,6 +83,9 @@ type App struct {
 	onlineHistoryEventAt  time.Time
 	integratedDiagMu      sync.Mutex
 	integratedDiagnostics []map[string]interface{}
+	residentWindowMu      sync.Mutex
+	residentWindowState   residentWindowState
+	quitRequested         bool
 }
 
 func NewApp() *App { return &App{} }

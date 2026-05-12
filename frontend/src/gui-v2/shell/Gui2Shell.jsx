@@ -1,7 +1,10 @@
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import NipahLogo from './NipahLogo'
 import { getGui2Navigation } from '../routeRegistry'
 import { useI18n } from '../../lib/i18n'
+import { wails } from '../../lib/wails'
 
 function getActiveNavKey(routeMeta) {
   const canonical = routeMeta?.canonicalPath || ''
@@ -56,9 +59,29 @@ export default function Gui2Shell({ routeMeta, preview, children }) {
   const activeKey = getActiveNavKey(routeMeta)
   const isEnglish = lang === 'en'
   const nextLang = isEnglish ? 'es' : 'en'
+  const [profileAvatarFailed, setProfileAvatarFailed] = useState(false)
   const handleLanguageToggle = () => {
     void setLang(nextLang)
   }
+
+  const authQuery = useQuery({
+    queryKey: ['gui2-shell-auth-status'],
+    queryFn: async () => wails.getAuthStatus(),
+    staleTime: 60_000,
+  })
+
+  const aniListAuth = authQuery.data?.anilist ?? { logged_in: false }
+  const profileAvatar = aniListAuth.logged_in ? String(aniListAuth.avatar || '').trim() : ''
+  const profileName = aniListAuth.logged_in ? String(aniListAuth.username || '').trim() : ''
+  const userChipTitle = profileName || (isEnglish ? 'Profile' : 'Perfil')
+  const fallbackLetter = useMemo(() => {
+    const source = profileName || 'N'
+    return source.trim().charAt(0).toUpperCase() || 'N'
+  }, [profileName])
+
+  useEffect(() => {
+    setProfileAvatarFailed(false)
+  }, [profileAvatar])
 
   return (
     <div className={`gui2-shell${preview ? ' gui2-shell-preview' : ''}`} data-route={routeMeta.key}>
@@ -76,7 +99,7 @@ export default function Gui2Shell({ routeMeta, preview, children }) {
               <div className="gui2-brand-subword">ANIME</div>
             </div>
           </div>
-          <div className="gui2-brand-version">v3.3.1</div>
+          <div className="gui2-brand-version">v1.5.0</div>
         </div>
 
         <nav className="gui2-nav">
@@ -115,9 +138,24 @@ export default function Gui2Shell({ routeMeta, preview, children }) {
             >
               {lang.toUpperCase()}
             </button>
-            <button type="button" className="gui2-user-chip" aria-label={isEnglish ? 'Profile' : 'Perfil'}>
-              <span className="gui2-user-avatar">N</span>
-              <span className="gui2-user-name">Nico</span>
+            <button
+              type="button"
+              className="gui2-user-chip"
+              aria-label={userChipTitle}
+              title={userChipTitle}
+            >
+              <span className="gui2-user-avatar">
+                {profileAvatar && !profileAvatarFailed ? (
+                  <img
+                    src={profileAvatar}
+                    alt={profileName || (isEnglish ? 'AniList profile' : 'Perfil de AniList')}
+                    className="gui2-user-avatar-image"
+                    onError={() => setProfileAvatarFailed(true)}
+                  />
+                ) : (
+                  fallbackLetter
+                )}
+              </span>
             </button>
           </div>
         </header>

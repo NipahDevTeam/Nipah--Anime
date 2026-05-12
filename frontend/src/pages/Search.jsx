@@ -25,6 +25,7 @@ import { useStableLoadingGate } from '../lib/useStableLoadingGate'
 import VirtualMediaGrid from '../components/ui/VirtualMediaGrid'
 import { useI18n } from '../lib/i18n'
 import { perfEnd, perfMark, perfStart } from '../lib/perfTrace'
+import { buildMotionVars, buildStaggerDelayMs } from '../gui-v2/motion/gui2Motion'
 import Gui2OnlineCatalogSurface, { CatalogIcon, Gui2CatalogPaginationControls, PageArrowButton } from '../gui-v2/routes/catalog/Gui2OnlineCatalogSurface'
 
 // Spanish sources: purple family  |  English sources: blue family
@@ -79,7 +80,7 @@ const GENRE_LABELS = {
 }
 
 const GENRES = Object.keys(GENRE_LABELS)
-const CATALOG_PAGE_SIZE = 48
+const CATALOG_PAGE_SIZE = 36
 const ANIME_FORMAT_OPTIONS = [
   { value: '', label: 'All Types' },
   { value: 'TV', label: 'TV' },
@@ -428,8 +429,8 @@ export default function Search() {
   const ui = {
     enrichError: isEnglish ? 'Could not enrich the entry' : 'No se pudo enriquecer la ficha',
     notFoundAny: (term) => isEnglish
-      ? `Could not find "${term}" in any source.`
-      : `No se encontró "${term}" en ninguna fuente.`,
+      ? `Could not find "${term}" in AniList metadata.`
+      : `No se encontr? "${term}" en los metadatos de AniList.`,
     offline: isEnglish
       ? 'You appear to be offline. Check your internet connection and try again.'
       : 'Sin conexión. Verifica tu internet e intenta de nuevo.',
@@ -452,9 +453,9 @@ export default function Search() {
     clearFilters: isEnglish ? 'Clear filters' : 'Limpiar filtros',
     sourceSearching: (name) => isEnglish ? `Searching in ${name}...` : `Buscando en ${name}...`,
     noResults: isEnglish ? 'No results' : 'Sin resultados',
-    noResultsSource: (query, sourceName, altCount) => isEnglish
-      ? `Could not find "${query}" in AniList metadata for ${sourceName}. Try the Japanese or English title.`
-      : `No se encontró "${query}" en ${sourceName}. Intenta con el título en japonés o en inglés.${altCount > 0 ? ` (${altCount} resultado${altCount !== 1 ? 's' : ''} en otra fuente)` : ''}`,
+    noResultsMetadata: (query) => isEnglish
+      ? `Could not find "${query}" in AniList metadata. Try the Japanese, Romaji, or English title.`
+      : `No se encontro "${query}" en los metadatos de AniList. Intenta con el titulo en japones, romaji o en ingles.`,
     foundResults: isEnglish ? 'Search results' : 'Resultados encontrados',
     readyToOpen: (count) => isEnglish
       ? `${count} result${count !== 1 ? 's' : ''} ready to open`
@@ -464,7 +465,7 @@ export default function Search() {
       ? `${count} poster${count !== 1 ? 's' : ''} loaded`
       : `${count} póster${count !== 1 ? 's' : ''} cargado${count !== 1 ? 's' : ''}`,
     filtersActive: isEnglish ? 'Active filters' : 'Filtros activos',
-    directExplore: isEnglish ? 'Direct AniList browsing with source opening' : 'Exploración directa con AniList y apertura en JKAnime',
+    directExplore: isEnglish ? 'Direct AniList browsing with source opening on click' : 'Exploraci?n directa con AniList y apertura de fuente al hacer clic',
     noCatalog: isEnglish ? 'No catalog available right now' : 'Sin catálogo por ahora',
     noCatalogDesc: isEnglish
       ? 'Could not load anime to explore. Adjust the filters or try again in a few seconds.'
@@ -611,6 +612,11 @@ export default function Search() {
         })
       } else {
         const message = error || ui.sourceNotFound(searchedTitle, SOURCE_META[activeSource]?.label ?? activeSource)
+        perfMark(perfToken, 'resolve-failed', {
+          source_id: activeSource,
+          searched_title: searchedTitle || '',
+          error: message,
+        })
         setSelected((current) => {
           if (!current || current.selection_token !== selectionToken) return current
           return {
@@ -1156,7 +1162,7 @@ export default function Search() {
             <div className="empty-state">
               <div className="empty-state-title">{ui.noResults}</div>
               <p className="empty-state-desc">
-                {ui.noResultsSource(query, SOURCE_META[activeSource]?.label ?? activeSource, 0)}
+                {ui.noResultsMetadata(query)}
               </p>
             </div>
           )
@@ -1164,23 +1170,33 @@ export default function Search() {
 
         if (searched && results.length > 0) {
           return (
-            <VirtualMediaGrid
-              items={results}
-              listClassName="gui2-catalog-grid"
-              itemClassName="gui2-catalog-grid-item"
-              itemContent={(item, index) => (
-                <OnlinePosterCard
-                  key={`search-${item.id || index}`}
-                  cover={item?.coverImage?.extraLarge || item?.coverImage?.large || item?.coverImage?.medium}
-                  title={getCatalogTitle(item)}
-                  meta={getCatalogMeta(item).map((value) => <span key={`${item.id}-${value}`}>{value}</span>)}
-                  badge={item?.status ? <span className="gui2-catalog-status-badge">{item.status.replace('_', ' ')}</span> : null}
-                  busy={resolvingKey === `search-${item.id || index}`}
-                  noCoverLabel={ui.noCover}
-                  onClick={() => resolveAniListMedia(item, `search-${item.id || index}`, { returnMode: 'results' })}
-                />
-              )}
-            />
+            <div
+              className="gui2-catalog-grid-motion gui2-motion-enter"
+              style={{ ...buildMotionVars('section'), animationDelay: `${buildStaggerDelayMs(1)}ms` }}
+            >
+              <VirtualMediaGrid
+                items={results}
+                listClassName="gui2-catalog-grid"
+                itemClassName="gui2-catalog-grid-item"
+                itemContent={(item, index) => (
+                  <div
+                    className="gui2-catalog-card-shell gui2-motion-enter"
+                    style={{ ...buildMotionVars('card'), animationDelay: `${buildStaggerDelayMs(index)}ms` }}
+                  >
+                    <OnlinePosterCard
+                      key={`search-${item.id || index}`}
+                      cover={item?.coverImage?.extraLarge || item?.coverImage?.large || item?.coverImage?.medium}
+                      title={getCatalogTitle(item)}
+                      meta={getCatalogMeta(item).map((value) => <span key={`${item.id}-${value}`}>{value}</span>)}
+                      badge={item?.status ? <span className="gui2-catalog-status-badge">{item.status.replace('_', ' ')}</span> : null}
+                      busy={resolvingKey === `search-${item.id || index}`}
+                      noCoverLabel={ui.noCover}
+                      onClick={() => resolveAniListMedia(item, `search-${item.id || index}`, { returnMode: 'results' })}
+                    />
+                  </div>
+                )}
+              />
+            </div>
           )
         }
 
@@ -1200,27 +1216,37 @@ export default function Search() {
         }
 
         return (
-          <VirtualMediaGrid
-            items={displayedCatalog}
-            listClassName="gui2-catalog-grid"
-            itemClassName="gui2-catalog-grid-item"
-            itemContent={(media) => {
-              const title = getCatalogTitle(media)
-              const key = `catalog-${media.id}`
-              return (
-                <OnlinePosterCard
-                  key={key}
-                  cover={media?.coverImage?.extraLarge || media?.coverImage?.large || media?.coverImage?.medium}
-                  title={title}
-                  meta={getCatalogMeta(media).map((value) => <span key={`${media.id}-${value}`}>{value}</span>)}
-                  badge={media?.status ? <span className="gui2-catalog-status-badge">{media.status.replace('_', ' ')}</span> : null}
-                  busy={resolvingKey === key}
-                  noCoverLabel={ui.noCover}
-                  onClick={() => resolveAniListMedia(media, key)}
-                />
-              )
-            }}
-          />
+          <div
+            className="gui2-catalog-grid-motion gui2-motion-enter"
+            style={{ ...buildMotionVars('section'), animationDelay: `${buildStaggerDelayMs(1)}ms` }}
+          >
+            <VirtualMediaGrid
+              items={displayedCatalog}
+              listClassName="gui2-catalog-grid"
+              itemClassName="gui2-catalog-grid-item"
+              itemContent={(media, index) => {
+                const title = getCatalogTitle(media)
+                const key = `catalog-${media.id}`
+                return (
+                  <div
+                    className="gui2-catalog-card-shell gui2-motion-enter"
+                    style={{ ...buildMotionVars('card'), animationDelay: `${buildStaggerDelayMs(index)}ms` }}
+                  >
+                    <OnlinePosterCard
+                      key={key}
+                      cover={media?.coverImage?.extraLarge || media?.coverImage?.large || media?.coverImage?.medium}
+                      title={title}
+                      meta={getCatalogMeta(media).map((value) => <span key={`${media.id}-${value}`}>{value}</span>)}
+                      badge={media?.status ? <span className="gui2-catalog-status-badge">{media.status.replace('_', ' ')}</span> : null}
+                      busy={resolvingKey === key}
+                      noCoverLabel={ui.noCover}
+                      onClick={() => resolveAniListMedia(media, key)}
+                    />
+                  </div>
+                )
+              }}
+            />
+          </div>
         )
       })()}
       bottomPagination={!searched ? (
