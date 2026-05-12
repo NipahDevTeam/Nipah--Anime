@@ -76,7 +76,7 @@ export default function Gui2Shell({ routeMeta, preview, children }) {
               <div className="gui2-brand-subword">ANIME</div>
             </div>
           </div>
-          <div className="gui2-brand-version">v1.5.0</div>
+          <div className="gui2-brand-version">v3.3.1</div>
         </div>
 
         <nav className="gui2-nav">
