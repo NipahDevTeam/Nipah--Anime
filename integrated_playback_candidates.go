@@ -11,7 +11,7 @@ type mediaProxyProbeFunc func(rawURL, referer, cookie string) (*server.MediaProx
 
 func shouldProbeIntegratedStreamCandidates(sourceID string) bool {
 	switch strings.ToLower(strings.TrimSpace(sourceID)) {
-	case "animepahe-en", "animeav1-es":
+	case "animepahe-en", "animeav1-es", "animeheaven-en":
 		return true
 	default:
 		return false
@@ -30,7 +30,24 @@ func chooseIntegratedPlaybackStreamSource(sourceID string, candidates []extensio
 
 	for _, candidate := range candidates {
 		if !integratedCandidateIsHLS(candidate.URL) {
+			continue
+		}
+		if probe == nil {
 			return candidate, true
+		}
+
+		result, err := probe(candidate.URL, candidate.Referer, candidate.Cookie)
+		if err != nil {
+			continue
+		}
+		if result == nil || result.Classification != "proxy-broken" {
+			return candidate, true
+		}
+	}
+
+	for _, candidate := range candidates {
+		if integratedCandidateIsHLS(candidate.URL) {
+			continue
 		}
 		if probe == nil {
 			return candidate, true

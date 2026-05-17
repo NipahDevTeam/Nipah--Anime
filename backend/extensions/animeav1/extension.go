@@ -280,6 +280,7 @@ func formatEpisodeNumber(num float64) string {
 //	{server:"HLS",url:"https://player.zilla-networks.com/..."}
 //
 // Standard JSON regexes ("key":"value") will NOT match — we must use bare-key patterns.
+var av1EmbedEntryRe = regexp.MustCompile(`server:"([^"]+)",url:"(https?://[^"]+)"`)
 var av1EmbedUrlRe = regexp.MustCompile(`url:"(https?://[^"]+)"`)
 var av1EmbedSectionRe = regexp.MustCompile(`([A-Z]+):[\{\[]`)
 
@@ -336,19 +337,16 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 	// Collect embed URLs with explicit language priority.
 	// AnimeAV1 often exposes DUB first in the page object, but we want
 	// SUB/original-first behavior in the app.
-	var fastCandidates, slowCandidates []embedCandidate
+	var uniqueCandidates []embedCandidate
 	for _, candidate := range collectEmbedCandidates(body) {
 		u := candidate.url
 		if seen[u] || av1InternalRe.MatchString(u) {
 			continue
 		}
 		seen[u] = true
-		if animeAV1ShouldDeferEmbed(u) {
-			slowCandidates = append(slowCandidates, candidate)
-		} else {
-			fastCandidates = append(fastCandidates, candidate)
-		}
+		uniqueCandidates = append(uniqueCandidates, candidate)
 	}
+	fastCandidates, slowCandidates := partitionAnimeAV1Candidates(uniqueCandidates)
 
 	// Try all fast candidates concurrently — first 2 winners are used.
 	type resolveResult struct {
@@ -430,8 +428,9 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 }
 
 type embedCandidate struct {
-	url   string
-	track string
+	server string
+	url    string
+	track  string
 }
 
 type animeAV1ResolvedSource struct {
@@ -456,6 +455,19 @@ func collectEmbedCandidates(body string) []embedCandidate {
 
 	var out []embedCandidate
 	for _, track := range order {
+		if entries := av1EmbedEntryRe.FindAllStringSubmatch(sections[track], 12); len(entries) > 0 {
+			for _, entry := range entries {
+				if len(entry) < 3 {
+					continue
+				}
+				out = append(out, embedCandidate{
+					server: entry[1],
+					url:    entry[2],
+					track:  track,
+				})
+			}
+			continue
+		}
 		for _, m := range av1EmbedUrlRe.FindAllStringSubmatch(sections[track], 12) {
 			if len(m) < 2 {
 				continue
@@ -478,6 +490,50 @@ func extractFallbackCandidates(body string) []embedCandidate {
 		out = append(out, embedCandidate{url: m[1], track: "UNKNOWN"})
 	}
 	return out
+}
+
+func partitionAnimeAV1Candidates(candidates []embedCandidate) ([]embedCandidate, []embedCandidate) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	trackHasPreferredHLS := map[string]bool{}
+	for _, candidate := range candidates {
+		if animeAV1IsPreferredHLSCandidate(candidate) {
+			trackHasPreferredHLS[strings.ToUpper(strings.TrimSpace(candidate.track))] = true
+		}
+	}
+
+	var fast []embedCandidate
+	var slow []embedCandidate
+	for _, candidate := range candidates {
+		trackKey := strings.ToUpper(strings.TrimSpace(candidate.track))
+		if animeAV1ShouldResolveSlow(candidate, trackHasPreferredHLS[trackKey]) {
+			slow = append(slow, candidate)
+			continue
+		}
+		fast = append(fast, candidate)
+	}
+	return fast, slow
+}
+
+func animeAV1ShouldResolveSlow(candidate embedCandidate, trackHasPreferredHLS bool) bool {
+	if animeAV1ShouldDeferEmbed(candidate.url) {
+		return true
+	}
+	if trackHasPreferredHLS && !animeAV1IsPreferredHLSCandidate(candidate) {
+		return true
+	}
+	return false
+}
+
+func animeAV1IsPreferredHLSCandidate(candidate embedCandidate) bool {
+	serverName := strings.ToLower(strings.TrimSpace(candidate.server))
+	urlValue := strings.ToLower(strings.TrimSpace(candidate.url))
+	if serverName == "hls" {
+		return true
+	}
+	return strings.Contains(urlValue, "player.zilla-networks.com/play/") || strings.Contains(urlValue, "player.zilla-networks.com/m3u8/")
 }
 
 func animeAV1AudioVariantsFromBody(body string) map[string]bool {

@@ -3,6 +3,7 @@ package animepahe
 import (
 	"context"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -47,6 +48,11 @@ func TestGetValidCookiesWithContextDeduplicatesConcurrentSolve(t *testing.T) {
 	cachedCookiesByBase = map[string]animePaheCookieCacheEntry{}
 	inflightSolveByBase = map[string]*animePaheCookieSolveState{}
 	cachedMu.Unlock()
+
+	originalPathFn := animePaheCookieCachePath
+	tempCachePath := filepath.Join(t.TempDir(), "animepahe-cookies.json")
+	animePaheCookieCachePath = func() string { return tempCachePath }
+	defer func() { animePaheCookieCachePath = originalPathFn }()
 
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
@@ -112,6 +118,11 @@ func TestGetValidCookiesCachesHealthyStatePerBase(t *testing.T) {
 	inflightSolveByBase = map[string]*animePaheCookieSolveState{}
 	cachedMu.Unlock()
 
+	originalPathFn := animePaheCookieCachePath
+	tempCachePath := filepath.Join(t.TempDir(), "animepahe-cookies.json")
+	animePaheCookieCachePath = func() string { return tempCachePath }
+	defer func() { animePaheCookieCachePath = originalPathFn }()
+
 	originalSolve := solveAnimePaheDDoSGuard
 	defer func() { solveAnimePaheDDoSGuard = originalSolve }()
 
@@ -155,11 +166,56 @@ func TestGetValidCookiesCachesHealthyStatePerBase(t *testing.T) {
 	}
 }
 
+func TestGetValidCookiesUsesPersistedHealthyStatePerBase(t *testing.T) {
+	cachedMu.Lock()
+	cachedCookiesByBase = map[string]animePaheCookieCacheEntry{}
+	inflightSolveByBase = map[string]*animePaheCookieSolveState{}
+	cachedMu.Unlock()
+
+	originalPathFn := animePaheCookieCachePath
+	originalSolve := solveAnimePaheDDoSGuard
+	tempCachePath := filepath.Join(t.TempDir(), "animepahe-cookies.json")
+	defer func() {
+		animePaheCookieCachePath = originalPathFn
+		solveAnimePaheDDoSGuard = originalSolve
+	}()
+
+	animePaheCookieCachePath = func() string {
+		return tempCachePath
+	}
+
+	if err := persistAnimePaheCookies("https://animepahe.pw", []*http.Cookie{{Name: "__ddg2_", Value: "persisted-token"}}, time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("persist animepahe cookies: %v", err)
+	}
+
+	solveCalls := 0
+	solveAnimePaheDDoSGuard = func(ctx context.Context, targetBase string) ([]*http.Cookie, error) {
+		solveCalls++
+		return []*http.Cookie{{Name: "__ddg2_", Value: "fresh-token"}}, nil
+	}
+
+	cookies, err := getValidCookiesWithContext(context.Background(), "https://animepahe.pw")
+	if err != nil {
+		t.Fatalf("expected persisted cookies to load successfully, got %v", err)
+	}
+	if len(cookies) != 1 || cookies[0].Value != "persisted-token" {
+		t.Fatalf("expected persisted cookies to be returned, got %#v", cookies)
+	}
+	if solveCalls != 0 {
+		t.Fatalf("expected persisted cookies to avoid browser solve, got %d solve calls", solveCalls)
+	}
+}
+
 func TestGetValidCookiesWithContextHonorsCancellationWhileWaitingOnInflightSolve(t *testing.T) {
 	cachedMu.Lock()
 	cachedCookiesByBase = map[string]animePaheCookieCacheEntry{}
 	inflightSolveByBase = map[string]*animePaheCookieSolveState{}
 	cachedMu.Unlock()
+
+	originalPathFn := animePaheCookieCachePath
+	tempCachePath := filepath.Join(t.TempDir(), "animepahe-cookies.json")
+	animePaheCookieCachePath = func() string { return tempCachePath }
+	defer func() { animePaheCookieCachePath = originalPathFn }()
 
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})

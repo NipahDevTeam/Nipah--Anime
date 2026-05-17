@@ -310,23 +310,7 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 			continue
 		}
 
-		var sources []extensions.StreamSource
-		for _, ke := range kwikEntries {
-			m3u8, qual := resolveKwik(ke.url, playURL)
-			if m3u8 == "" {
-				continue
-			}
-			if qual == "" {
-				qual = ke.quality
-			}
-			sources = append(sources, extensions.StreamSource{
-				URL:      m3u8,
-				Quality:  qual,
-				Language: extensions.LangEnglish,
-				Audio:    ke.audio,
-				Referer:  streamRefererForAnimePahe(ke.url, m3u8, playURL),
-			})
-		}
+		sources := resolveAnimePaheStreamSources(kwikEntries, playURL, resolveKwik)
 
 		if len(sources) > 0 {
 			rememberAnimePaheBase(base)
@@ -372,6 +356,70 @@ func streamRefererForAnimePahe(embedURL, streamURL, playURL string) string {
 		}
 	}
 	return playURL
+}
+
+func resolveAnimePaheStreamSources(entries []kwikEntry, playURL string, resolver func(kwikURL, referer string) (string, string)) []extensions.StreamSource {
+	if len(entries) == 0 {
+		return nil
+	}
+	if resolver == nil {
+		resolver = resolveKwik
+	}
+
+	type resolvedSource struct {
+		source extensions.StreamSource
+		ok     bool
+	}
+
+	results := make([]resolvedSource, len(entries))
+	parallelism := len(entries)
+	if parallelism > 4 {
+		parallelism = 4
+	}
+	sem := make(chan struct{}, parallelism)
+	var wg sync.WaitGroup
+
+	for index, entry := range entries {
+		index := index
+		entry := entry
+		wg.Add(1)
+		go func() {
+			sem <- struct{}{}
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+
+			m3u8URL, resolvedQuality := resolver(entry.url, playURL)
+			if strings.TrimSpace(m3u8URL) == "" {
+				return
+			}
+			if strings.TrimSpace(resolvedQuality) == "" {
+				resolvedQuality = entry.quality
+			}
+			results[index] = resolvedSource{
+				ok: true,
+				source: extensions.StreamSource{
+					URL:      m3u8URL,
+					Quality:  resolvedQuality,
+					Language: extensions.LangEnglish,
+					Audio:    entry.audio,
+					Referer:  streamRefererForAnimePahe(entry.url, m3u8URL, playURL),
+				},
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	sources := make([]extensions.StreamSource, 0, len(entries))
+	for _, result := range results {
+		if !result.ok {
+			continue
+		}
+		sources = append(sources, result.source)
+	}
+	return sources
 }
 
 // extractKwikURLs finds all kwik embed links in the AnimePahe play page.

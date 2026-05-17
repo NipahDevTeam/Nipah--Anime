@@ -402,9 +402,6 @@ export default function OnlineMangaDetail({
     return explicitRecommendationItems.slice(0, 6)
   }, [explicitRecommendationItems])
   const recommendationsTitle = ui.recommendationsTitle || (isEnglish ? 'Keep reading' : 'Sigue leyendo')
-  const recommendationsCopy = ui.recommendationsCopy || (isEnglish
-    ? 'A calmer lower shelf for what should naturally follow this series once the reading room is fully enriched.'
-    : 'Una repisa inferior mas tranquila para lo que deberia seguir de forma natural a esta serie cuando el espacio de lectura termine de enriquecerse.')
   const recommendationsEmptyCopy = ui.recommendationsEmptyCopy || (isEnglish
     ? 'Related manga will settle here as recommendation data and source enrichment finish wiring in.'
     : 'Los mangas relacionados se acomodaran aqui cuando terminen de conectarse las recomendaciones y el enriquecimiento de fuentes.')
@@ -659,7 +656,6 @@ export default function OnlineMangaDetail({
 
       <LandingRecommendationsStage
         title={recommendationsTitle}
-        copy={recommendationsCopy}
         items={recommendationItems}
         onSelectItem={onRecommendationSelect}
         emptyCopy={recommendationsEmptyCopy}

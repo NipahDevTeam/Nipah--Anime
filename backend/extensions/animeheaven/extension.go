@@ -207,6 +207,7 @@ func (e *Extension) GetEpisodes(animeID string) ([]extensions.Episode, error) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 var iframeRe = regexp.MustCompile(`<iframe[^>]+src="(https?://[^"]+)"`)
+var videoSourceRe = regexp.MustCompile(`<source[^>]+src=['"](https?://[^'"]+)['"][^>]*type=['"]video/mp4['"][^>]*>`)
 var directM3U8Re = regexp.MustCompile(`(https?://[^\s"'<>]+\.m3u8[^\s"'<>]*)`)
 var directMp4Re = regexp.MustCompile(`(https?://[^\s"'<>]+\.mp4[^\s"'<>]*)`)
 
@@ -231,7 +232,7 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 
 	// Resolve embeds through animeflv resolver library
 	for _, embed := range embeds {
-		resolved, err := animeflv.Resolve(embed)
+		resolved, err := animeflv.ResolvePlayable(embed)
 		if err != nil {
 			continue
 		}
@@ -243,19 +244,32 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 		})
 	}
 
-	// Fallback: direct URLs in page source (some older AnimeHeaven pages)
+	// Direct source tags are AnimeHeaven's main built-in host fallback chain.
+	// Preserve them all so integrated and external playback can skip a dead CDN.
+	for _, direct := range parseAnimeHeavenDirectVideoSources(body) {
+		sources = append(sources, extensions.StreamSource{
+			URL:      direct,
+			Quality:  "unknown",
+			Language: extensions.LangEnglish,
+			Referer:  url,
+		})
+	}
+
+	// Last-resort legacy fallback: raw direct URLs in page source.
 	if len(sources) == 0 {
 		if m := directM3U8Re.FindString(body); m != "" {
 			sources = append(sources, extensions.StreamSource{
 				URL: m, Quality: "unknown", Language: extensions.LangEnglish, Referer: url,
 			})
-		} else if m := directMp4Re.FindString(body); m != "" {
+		}
+		if m := directMp4Re.FindString(body); m != "" {
 			sources = append(sources, extensions.StreamSource{
 				URL: m, Quality: "unknown", Language: extensions.LangEnglish, Referer: url,
 			})
 		}
 	}
 
+	sources = dedupeAnimeHeavenSources(sources)
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("animeheaven: no streams found for %s", episodeID)
 	}
@@ -295,6 +309,40 @@ func fetchGatePage(url, episodeKey string) (string, error) {
 		"Upgrade-Insecure-Requests": "1",
 		"Cookie":                    "key=" + episodeKey,
 	})
+}
+
+func parseAnimeHeavenDirectVideoSources(body string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, match := range videoSourceRe.FindAllStringSubmatch(body, 12) {
+		if len(match) < 2 {
+			continue
+		}
+		value := strings.TrimSpace(match[1])
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func dedupeAnimeHeavenSources(sources []extensions.StreamSource) []extensions.StreamSource {
+	if len(sources) <= 1 {
+		return sources
+	}
+	out := make([]extensions.StreamSource, 0, len(sources))
+	seen := map[string]bool{}
+	for _, source := range sources {
+		key := strings.TrimSpace(source.URL)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, source)
+	}
+	return out
 }
 
 func urlEncode(s string) string {

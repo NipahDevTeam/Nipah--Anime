@@ -21,7 +21,14 @@ function urlHasExtension(rawURL, extensions) {
 }
 
 function isHLSURL(rawURL) {
-  return stripQueryAndHash(rawURL).toLowerCase().includes('.m3u8')
+  const candidate = String(rawURL || '').trim()
+  if (!candidate) return false
+  try {
+    const parsed = new URL(candidate)
+    return parsed.pathname.toLowerCase().includes('.m3u8')
+  } catch {
+    return stripQueryAndHash(candidate).toLowerCase().includes('.m3u8')
+  }
 }
 
 function isDashURL(rawURL) {
@@ -44,6 +51,7 @@ function normalizeExplicitKind(streamKind = '') {
     case 'page':
     case 'file':
     case 'torrent':
+    case 'transcoded':
       return normalized
     default:
       return ''
@@ -56,6 +64,9 @@ export function normalizeIntegratedStreamKind(options = {}) {
 
   if (explicitKind === 'torrent') {
     return 'torrent'
+  }
+  if (explicitKind === 'transcoded') {
+    return 'file'
   }
   if (explicitKind === 'hls' || candidates.some(isHLSURL)) {
     return 'hls'

@@ -167,7 +167,7 @@ function pickPrimarySearchTerm(values) {
 }
 
 function SectionHeader({ title, subtitle, action = null }) {
-  return <div className="online-section-header"><div className="online-section-heading"><h2 className="online-section-title">{title}</h2>{subtitle ? <p className="online-section-copy">{subtitle}</p> : null}</div>{action}</div>
+  return <div className="online-section-header"><div className="online-section-heading"><h2 className="online-section-title">{title}</h2></div>{action}</div>
 }
 
 function OnlinePosterSkeletonGrid({ count = 10 }) {

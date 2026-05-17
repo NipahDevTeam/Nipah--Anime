@@ -174,3 +174,41 @@ func TestAnimeAV1ShouldDeferEmbedTreatsZillaPlayAsFast(t *testing.T) {
 		t.Fatal("expected mp4upload embeds to remain on the fast path")
 	}
 }
+
+func TestPartitionAnimeAV1CandidatesDefersSameTrackFallbacksWhenHLSExists(t *testing.T) {
+	fast, slow := partitionAnimeAV1Candidates([]embedCandidate{
+		{
+			track:  "SUB",
+			server: "HLS",
+			url:    "https://player.zilla-networks.com/play/sub-track",
+		},
+		{
+			track:  "SUB",
+			server: "MP4Upload",
+			url:    "https://www.mp4upload.com/embed-sub.html",
+		},
+		{
+			track:  "SUB",
+			server: "PDrain",
+			url:    "https://pixeldrain.com/u/sub?embed",
+		},
+		{
+			track:  "DUB",
+			server: "MP4Upload",
+			url:    "https://www.mp4upload.com/embed-dub.html",
+		},
+	})
+
+	if len(fast) != 2 {
+		t.Fatalf("expected 2 fast candidates, got %d (%#v)", len(fast), fast)
+	}
+	if fast[0].server != "HLS" || fast[1].server != "MP4Upload" || fast[1].track != "DUB" {
+		t.Fatalf("unexpected fast candidates: %#v", fast)
+	}
+	if len(slow) != 2 {
+		t.Fatalf("expected 2 slow candidates, got %d (%#v)", len(slow), slow)
+	}
+	if slow[0].server != "MP4Upload" || slow[1].server != "PDrain" {
+		t.Fatalf("unexpected slow candidates: %#v", slow)
+	}
+}

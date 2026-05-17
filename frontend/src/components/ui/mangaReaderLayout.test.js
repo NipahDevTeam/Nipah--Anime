@@ -6,6 +6,7 @@ import {
   getReaderCanvasPageLayout,
   DEFAULT_READER_SETTINGS,
   getReaderPagedSlotMetrics,
+  getReaderSpreadPages,
   getReaderScrollPageLayout,
   getReaderScrollSheetVariables,
   getReaderViewMode,
@@ -112,6 +113,30 @@ assert.deepEqual(
     visiblePages: [0],
     pageLabel: '1',
   },
+)
+
+assert.deepEqual(
+  getReaderSpreadPages({
+    readingMode: 'double',
+    readingDirection: 'ltr',
+    visiblePages: [4, 5],
+  }),
+  [
+    { pageIndex: 4, slot: 'left' },
+    { pageIndex: 5, slot: 'right' },
+  ],
+)
+
+assert.deepEqual(
+  getReaderSpreadPages({
+    readingMode: 'double',
+    readingDirection: 'rtl',
+    visiblePages: [4, 5],
+  }),
+  [
+    { pageIndex: 4, slot: 'right' },
+    { pageIndex: 5, slot: 'left' },
+  ],
 )
 
 assert.equal(
@@ -599,6 +624,9 @@ assert.ok(!componentSource.includes('await Promise.allSettled(nextPages.map(prel
 assert.ok(settingsSheetSource.includes('<div className="reader-settings-label">Zoom</div>'), 'reader settings should expose the zoom controls again')
 assert.ok(settingsSheetSource.includes('label="Zoom"'), 'reader settings should render a zoom slider row')
 assert.ok(componentSource.includes('preserveReaderViewport()'), 'reader should preserve the current viewport when fit/layout changes')
+assert.ok(!componentSource.includes('[chapterID, error, loading, pages.length, readerSettings.readingMode, resetReaderViewportToStart]'), 'reader should not reset back to the first page when only the reading mode changes')
+assert.ok(componentSource.includes('getReaderSpreadPages({'), 'reader should delegate double-page slot ordering to a shared helper')
+assert.ok(!componentSource.includes("(readerSettings.readingDirection === 'rtl' ? [...viewport.visiblePages].reverse() : viewport.visiblePages).map"), 'reader should not reverse spread pages inline for rtl double-page rendering')
 assert.ok(componentSource.includes('getReaderScrollPageLayout({'), 'reader should compute explicit scroll-page sizing from intrinsic page geometry')
 assert.ok(!componentSource.includes('naturalWidth: contentBoxRect?.width ?? intrinsicPageSize?.naturalWidth'), 'reader should not let detected crop bounds redefine scroll geometry')
 assert.ok(!componentSource.includes('naturalHeight: contentBoxRect?.height ?? intrinsicPageSize?.naturalHeight'), 'reader should not let detected crop bounds redefine page height contracts')
@@ -627,6 +655,8 @@ assert.ok(cssSource.includes('.reader-page-sheet--double {'), 'reader CSS should
 assert.ok(cssSource.includes('justify-self: center;'), 'reader CSS should center paged sheets within their slots')
 assert.ok(cssSource.includes('.reader-page-sheet--double-left {'), 'reader CSS should define a left spread slot class')
 assert.ok(cssSource.includes('.reader-page-sheet--double-right {'), 'reader CSS should define a right spread slot class')
+assert.ok(/\.reader-page-sheet--double-left\s*\{[^}]*grid-column:\s*1;/s.test(cssSource), 'reader double-page left slot should be forced into the left spread column')
+assert.ok(/\.reader-page-sheet--double-right\s*\{[^}]*grid-column:\s*2;/s.test(cssSource), 'reader double-page right slot should be forced into the right spread column')
 assert.ok(/\.reader-page-sheet--double-left\s*\{[^}]*justify-self:\s*end;/s.test(cssSource), 'reader double-page left slot should anchor toward the gutter')
 assert.ok(/\.reader-page-sheet--double-right\s*\{[^}]*justify-self:\s*start;/s.test(cssSource), 'reader double-page right slot should anchor toward the gutter')
 assert.ok(cssSource.includes('background: transparent;'), 'reader CSS should avoid rendering dead space as a dark card around paged pages')

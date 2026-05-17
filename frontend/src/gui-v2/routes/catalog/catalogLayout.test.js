@@ -98,6 +98,8 @@ assert.ok(searchSource.includes('mode="anime"'), 'Anime Online should opt into t
 assert.ok(mangaSource.includes('mode="manga"'), 'Manga Online should opt into the manga discovery-room mode')
 assert.ok(!searchSource.includes('summaryPills={searchSummaryPills}'), 'Anime Online should remove the extra summary utility pills')
 assert.ok(!mangaSource.includes('summaryPills={mangaSummaryPills}'), 'Manga Online should remove the extra summary utility pills')
+assert.ok(!searchSource.includes('{subtitle ? <p className="online-section-copy">{subtitle}</p> : null}'), 'Anime Online should remove the extra section helper copy under result headers')
+assert.ok(!mangaSource.includes('{subtitle ? <p className="online-section-copy">{subtitle}</p> : null}'), 'Manga Online should remove the extra section helper copy under result headers')
 assert.ok(searchSource.includes("language: 'Spanish'"), 'Anime Online source metadata should classify Spanish-language sources')
 assert.ok(searchSource.includes("language: 'English'"), 'Anime Online source metadata should classify English-language sources')
 assert.ok(searchSource.includes("audio: 'Sub | Dub'"), 'Anime Online source metadata should classify sources with dub availability')

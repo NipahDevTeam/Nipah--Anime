@@ -226,7 +226,6 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
     torrentStreaming: isEnglish ? 'Torrent Streaming' : 'Streaming torrent',
     streamFamilyCopy: isEnglish ? 'Start with instant streaming now. Torrent support can join this landing later without changing the primary watch flow.' : 'Empieza con streaming instantaneo ahora. El soporte torrent puede sumarse a este landing despues sin cambiar el flujo principal de ver.',
     recommendationsTitle: isEnglish ? 'Keep watching' : 'Sigue viendo',
-    recommendationsCopy: isEnglish ? 'A quieter lower shelf for what should naturally follow this title once the landing room is fully enriched.' : 'Una repisa inferior mas tranquila para lo que deberia seguir de forma natural a este titulo cuando el landing termine de enriquecerse.',
     recommendationsEmptyCopy: isEnglish ? 'Related anime will settle here as recommendation data and source enrichment finish wiring in.' : 'Los animes relacionados se acomodaran aqui cuando terminen de conectarse las recomendaciones y el enriquecimiento de fuentes.',
     readMore: isEnglish ? 'Read more' : 'Leer mas',
     readLess: isEnglish ? 'Show less' : 'Mostrar menos',
@@ -461,18 +460,16 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
   }, [activeAudioVariant, supportsAudioVariants])
 
   const episodesQuery = useQuery({
-    queryKey: ['online-episodes', anime.source_id, sourceAnimeID, Number(anime.anilist_id || anime.anilistID || 0), Number(anime.episodes_watched || 0)],
+    queryKey: ['online-episodes', anime.source_id, sourceAnimeID, Number(anime.anilist_id || anime.anilistID || 0)],
     queryFn: async () => {
       const nextEpisodes = await wails.getOnlineEpisodes(anime.source_id, sourceAnimeID, 0)
       const hydratedEpisodes = Array.isArray(anime.prefetchedEpisodes) && anime.prefetchedEpisodes.length > 0
         ? mergeEpisodeArtworkByNumber(nextEpisodes ?? [], anime.prefetchedEpisodes)
         : (nextEpisodes ?? [])
 
-      const watchedFloor = Number(anime.episodes_watched || 0)
-
       return hydratedEpisodes.map((ep) => ({
         ...ep,
-        watched: Boolean(ep.watched) || ((Number(ep.number) || 0) > 0 && (Number(ep.number) || 0) <= watchedFloor),
+        watched: Boolean(ep.watched),
       }))
     },
     placeholderData: anime.prefetchedEpisodes ?? [],
@@ -624,7 +621,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
       return {
         ...prev,
         lastPositionSec: positionSec,
-        lastDurationSec: durationSec,
+        lastDurationSec: Math.max(Number(durationSec || 0), Number(prev.lastDurationSec || 0)),
       }
     })
     wails.updateOnlinePlaybackProgress(positionSec, durationSec).catch(() => {})
@@ -636,7 +633,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
     if (!playback) return
 
     const finalPosition = positionSec ?? playback.lastPositionSec ?? 0
-    const finalDuration = durationSec ?? playback.lastDurationSec ?? 0
+    const finalDuration = durationSec ?? playback.lastDurationSec ?? playback.expectedDurationSec ?? 0
 
     try {
       await wails.finalizeOnlinePlayback(finalPosition, finalDuration, completed)
@@ -680,6 +677,19 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
         )
 
         if ((playback?.fallback_type === 'integrated' || playback?.player_type === 'integrated') && playback?.fallback_url) {
+          const integratedCandidates = Array.isArray(playback?.stream_candidates)
+            ? playback.stream_candidates
+              .map((candidate) => ({
+                url: candidate?.fallback_url || candidate?.proxy_url || '',
+                rawStreamURL: candidate?.raw_stream_url || candidate?.stream_url || '',
+                proxyURL: candidate?.proxy_url || candidate?.fallback_url || '',
+                streamHost: candidate?.stream_host || '',
+                kind: candidate?.stream_kind || 'file',
+                sourceLabel: candidate?.source_label || source.name,
+                quality: candidate?.quality || '',
+              }))
+              .filter((candidate) => Boolean(candidate.url))
+            : []
           setIntegratedPlayback({
             title: anime.title,
             subtitle: ep.title ?? `Ep. ${ep.number}`,
@@ -689,10 +699,15 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
             streamHost: playback.stream_host ?? '',
             kind: playback.stream_kind ?? 'file',
             sourceLabel: source.name,
+            quality: playback.quality ?? '',
+            streamCandidates: integratedCandidates,
+            currentCandidateIndex: 0,
+            lastCompatibilitySignature: '',
             episode: ep,
             episodeID: ep.id,
             lastPositionSec: Number(playback.resume_sec || 0),
-            lastDurationSec: Number(playback.duration_sec || 0),
+            lastDurationSec: 0,
+            expectedDurationSec: Number(playback.duration_sec || 0),
           })
           setPendingIntegratedEpisode(null)
           toastSuccess(ui.integratedOpen)
@@ -809,6 +824,58 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
     await closeIntegratedPlayback(false)
     await launchEpisode(playback.episode, 'mpv')
   }, [closeIntegratedPlayback, integratedPlayback, launchEpisode])
+
+  const handleIntegratedCompatibilityFailure = useCallback((failure) => {
+    let switched = false
+    let repeatedSignature = false
+    setIntegratedPlayback((prev) => {
+      if (!prev) return prev
+      const compatibilitySignature = String(failure?.compatibilitySignature || '')
+      if (compatibilitySignature !== '' && compatibilitySignature === String(prev.lastCompatibilitySignature || '')) {
+        repeatedSignature = true
+        return prev
+      }
+      const candidates = Array.isArray(prev.streamCandidates) ? prev.streamCandidates : []
+      const nextIndex = Number(prev.currentCandidateIndex ?? 0) + 1
+      if (nextIndex >= candidates.length) {
+        return prev
+      }
+      const nextCandidate = candidates[nextIndex]
+      if (!nextCandidate?.url) {
+        return prev
+      }
+      switched = true
+      return {
+        ...prev,
+        url: nextCandidate.url,
+        rawStreamURL: nextCandidate.rawStreamURL || nextCandidate.url,
+        proxyURL: nextCandidate.proxyURL || nextCandidate.url,
+        streamHost: nextCandidate.streamHost || '',
+        kind: nextCandidate.kind || 'file',
+        sourceLabel: nextCandidate.sourceLabel || prev.sourceLabel,
+        quality: nextCandidate.quality || '',
+        currentCandidateIndex: nextIndex,
+        lastCompatibilitySignature: compatibilitySignature,
+      }
+    })
+    if (switched) {
+      const nextPlayback = integratedPlayback?.streamCandidates?.[Number(integratedPlayback?.currentCandidateIndex ?? 0) + 1]
+      const qualityLabel = nextPlayback?.quality || (isEnglish ? 'another' : 'otra')
+      toastSuccess(
+        isEnglish
+          ? `This stream hit an HLS compatibility error. Trying ${qualityLabel} inside Nipah!.`
+          : `Este stream tuvo un error de compatibilidad HLS. Probando ${qualityLabel} dentro de Nipah!.`,
+      )
+    }
+    if (repeatedSignature) {
+      toastError(
+        isEnglish
+          ? 'The embedded player reported the same unsupported codec again, so Nipah! stopped retrying this stream.'
+          : 'El reproductor integrado informo el mismo codec no soportado otra vez, asi que Nipah! dejo de reintentar este stream.',
+      )
+    }
+    return switched && Boolean(failure?.errorDetails)
+  }, [integratedPlayback?.currentCandidateIndex, integratedPlayback?.streamCandidates, isEnglish])
 
   const currentIntegratedEpisodeIndex = integratedPlayback?.episodeID
     ? episodes.findIndex((item) => item.id === integratedPlayback.episodeID)
@@ -1264,9 +1331,11 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
                         streamKind={integratedPlayback?.kind}
                         sourceLabel={integratedPlayback?.sourceLabel}
                         initialPositionSec={integratedPlayback?.lastPositionSec ?? 0}
+                        expectedDurationSec={integratedPlayback?.expectedDurationSec ?? 0}
                         onPlaybackUpdate={handleIntegratedPlaybackUpdate}
                         onPlaybackEnd={handleIntegratedPlaybackEnd}
                         onUseExternalPlayer={handleUseExternalPlayer}
+                        onHlsCompatibilityFailure={handleIntegratedCompatibilityFailure}
                         onPrev={previousIntegratedEpisode ? () => handleIntegratedEpisodeJump(previousIntegratedEpisode) : null}
                         prevLabel={ui.previousEpisode}
                         audioLabel={ui.audioTrack}
@@ -1542,7 +1611,6 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
 
       <LandingRecommendationsStage
         title={ui.recommendationsTitle}
-        copy={ui.recommendationsCopy}
         items={recommendationItems}
         onSelectItem={onRecommendationSelect}
         emptyCopy={ui.recommendationsEmptyCopy}

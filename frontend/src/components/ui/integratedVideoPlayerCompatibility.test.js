@@ -44,6 +44,19 @@ assert.deepEqual(
 
 assert.deepEqual(
   getIntegratedPlaybackSupport({
+    streamKind: 'transcoded',
+    streamURL: 'http://127.0.0.1:43212/proxy/transcode?url=https%3A%2F%2Fcdn.example%2Fmaster.m3u8',
+  }),
+  {
+    normalizedKind: 'file',
+    supported: true,
+    playbackMode: 'native',
+    reason: '',
+  },
+)
+
+assert.deepEqual(
+  getIntegratedPlaybackSupport({
     streamKind: 'dash',
     streamURL: 'https://cdn.example/manifest.mpd',
   }),

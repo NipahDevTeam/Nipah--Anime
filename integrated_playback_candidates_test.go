@@ -51,6 +51,54 @@ func TestChooseIntegratedPlaybackStreamSourceFallsBackFromBrokenAnimeAV1HLSCandi
 	}
 }
 
+func TestChooseIntegratedPlaybackStreamSourcePrefersHealthyAnimeAV1HLSOverFileFallback(t *testing.T) {
+	healthyHLS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".m3u8"):
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			_, _ = io.WriteString(w, "#EXTM3U\nsegment-1.ts\n")
+		case strings.HasSuffix(r.URL.Path, ".ts"):
+			w.Header().Set("Content-Type", "video/mp2t")
+			w.Header().Set("Accept-Ranges", "bytes")
+			if strings.TrimSpace(r.Header.Get("Range")) != "" {
+				w.Header().Set("Content-Range", "bytes 0-0/1")
+				w.WriteHeader(http.StatusPartialContent)
+				_, _ = io.WriteString(w, "x")
+				return
+			}
+			_, _ = io.WriteString(w, "segment-data")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer healthyHLS.Close()
+
+	fileFallback := extensions.StreamSource{
+		URL:      "https://cdn.example/video.mp4",
+		Quality:  "720p",
+		Language: extensions.LangSpanish,
+		Audio:    "sub",
+		Referer:  "https://www.mp4upload.com/embed-example.html",
+	}
+
+	chosen, ok := chooseIntegratedPlaybackStreamSource("animeav1-es", []extensions.StreamSource{
+		fileFallback,
+		{
+			URL:      healthyHLS.URL + "/master.m3u8",
+			Quality:  "unknown",
+			Language: extensions.LangSpanish,
+			Audio:    "sub",
+			Referer:  "https://player.zilla-networks.com/play/example",
+		},
+	}, server.ProbeMediaProxy)
+	if !ok {
+		t.Fatal("expected a candidate to be selected")
+	}
+	if chosen.URL != healthyHLS.URL+"/master.m3u8" {
+		t.Fatalf("expected healthy AnimeAV1 hls candidate, got %#v", chosen)
+	}
+}
+
 func TestChooseIntegratedPlaybackStreamSourceFallsBackFromBrokenAnimePaheHLSCandidate(t *testing.T) {
 	brokenHLS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -110,5 +158,46 @@ func TestChooseIntegratedPlaybackStreamSourceFallsBackFromBrokenAnimePaheHLSCand
 	}
 	if chosen.Referer != "https://kwik.si/e/working" {
 		t.Fatalf("expected referer to follow the selected candidate, got %#v", chosen)
+	}
+}
+
+func TestChooseIntegratedPlaybackStreamSourceFallsBackFromBrokenAnimeHeavenDirectCandidate(t *testing.T) {
+	brokenMP4 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "blocked", http.StatusForbidden)
+	}))
+	defer brokenMP4.Close()
+
+	workingMP4 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		w.Header().Set("Accept-Ranges", "bytes")
+		if strings.TrimSpace(r.Header.Get("Range")) != "" {
+			w.Header().Set("Content-Range", "bytes 0-0/1")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = io.WriteString(w, "x")
+			return
+		}
+		_, _ = io.WriteString(w, "video")
+	}))
+	defer workingMP4.Close()
+
+	chosen, ok := chooseIntegratedPlaybackStreamSource("animeheaven-en", []extensions.StreamSource{
+		{
+			URL:      brokenMP4.URL + "/video.mp4",
+			Quality:  "1080p",
+			Language: extensions.LangEnglish,
+			Referer:  "https://animeheaven.me/gate.php",
+		},
+		{
+			URL:      workingMP4.URL + "/video.mp4",
+			Quality:  "1080p",
+			Language: extensions.LangEnglish,
+			Referer:  "https://animeheaven.me/gate.php",
+		},
+	}, server.ProbeMediaProxy)
+	if !ok {
+		t.Fatal("expected a candidate to be selected")
+	}
+	if chosen.URL != workingMP4.URL+"/video.mp4" {
+		t.Fatalf("expected working AnimeHeaven fallback candidate, got %#v", chosen)
 	}
 }

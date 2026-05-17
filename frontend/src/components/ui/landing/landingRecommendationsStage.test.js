@@ -10,5 +10,6 @@ assert.ok(stageSource.includes("const isInteractive = typeof onSelectItem === 'f
 assert.ok(stageSource.includes('type="button"'), 'recommendation stage should render real buttons for interactive recommendation cards')
 assert.ok(stageSource.includes('onClick={() => onSelectItem?.(item)}'), 'recommendation stage should forward the selected recommendation item through the shared callback')
 assert.ok(stageSource.includes('onSelectItem={onSelectItem}'), 'recommendation stage should pass the click callback down to each recommendation card')
+assert.equal(stageSource.indexOf('gui2-landing-section-copy gui2-landing-section-copy--recommendations'), -1, 'recommendation stage should not render redundant helper copy above the recommendation shelf')
 
 console.log('landing recommendations stage tests passed')

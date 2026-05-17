@@ -332,7 +332,6 @@ function HomeLane({ lane, activeTabKey, onChangeTab, onOpenPoster, motionIndex =
       <div className="gui2-homev2-band-head">
         <div className="gui2-homev2-band-copy">
           <div className="gui2-homev2-band-title">{lane.title}</div>
-          {lane.subtitle ? <div className="gui2-homev2-band-subtitle">{lane.subtitle}</div> : null}
         </div>
       </div>
 
@@ -432,7 +431,6 @@ function HomeBand({ section, onOpenPoster, onOpenContinue, motionIndex = 0 }) {
       <div className="gui2-homev2-band-head">
         <div className="gui2-homev2-band-copy">
           <div className="gui2-homev2-band-title">{section.title}</div>
-          {section.subtitle ? <div className="gui2-homev2-band-subtitle">{section.subtitle}</div> : null}
         </div>
       </div>
 

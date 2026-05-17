@@ -45,3 +45,27 @@ func TestAnimeHeavenEpisodeRegexMatchesCurrentLiveMarkup(t *testing.T) {
 		t.Fatalf("expected episode number to be captured, got %q", match[2])
 	}
 }
+
+func TestAnimeHeavenDirectVideoSourcesPreservesAllFallbackHosts(t *testing.T) {
+	body := `
+<video id='vid'>
+<source src='https://ax.animeheaven.me/video.mp4?episode-1&primary' type='video/mp4' onerror="xhr()">
+<source src='https://ct.animeheaven.me/video.mp4?episode-1&error' type='video/mp4' onerror="xhr()">
+<source src='https://ck.animeheaven.me/video.mp4?episode-1&error2' type='video/mp4' onerror="xhr2()">
+<source src='https://ax.animeheaven.me/video.mp4?episode-1&primary' type='video/mp4'>
+</video>`
+
+	sources := parseAnimeHeavenDirectVideoSources(body)
+	if len(sources) != 3 {
+		t.Fatalf("expected 3 unique direct sources, got %d (%#v)", len(sources), sources)
+	}
+	if sources[0] != "https://ax.animeheaven.me/video.mp4?episode-1&primary" {
+		t.Fatalf("unexpected primary source order: %#v", sources)
+	}
+	if sources[1] != "https://ct.animeheaven.me/video.mp4?episode-1&error" {
+		t.Fatalf("unexpected second source order: %#v", sources)
+	}
+	if sources[2] != "https://ck.animeheaven.me/video.mp4?episode-1&error2" {
+		t.Fatalf("unexpected third source order: %#v", sources)
+	}
+}

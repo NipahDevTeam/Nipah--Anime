@@ -336,6 +336,7 @@ func (d *Database) migrate() error {
 		('preferred_sub_lang', 'es'),
 		('player', 'mpv'),
 		('mpv_path', ''),
+		('ffmpeg_path', ''),
 		('theme', 'dark'),
 		('manga_reading_direction', 'ltr'),
 		('data_saver', 'false'),

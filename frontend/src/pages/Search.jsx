@@ -168,7 +168,6 @@ function SectionHeader({ title, subtitle, action }) {
     <div className="online-section-header">
       <div className="online-section-heading">
         <h2 className="online-section-title">{title}</h2>
-        {subtitle ? <p className="online-section-copy">{subtitle}</p> : null}
       </div>
       {action}
     </div>

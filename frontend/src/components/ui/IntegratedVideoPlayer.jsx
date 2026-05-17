@@ -3,7 +3,38 @@ import Hls from 'hls.js'
 import { wails } from '../../lib/wails'
 
 function canUseHLS(kind, url) {
-  return kind === 'hls' || (url ?? '').toLowerCase().includes('.m3u8')
+  if (String(kind || '').trim().toLowerCase() === 'hls') return true
+  const candidate = String(url || '').trim()
+  if (!candidate) return false
+  try {
+    return new URL(candidate).pathname.toLowerCase().includes('.m3u8')
+  } catch {
+    return candidate.toLowerCase().includes('.m3u8')
+  }
+}
+
+function isUnsupportedHlsCompatibilityFailure(HlsLib, errorType, data) {
+  const mediaErrorType = HlsLib?.ErrorTypes?.MEDIA_ERROR || 'mediaError'
+  if (errorType !== mediaErrorType) return false
+
+  const details = String(data?.details || '')
+  const errorMessage = String(data?.error?.message || '').toLowerCase()
+  const mimeType = String(data?.mimeType || '').toLowerCase()
+  const sourceBufferName = String(data?.sourceBufferName || '').toLowerCase()
+  const bufferAddCodecError = HlsLib?.ErrorDetails?.BUFFER_ADD_CODEC_ERROR || 'bufferAddCodecError'
+  const bufferIncompatibleCodecsError = HlsLib?.ErrorDetails?.BUFFER_INCOMPATIBLE_CODECS_ERROR || 'bufferIncompatibleCodecsError'
+  const bufferAppendError = HlsLib?.ErrorDetails?.BUFFER_APPEND_ERROR || 'bufferAppendError'
+
+  if (details === bufferAddCodecError || details === bufferIncompatibleCodecsError) {
+    return true
+  }
+  if (details === bufferAppendError && sourceBufferName === 'audio' && errorMessage.includes('does not exist')) {
+    return true
+  }
+  if (errorMessage.includes('unsupported') && (mimeType.includes('audio/') || sourceBufferName === 'audio')) {
+    return true
+  }
+  return false
 }
 
 export default function IntegratedVideoPlayer({
@@ -17,9 +48,11 @@ export default function IntegratedVideoPlayer({
   streamKind = 'file',
   sourceLabel = '',
   initialPositionSec = 0,
+  expectedDurationSec = 0,
   onPlaybackUpdate,
   onPlaybackEnd,
   onUseExternalPlayer,
+  onHlsCompatibilityFailure = null,
   onPrev = null,
   onNext = null,
   prevLabel = 'Previous',
@@ -41,10 +74,25 @@ export default function IntegratedVideoPlayer({
     onPlaybackEnd,
   })
   const initialPositionRef = useRef(initialPositionSec)
+  const hlsNetworkRecoveryAttemptsRef = useRef(0)
+  const hlsMediaRecoveryAttemptsRef = useRef(0)
+  const hlsRecoveryInFlightRef = useRef(false)
   const [error, setError] = useState('')
   const [awaitingInteraction, setAwaitingInteraction] = useState(false)
   const [showFallbackActions, setShowFallbackActions] = useState(false)
+  const [observedDurationSec, setObservedDurationSec] = useState(0)
   const isPagePresentation = presentation === 'gui2-page'
+
+  const formatPlaybackClock = (value) => {
+    const totalSeconds = Math.max(0, Math.floor(Number(value || 0)))
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    }
+    return `${minutes}:${String(seconds).padStart(2, '0')}`
+  }
 
   useEffect(() => {
     playbackCallbacksRef.current = {
@@ -84,8 +132,12 @@ export default function IntegratedVideoPlayer({
     setError('')
     setAwaitingInteraction(false)
     setShowFallbackActions(false)
+    setObservedDurationSec(0)
     lastReportedRef.current = 0
     seekAppliedRef.current = false
+    hlsNetworkRecoveryAttemptsRef.current = 0
+    hlsMediaRecoveryAttemptsRef.current = 0
+    hlsRecoveryInFlightRef.current = false
     emitDiagnostic('session_start', {
       hls_expected: shouldUseHls,
     })
@@ -124,6 +176,9 @@ export default function IntegratedVideoPlayer({
       if (!video) return
       const position = Number.isFinite(video.currentTime) ? video.currentTime : 0
       const duration = Number.isFinite(video.duration) ? video.duration : 0
+      if (duration > 0) {
+        setObservedDurationSec((prev) => (duration > prev ? duration : prev))
+      }
       if (!force && Math.abs(position - lastReportedRef.current) < 5) return
       lastReportedRef.current = position
       playbackCallbacksRef.current.onPlaybackUpdate?.(position, duration)
@@ -153,6 +208,9 @@ export default function IntegratedVideoPlayer({
     const handleLoadedMetadata = () => {
       clearStartupTimeout()
       setShowFallbackActions(false)
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        setObservedDurationSec((prev) => (video.duration > prev ? video.duration : prev))
+      }
       emitDiagnostic('loadedmetadata', {
         duration_sec: Number.isFinite(video.duration) ? video.duration : 0,
       })
@@ -167,9 +225,13 @@ export default function IntegratedVideoPlayer({
 
     const handleCanPlay = () => {
       clearStartupTimeout()
+      hlsRecoveryInFlightRef.current = false
       setAwaitingInteraction(false)
       setShowFallbackActions(false)
       setError('')
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        setObservedDurationSec((prev) => (video.duration > prev ? video.duration : prev))
+      }
       emitDiagnostic('canplay', {
         duration_sec: Number.isFinite(video.duration) ? video.duration : 0,
       })
@@ -177,6 +239,7 @@ export default function IntegratedVideoPlayer({
 
     const handleLoadedData = () => {
       clearStartupTimeout()
+      hlsRecoveryInFlightRef.current = false
       emitDiagnostic('loadeddata', {
         ready_state: video.readyState,
       })
@@ -184,9 +247,13 @@ export default function IntegratedVideoPlayer({
 
     const handlePlaying = () => {
       clearStartupTimeout()
+      hlsRecoveryInFlightRef.current = false
       setAwaitingInteraction(false)
       setShowFallbackActions(false)
       setError('')
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        setObservedDurationSec((prev) => (video.duration > prev ? video.duration : prev))
+      }
       emitDiagnostic('playing', {
         ready_state: video.readyState,
       })
@@ -225,6 +292,15 @@ export default function IntegratedVideoPlayer({
 
     const handleVideoError = () => {
       const mediaError = video.error
+      if (hlsRecoveryInFlightRef.current) {
+        emitDiagnostic('video_error_during_hls_recovery', {
+          error_code: mediaError?.code ?? 0,
+          error_message: mediaError?.message ?? '',
+          network_attempts: hlsNetworkRecoveryAttemptsRef.current,
+          media_attempts: hlsMediaRecoveryAttemptsRef.current,
+        })
+        return
+      }
       clearStartupTimeout()
       setShowFallbackActions(true)
       emitDiagnostic('video_error', {
@@ -260,9 +336,113 @@ export default function IntegratedVideoPlayer({
           fatal: Boolean(data?.fatal),
           error_type: data?.type ?? '',
           error_details: data?.details ?? '',
+          error_message: data?.error?.message ?? '',
+          mime_type: data?.mimeType ?? '',
+          source_buffer_name: data?.sourceBufferName ?? '',
+          parent_stream: data?.parent ?? '',
         })
         if (data?.fatal) {
+          const errorType = String(data?.type || '')
+          const networkErrorType = Hls.ErrorTypes?.NETWORK_ERROR || 'networkError'
+          const mediaErrorType = Hls.ErrorTypes?.MEDIA_ERROR || 'mediaError'
+          const unsupportedCompatibilityFailure = isUnsupportedHlsCompatibilityFailure(Hls, errorType, data)
+
+          if (unsupportedCompatibilityFailure) {
+            clearStartupTimeout()
+            hlsRecoveryInFlightRef.current = false
+            emitDiagnostic('hls_compatibility_failure', {
+              error_type: errorType,
+              error_details: data?.details ?? '',
+              error_message: data?.error?.message ?? '',
+              mime_type: data?.mimeType ?? '',
+              source_buffer_name: data?.sourceBufferName ?? '',
+              parent_stream: data?.parent ?? '',
+            })
+            if (typeof onHlsCompatibilityFailure === 'function') {
+              const handled = onHlsCompatibilityFailure({
+                errorType,
+                errorDetails: data?.details ?? '',
+                errorMessage: data?.error?.message ?? '',
+                mimeType: data?.mimeType ?? '',
+                sourceBufferName: data?.sourceBufferName ?? '',
+                parentStream: data?.parent ?? '',
+                compatibilitySignature: `${data?.details ?? ''}|${data?.mimeType ?? ''}|${data?.sourceBufferName ?? ''}|${data?.error?.message ?? ''}`,
+                mediaAttempts: hlsMediaRecoveryAttemptsRef.current,
+                networkAttempts: hlsNetworkRecoveryAttemptsRef.current,
+              })
+              if (handled) {
+                return
+              }
+            }
+            setShowFallbackActions(true)
+            setError('The integrated player does not support this stream codec. Try another stream or open it in MPV.')
+            return
+          }
+
+          if (errorType === networkErrorType && hlsNetworkRecoveryAttemptsRef.current < 2) {
+            hlsNetworkRecoveryAttemptsRef.current += 1
+            hlsRecoveryInFlightRef.current = true
+            emitDiagnostic('hls_recovery_attempt', {
+              recovery_type: 'network',
+              attempt: hlsNetworkRecoveryAttemptsRef.current,
+              error_details: data?.details ?? '',
+            })
+            setError('')
+            setAwaitingInteraction(false)
+            setShowFallbackActions(false)
+            armStartupTimeout()
+            hls.startLoad()
+            return
+          }
+
+          if (errorType === mediaErrorType && hlsMediaRecoveryAttemptsRef.current < 2) {
+            hlsMediaRecoveryAttemptsRef.current += 1
+            hlsRecoveryInFlightRef.current = true
+            const shouldSwapAudioCodec = hlsMediaRecoveryAttemptsRef.current >= 2
+            emitDiagnostic('hls_recovery_attempt', {
+              recovery_type: 'media',
+              attempt: hlsMediaRecoveryAttemptsRef.current,
+              error_details: data?.details ?? '',
+              swap_audio_codec: shouldSwapAudioCodec,
+            })
+            setError('')
+            setAwaitingInteraction(false)
+            setShowFallbackActions(false)
+            armStartupTimeout()
+            if (shouldSwapAudioCodec) {
+              hls.swapAudioCodec()
+            }
+            hls.recoverMediaError()
+            return
+          }
+
           clearStartupTimeout()
+          hlsRecoveryInFlightRef.current = false
+          emitDiagnostic('hls_recovery_exhausted', {
+            network_attempts: hlsNetworkRecoveryAttemptsRef.current,
+            media_attempts: hlsMediaRecoveryAttemptsRef.current,
+            error_type: errorType,
+            error_details: data?.details ?? '',
+            error_message: data?.error?.message ?? '',
+            mime_type: data?.mimeType ?? '',
+            source_buffer_name: data?.sourceBufferName ?? '',
+            parent_stream: data?.parent ?? '',
+          })
+          if (typeof onHlsCompatibilityFailure === 'function') {
+            const handled = onHlsCompatibilityFailure({
+              errorType,
+              errorDetails: data?.details ?? '',
+              errorMessage: data?.error?.message ?? '',
+              mimeType: data?.mimeType ?? '',
+              sourceBufferName: data?.sourceBufferName ?? '',
+              parentStream: data?.parent ?? '',
+              mediaAttempts: hlsMediaRecoveryAttemptsRef.current,
+              networkAttempts: hlsNetworkRecoveryAttemptsRef.current,
+            })
+            if (handled) {
+              return
+            }
+          }
           setShowFallbackActions(true)
           setError('The integrated player could not recover this stream. Try again or open it in MPV.')
         }
@@ -306,7 +486,7 @@ export default function IntegratedVideoPlayer({
       video.removeAttribute('src')
       video.load()
     }
-  }, [open, proxyURL, rawStreamURL, sourceLabel, streamHost, streamKind, streamURL, subtitle, title])
+  }, [onHlsCompatibilityFailure, open, proxyURL, rawStreamURL, sourceLabel, streamHost, streamKind, streamURL, subtitle, title])
 
   if (!open) return null
 
@@ -368,6 +548,11 @@ export default function IntegratedVideoPlayer({
     </div>
   ) : null
 
+  const stableDurationKnown = Number(expectedDurationSec) > 0
+  const transcodedBufferNote = streamKind === 'transcoded' && stableDurationKnown
+    ? `Buffered ${formatPlaybackClock(observedDurationSec)} / ${formatPlaybackClock(expectedDurationSec)} while the integrated transcode fills in the episode.`
+    : ''
+
   return (
     <div
       className={`integrated-player-overlay${isPagePresentation ? ' integrated-player-overlay--page' : ''}`}
@@ -380,7 +565,7 @@ export default function IntegratedVideoPlayer({
               <div className="integrated-player-eyebrow">
                 {sourceLabel || 'Integrated player'}
                 <span className="integrated-player-sep">·</span>
-                {streamKind === 'hls' ? 'HLS' : 'Direct stream'}
+                {streamKind === 'hls' ? 'HLS' : streamKind === 'transcoded' ? 'Transcoded stream' : 'Direct stream'}
               </div>
               <div className="integrated-player-title">{title || 'Integrated player'}</div>
               {subtitle ? <div className="integrated-player-subtitle">{subtitle}</div> : null}
@@ -429,7 +614,7 @@ export default function IntegratedVideoPlayer({
 
         <div className="integrated-player-footer">
           <div className="integrated-player-note">
-            {error || 'The integrated player works best with HLS and direct MP4/WebM streams.'}
+            {error || transcodedBufferNote || 'The integrated player works best with HLS and direct MP4/WebM streams.'}
           </div>
           {awaitingInteraction || showFallbackActions ? (
             <div className="integrated-player-footer-actions">

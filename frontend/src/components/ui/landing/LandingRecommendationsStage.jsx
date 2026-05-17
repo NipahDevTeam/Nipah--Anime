@@ -55,7 +55,6 @@ function PlaceholderCard({ title, copy, slot }) {
 
 export default function LandingRecommendationsStage({
   title,
-  copy,
   items,
   emptyCopy,
   placeholderCount = 4,
@@ -68,7 +67,6 @@ export default function LandingRecommendationsStage({
     <section className="gui2-landing-recommendations">
       <div className="gui2-landing-section-head gui2-landing-section-head--stacked">
         <h3 className="gui2-landing-section-title">{title}</h3>
-        {copy ? <p className="gui2-landing-section-copy gui2-landing-section-copy--recommendations">{copy}</p> : null}
       </div>
 
       <div className="gui2-landing-recommendations-grid">

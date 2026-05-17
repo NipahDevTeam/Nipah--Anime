@@ -80,6 +80,7 @@ if [[ ! -f "${APP_ICON}" ]]; then
   APP_ICON="${ROOT_DIR}/appimg.png"
 fi
 MPV_BINARY="$(command -v mpv || true)"
+FFMPEG_BINARY="$(command -v ffmpeg || true)"
 if [[ ! -x "${APP_BINARY}" ]]; then
   echo "[Linux] Built app binary not found: ${APP_BINARY}" >&2
   exit 1
@@ -90,6 +91,10 @@ if [[ ! -f "${APP_ICON}" ]]; then
 fi
 if [[ -z "${MPV_BINARY}" ]]; then
   echo "[Linux] mpv is required to bundle the portable AppImage" >&2
+  exit 1
+fi
+if [[ -z "${FFMPEG_BINARY}" ]]; then
+  echo "[Linux] ffmpeg is required to bundle the portable AppImage" >&2
   exit 1
 fi
 
@@ -103,6 +108,7 @@ mkdir -p \
 
 copy_binary_and_deps "${APP_BINARY}" "${APPDIR}/usr/bin/nipah-anime-bin"
 copy_binary_and_deps "${MPV_BINARY}" "${APPDIR}/usr/bin/mpv"
+copy_binary_and_deps "${FFMPEG_BINARY}" "${APPDIR}/usr/bin/ffmpeg"
 
 copy_optional_dir "/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1" "${APPDIR}/usr/lib/webkit2gtk-4.1"
 copy_optional_dir "/usr/libexec/webkit2gtk-4.1" "${APPDIR}/usr/libexec/webkit2gtk-4.1"

@@ -1,12 +1,16 @@
 package server
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/pprof"
 	"net/url"
+	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -17,19 +21,23 @@ import (
 	"miruro/backend/logger"
 	"miruro/backend/metadata"
 	torrentbackend "miruro/backend/torrent"
+	"miruro/backend/transcode"
 )
 
 var log = logger.For("Server")
+var findFFmpegBinary = transcode.FindFFmpegBinary
 
 // Server is the internal HTTP server used for extension IPC and
 // any functionality that needs a proper REST API on localhost.
 type Server struct {
-	db            *db.Database
-	library       *library.Manager
-	metadata      *metadata.Manager
-	torrentStream *torrentbackend.StreamManager
-	mux           *http.ServeMux
-	debug         bool
+	db                                 *db.Database
+	library                            *library.Manager
+	metadata                           *metadata.Manager
+	torrentStream                      *torrentbackend.StreamManager
+	mux                                *http.ServeMux
+	debug                              bool
+	getIntegratedPlaybackDiagnostics   func() []map[string]interface{}
+	clearIntegratedPlaybackDiagnostics func()
 }
 
 type MediaProxyProbeResult struct {
@@ -77,6 +85,11 @@ func (s *Server) SetTorrentStream(torrentStream *torrentbackend.StreamManager) {
 	s.torrentStream = torrentStream
 }
 
+func (s *Server) SetIntegratedPlaybackDiagnosticsCallbacks(getter func() []map[string]interface{}, clearer func()) {
+	s.getIntegratedPlaybackDiagnostics = getter
+	s.clearIntegratedPlaybackDiagnostics = clearer
+}
+
 // Start begins listening on the given address.
 func (s *Server) Start(addr string) {
 	log.Info().Str("addr", addr).Msg("internal server listening")
@@ -109,6 +122,7 @@ func (s *Server) registerRoutes() {
 	// Image proxy — lets the webview load external images that block CORS
 	s.mux.HandleFunc("/proxy/image", s.handleImageProxy)
 	s.mux.HandleFunc("/proxy/media", s.handleMediaProxy)
+	s.mux.HandleFunc("/proxy/transcode", s.handleTranscodeProxy)
 	s.mux.HandleFunc("/torrent/stream", s.handleTorrentStream)
 
 	// Library
@@ -123,6 +137,8 @@ func (s *Server) registerRoutes() {
 
 	// Settings
 	s.mux.HandleFunc("/api/settings", s.handleSettings)
+	s.mux.HandleFunc("/api/integrated-playback-diagnostics", s.handleIntegratedPlaybackDiagnostics)
+	s.mux.HandleFunc("/api/integrated-playback-diagnostics/clear", s.handleClearIntegratedPlaybackDiagnostics)
 }
 
 func (s *Server) registerDebugRoutes() {
@@ -131,6 +147,8 @@ func (s *Server) registerDebugRoutes() {
 	s.mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	s.mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	s.mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	s.mux.HandleFunc("/debug/integrated-playback-diagnostics", s.handleIntegratedPlaybackDiagnostics)
+	s.mux.HandleFunc("/debug/integrated-playback-diagnostics/clear", s.handleClearIntegratedPlaybackDiagnostics)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -281,6 +299,8 @@ var mediaProxyClient = &http.Client{
 		IdleConnTimeout:     90 * time.Second,
 	},
 }
+
+const internalMediaProxyBaseURL = "http://127.0.0.1:43212"
 
 func (s *Server) handleImageProxy(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("url")
@@ -438,6 +458,79 @@ func (s *Server) handleMediaProxy(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 
+func (s *Server) handleTranscodeProxy(w http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("url")
+	referer := strings.TrimSpace(r.URL.Query().Get("referer"))
+	cookie := strings.TrimSpace(r.URL.Query().Get("cookie"))
+	if raw == "" {
+		http.Error(w, "missing url", http.StatusBadRequest)
+		return
+	}
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		http.Error(w, "invalid url", http.StatusBadRequest)
+		return
+	}
+	if referer == "" {
+		referer = parsed.Scheme + "://" + parsed.Host + "/"
+	}
+
+	preferredFFmpegPath := ""
+	if s.db != nil {
+		preferredFFmpegPath = s.db.GetSetting("ffmpeg_path", "")
+	}
+	ffmpegPath, err := findFFmpegBinary(preferredFFmpegPath)
+	if err != nil {
+		http.Error(w, "ffmpeg unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	cmd := exec.CommandContext(r.Context(), ffmpegPath, transcode.BuildMP4TranscodeArgs(raw, referer, cookie)...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		http.Error(w, "transcode pipe error", http.StatusBadGateway)
+		return
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		http.Error(w, "transcode pipe error", http.StatusBadGateway)
+		return
+	}
+
+	var stderrBuf bytes.Buffer
+	go func() {
+		_, _ = io.Copy(&stderrBuf, io.LimitReader(stderr, 64*1024))
+	}()
+
+	if err := cmd.Start(); err != nil {
+		http.Error(w, "transcode start error", http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Content-Disposition", "inline")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Accept-Ranges", "none")
+	w.WriteHeader(http.StatusOK)
+
+	_, copyErr := io.Copy(w, stdout)
+	waitErr := cmd.Wait()
+	if copyErr != nil && !errors.Is(copyErr, context.Canceled) {
+		log.Debug().
+			Err(copyErr).
+			Str("url", raw).
+			Msg("transcode proxy copy ended early")
+	}
+	if waitErr != nil && !errors.Is(waitErr, context.Canceled) && !errors.Is(r.Context().Err(), context.Canceled) {
+		log.Warn().
+			Err(waitErr).
+			Str("url", raw).
+			Str("stderr", strings.TrimSpace(stderrBuf.String())).
+			Msg("transcode proxy ffmpeg exited with error")
+	}
+}
+
 func (s *Server) handleTorrentStream(w http.ResponseWriter, r *http.Request) {
 	if s.torrentStream == nil {
 		http.Error(w, "torrent streaming unavailable", http.StatusServiceUnavailable)
@@ -451,6 +544,35 @@ func (s *Server) handleTorrentStream(w http.ResponseWriter, r *http.Request) {
 	if err := s.torrentStream.StreamHTTP(w, r, sessionID); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	}
+}
+
+func (s *Server) handleIntegratedPlaybackDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.getIntegratedPlaybackDiagnostics == nil {
+		s.error(w, "integrated playback diagnostics unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	diagnostics := s.getIntegratedPlaybackDiagnostics()
+	s.json(w, map[string]interface{}{
+		"count":       len(diagnostics),
+		"diagnostics": diagnostics,
+	})
+}
+
+func (s *Server) handleClearIntegratedPlaybackDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.clearIntegratedPlaybackDiagnostics == nil {
+		s.error(w, "integrated playback diagnostics unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	s.clearIntegratedPlaybackDiagnostics()
+	s.json(w, map[string]string{"status": "cleared"})
 }
 
 var hlsURIAttr = regexp.MustCompile(`URI="([^"]+)"`)
@@ -469,6 +591,13 @@ func browserMediaContentType(rawURL, contentType string) string {
 	switch {
 	case strings.Contains(lowerURL, ".m3u8"), strings.Contains(lowerCT, "application/vnd.apple.mpegurl"), strings.Contains(lowerCT, "application/x-mpegurl"):
 		return "application/vnd.apple.mpegurl"
+	case strings.HasSuffix(lowerURL, ".key"):
+		if contentType != "" {
+			return contentType
+		}
+		return "application/octet-stream"
+	case strings.Contains(lowerURL, ".owocdn.") && strings.Contains(lowerURL, "/stream/") && (strings.HasSuffix(lowerURL, ".jpg") || strings.HasSuffix(lowerURL, ".jpeg")):
+		return "video/mp2t"
 	case strings.Contains(lowerURL, "player.zilla-networks.com/segs/") && strings.HasSuffix(lowerURL, ".html"):
 		return "video/mp4"
 	case strings.Contains(lowerURL, ".mp4"), strings.Contains(lowerCT, "application/octet-stream"), lowerCT == "":
@@ -525,7 +654,19 @@ func mediaProxyURL(rawURL, referer, cookie string) string {
 	if cookie != "" {
 		params.Set("cookie", cookie)
 	}
-	return "http://localhost:43212/proxy/media?" + params.Encode()
+	return internalMediaProxyBaseURL + "/proxy/media?" + params.Encode()
+}
+
+func TranscodeProxyURL(rawURL, referer, cookie string) string {
+	params := url.Values{}
+	params.Set("url", rawURL)
+	if referer != "" {
+		params.Set("referer", referer)
+	}
+	if cookie != "" {
+		params.Set("cookie", cookie)
+	}
+	return internalMediaProxyBaseURL + "/proxy/transcode?" + params.Encode()
 }
 
 func ProbeMediaProxy(rawURL, referer, cookie string) (*MediaProxyProbeResult, error) {
@@ -534,29 +675,30 @@ func ProbeMediaProxy(rawURL, referer, cookie string) (*MediaProxyProbeResult, er
 		return nil, err
 	}
 
-	resp, err := fetchMediaProxyResponse(rawURL, refererValue, cookieValue, "", "")
-	if err != nil {
-		return nil, err
-	}
-
+	isHLSHint := isM3U8Content(rawURL, "")
 	result := &MediaProxyProbeResult{
-		RawURL:              rawURL,
-		Referer:             refererValue,
-		ProxyURL:            mediaProxyURL(rawURL, refererValue, cookieValue),
-		UpstreamStatus:      resp.status,
-		UpstreamContentType: resp.contentType,
-		IsHLS:               isM3U8Content(rawURL, resp.contentType),
-		AcceptRanges:        strings.TrimSpace(resp.headers.Get("Accept-Ranges")),
-		ContentRange:        strings.TrimSpace(resp.headers.Get("Content-Range")),
+		RawURL:   rawURL,
+		Referer:  refererValue,
+		ProxyURL: mediaProxyURL(rawURL, refererValue, cookieValue),
 	}
 
-	if resp.status >= http.StatusBadRequest {
-		result.Classification = "proxy-broken"
-		result.ClassificationReason = fmt.Sprintf("upstream returned HTTP %d", resp.status)
-		return result, nil
-	}
+	if isHLSHint {
+		resp, err := fetchMediaProxyResponse(rawURL, refererValue, cookieValue, "", "")
+		if err != nil {
+			return nil, err
+		}
+		result.UpstreamStatus = resp.status
+		result.UpstreamContentType = resp.contentType
+		result.IsHLS = true
+		result.AcceptRanges = strings.TrimSpace(resp.headers.Get("Accept-Ranges"))
+		result.ContentRange = strings.TrimSpace(resp.headers.Get("Content-Range"))
 
-	if result.IsHLS {
+		if resp.status >= http.StatusBadRequest {
+			result.Classification = "proxy-broken"
+			result.ClassificationReason = fmt.Sprintf("upstream returned HTTP %d", resp.status)
+			return result, nil
+		}
+
 		manifest := rewriteM3U8Manifest(string(resp.body), parsed, cookieValue, refererValue)
 		result.ManifestLineCount = len(strings.Split(manifest, "\n"))
 		result.ManifestRewritten = strings.Contains(manifest, "/proxy/media?")
@@ -567,7 +709,7 @@ func ProbeMediaProxy(rawURL, referer, cookie string) (*MediaProxyProbeResult, er
 			segmentResp, segErr := fetchMediaProxyResponse(firstSegmentRaw, refererValue, cookieValue, "bytes=0-0", "video/*,*/*;q=0.8")
 			if segErr == nil {
 				result.FirstSegmentStatus = segmentResp.status
-				result.FirstSegmentType = segmentResp.contentType
+				result.FirstSegmentType = browserMediaContentType(firstSegmentRaw, segmentResp.contentType)
 			}
 		}
 
@@ -587,6 +729,9 @@ func ProbeMediaProxy(rawURL, referer, cookie string) (*MediaProxyProbeResult, er
 
 	rangeResp, rangeErr := fetchMediaProxyResponse(rawURL, refererValue, cookieValue, "bytes=0-0", "video/*,*/*;q=0.8")
 	if rangeErr == nil {
+		result.UpstreamStatus = rangeResp.status
+		result.UpstreamContentType = rangeResp.contentType
+		result.IsHLS = isM3U8Content(rawURL, rangeResp.contentType)
 		result.RangeProbeStatus = rangeResp.status
 		result.RangeProbeType = rangeResp.contentType
 		if result.AcceptRanges == "" {
@@ -595,6 +740,47 @@ func ProbeMediaProxy(rawURL, referer, cookie string) (*MediaProxyProbeResult, er
 		if result.ContentRange == "" {
 			result.ContentRange = strings.TrimSpace(rangeResp.headers.Get("Content-Range"))
 		}
+	}
+
+	if result.IsHLS {
+		resp, err := fetchMediaProxyResponse(rawURL, refererValue, cookieValue, "", "")
+		if err != nil {
+			return nil, err
+		}
+		result.UpstreamStatus = resp.status
+		result.UpstreamContentType = resp.contentType
+		if resp.status >= http.StatusBadRequest {
+			result.Classification = "proxy-broken"
+			result.ClassificationReason = fmt.Sprintf("upstream returned HTTP %d", resp.status)
+			return result, nil
+		}
+
+		manifest := rewriteM3U8Manifest(string(resp.body), parsed, cookieValue, refererValue)
+		result.ManifestLineCount = len(strings.Split(manifest, "\n"))
+		result.ManifestRewritten = strings.Contains(manifest, "/proxy/media?")
+
+		firstSegmentRaw, firstSegmentProxy := firstPlayableManifestLine(manifest)
+		result.FirstSegmentURL = firstSegmentProxy
+		if firstSegmentRaw != "" {
+			segmentResp, segErr := fetchMediaProxyResponse(firstSegmentRaw, refererValue, cookieValue, "bytes=0-0", "video/*,*/*;q=0.8")
+			if segErr == nil {
+				result.FirstSegmentStatus = segmentResp.status
+				result.FirstSegmentType = browserMediaContentType(firstSegmentRaw, segmentResp.contentType)
+			}
+		}
+
+		switch {
+		case !result.ManifestRewritten:
+			result.Classification = "proxy-broken"
+			result.ClassificationReason = "manifest was not rewritten through /proxy/media"
+		case result.FirstSegmentStatus >= http.StatusBadRequest:
+			result.Classification = "proxy-broken"
+			result.ClassificationReason = fmt.Sprintf("first HLS segment returned HTTP %d", result.FirstSegmentStatus)
+		default:
+			result.Classification = "provider-compatible"
+			result.ClassificationReason = "manifest and first segment look browser-playable"
+		}
+		return result, nil
 	}
 
 	switch {

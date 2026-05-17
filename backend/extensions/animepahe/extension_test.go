@@ -3,6 +3,7 @@ package animepahe
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -177,5 +178,67 @@ func TestGetEpisodesFetchesRemainingPagesConcurrentlyAfterFirstPage(t *testing.T
 		t.Fatalf("get episodes returned error: %v", err)
 	case <-time.After(2 * time.Second):
 		t.Fatalf("timed out waiting for episodes result")
+	}
+}
+
+func TestResolveAnimePaheSourcesConcurrentlyPreservesOrder(t *testing.T) {
+	entries := []kwikEntry{
+		{url: "https://kwik.cx/e/360", quality: "360p", audio: "sub"},
+		{url: "https://kwik.cx/e/720", quality: "720p", audio: "sub"},
+		{url: "https://kwik.cx/e/1080", quality: "1080p", audio: "sub"},
+	}
+
+	started := make(chan string, len(entries))
+	release := make(chan struct{})
+	var (
+		mu         sync.Mutex
+		active     int
+		maxActive  int
+		startCount int
+		resolveLog []string
+	)
+
+	sources := resolveAnimePaheStreamSources(entries, "https://animepahe.pw/play/example", func(kwikURL, referer string) (string, string) {
+		mu.Lock()
+		active++
+		if active > maxActive {
+			maxActive = active
+		}
+		startCount++
+		if startCount == len(entries) {
+			close(release)
+		}
+		resolveLog = append(resolveLog, kwikURL+"|"+referer)
+		mu.Unlock()
+
+		started <- kwikURL
+		<-release
+
+		mu.Lock()
+		active--
+		mu.Unlock()
+		return "https://cdn.example/" + strings.TrimPrefix(kwikURL, "https://kwik.cx/e/") + "/uwu.m3u8", ""
+	})
+
+	if maxActive < 2 {
+		t.Fatalf("expected concurrent kwik resolution, max active=%d", maxActive)
+	}
+	if len(started) != len(entries) {
+		t.Fatalf("expected all resolvers to start before completion, got %d starts", len(started))
+	}
+	if len(resolveLog) != len(entries) {
+		t.Fatalf("expected resolver to be invoked for every kwik entry, got %d calls", len(resolveLog))
+	}
+
+	if len(sources) != len(entries) {
+		t.Fatalf("expected %d sources, got %d", len(entries), len(sources))
+	}
+	for i, source := range sources {
+		if source.Quality != entries[i].quality {
+			t.Fatalf("expected source %d quality %q, got %q", i, entries[i].quality, source.Quality)
+		}
+		if source.Referer != entries[i].url {
+			t.Fatalf("expected source %d referer %q, got %q", i, entries[i].url, source.Referer)
+		}
 	}
 }

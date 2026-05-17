@@ -8,7 +8,11 @@
 .gocache/
 .gocache-release/
 gocache/
-build/
+build/*
+!build/appicon.png
+!build/windows/
+build/windows/*
+!build/windows/icon.ico
 
 # === Frontend Dependencies & Artifacts ===
 frontend/node_modules/

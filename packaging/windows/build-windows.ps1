@@ -76,6 +76,22 @@ function Copy-TextFileWithLf {
 $projectInfo = Get-Content wails.json | ConvertFrom-Json
 $productVersion = $projectInfo.info.productVersion
 
+function Resolve-FfmpegBinary {
+    $bundledCandidate = Get-ChildItem -Path (Join-Path $repoRoot "build\tools") -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if ($bundledCandidate) {
+        return $bundledCandidate.FullName
+    }
+
+    $pathCandidate = Get-Command ffmpeg -ErrorAction SilentlyContinue
+    if ($pathCandidate) {
+        return $pathCandidate.Source
+    }
+
+    return $null
+}
+
 if (-not $env:GOROOT) {
     $resolvedGoRoot = (& go env GOROOT).Trim()
     if ($LASTEXITCODE -eq 0 -and $resolvedGoRoot) {
@@ -96,6 +112,16 @@ $env:GOTMPDIR = $goTmpRoot
 
 Write-Host "[Windows] Building Nipah! Anime v$productVersion"
 Write-Host "[Windows] Building Wails app + NSIS installer"
+
+$ffmpegBinary = Resolve-FfmpegBinary
+if (-not $ffmpegBinary) {
+    throw "[Windows] ffmpeg.exe not found. Stage a local build under build\\tools or install ffmpeg before packaging."
+}
+
+$windowsFfmpegDir = Join-Path $repoRoot "build\windows\ffmpeg"
+New-Item -ItemType Directory -Force -Path $windowsFfmpegDir | Out-Null
+Copy-Item $ffmpegBinary (Join-Path $windowsFfmpegDir "ffmpeg.exe") -Force
+Write-Host "[Windows] Using FFmpeg from $ffmpegBinary"
 
 Invoke-Step "[Windows] Building frontend bundle" { npm.cmd --prefix frontend install }
 Invoke-Step "[Windows] Building frontend assets" { npm.cmd --prefix frontend run build }

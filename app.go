@@ -48,6 +48,7 @@ import (
 	"miruro/backend/player"
 	"miruro/backend/server"
 	"miruro/backend/torrent"
+	"miruro/backend/transcode"
 )
 
 var log = logger.For("App")
@@ -369,6 +370,7 @@ func (a *App) startup(ctx context.Context) {
 
 	// Download manager — saves to %APPDATA%/Nipah/downloads/
 	a.server = server.New(a.db, a.library, a.metadata, nil, a.debug)
+	a.server.SetIntegratedPlaybackDiagnosticsCallbacks(a.GetIntegratedPlaybackDiagnostics, a.ClearIntegratedPlaybackDiagnostics)
 	go a.server.Start("127.0.0.1:43212")
 	log.Info().Dur("phase", time.Since(phaseStarted)).Msg("startup phase: server scheduled")
 
@@ -1863,14 +1865,29 @@ func mediaProxyURL(rawURL, referer, cookie string) string {
 	return internalServerBaseURL + "/proxy/media?" + params.Encode()
 }
 
-func integratedPlaybackPayload(streamURL, referer, cookie, streamKind, title, sourceLabel string) map[string]interface{} {
-	proxyURL := mediaProxyURL(streamURL, referer, cookie)
+func transcodeProxyURL(rawURL, referer, cookie string) string {
+	params := url.Values{}
+	params.Set("url", rawURL)
+	if strings.TrimSpace(referer) != "" {
+		params.Set("referer", referer)
+	}
+	if strings.TrimSpace(cookie) != "" {
+		params.Set("cookie", cookie)
+	}
+	return internalServerBaseURL + "/proxy/transcode?" + params.Encode()
+}
+
+func integratedPlaybackPayloadWithURL(streamURL, playbackURL, referer, cookie, streamKind, title, sourceLabel, quality string) map[string]interface{} {
+	effectivePlaybackURL := strings.TrimSpace(playbackURL)
+	if effectivePlaybackURL == "" {
+		effectivePlaybackURL = mediaProxyURL(streamURL, referer, cookie)
+	}
 	return map[string]interface{}{
 		"launched":          false,
 		"fallback_type":     "integrated",
 		"player_type":       "integrated",
-		"fallback_url":      proxyURL,
-		"proxy_url":         proxyURL,
+		"fallback_url":      effectivePlaybackURL,
+		"proxy_url":         effectivePlaybackURL,
 		"stream_url":        streamURL,
 		"raw_stream_url":    streamURL,
 		"stream_host":       hostFromURL(streamURL),
@@ -1879,9 +1896,91 @@ func integratedPlaybackPayload(streamURL, referer, cookie, streamKind, title, so
 		"has_cookie":        strings.TrimSpace(cookie) != "",
 		"stream_kind":       firstNonEmptyString(streamKind, inferStreamKind(streamURL)),
 		"source_label":      sourceLabel,
+		"quality":           strings.TrimSpace(quality),
 		"episode_thumbnail": "",
 		"title":             title,
 	}
+}
+
+func integratedPlaybackPayload(streamURL, referer, cookie, streamKind, title, sourceLabel, quality string) map[string]interface{} {
+	return integratedPlaybackPayloadWithURL(streamURL, "", referer, cookie, streamKind, title, sourceLabel, quality)
+}
+
+func integratedPlaybackPayloadForSource(sourceID string, stream extensions.StreamSource, title, sourceLabel string) map[string]interface{} {
+	if shouldUseIntegratedTranscode(sourceID, stream) {
+		return integratedPlaybackPayloadWithURL(
+			stream.URL,
+			transcodeProxyURL(stream.URL, stream.Referer, stream.Cookie),
+			stream.Referer,
+			stream.Cookie,
+			"transcoded",
+			title,
+			sourceLabel,
+			stream.Quality,
+		)
+	}
+	return integratedPlaybackPayload(
+		stream.URL,
+		stream.Referer,
+		stream.Cookie,
+		inferStreamKind(stream.URL),
+		title,
+		sourceLabel,
+		stream.Quality,
+	)
+}
+
+func integratedPlaybackCandidatePayloadsForSource(sourceID string, primary extensions.StreamSource, candidates []extensions.StreamSource, title, sourceLabel string) []map[string]interface{} {
+	ordered := make([]extensions.StreamSource, 0, len(candidates)+1)
+	seen := map[string]struct{}{}
+	appendCandidate := func(candidate extensions.StreamSource) {
+		key := strings.TrimSpace(candidate.URL) + "|" + strings.TrimSpace(candidate.Referer) + "|" + strings.TrimSpace(candidate.Cookie)
+		if key == "||" {
+			return
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		ordered = append(ordered, candidate)
+	}
+
+	appendCandidate(primary)
+	for _, candidate := range candidates {
+		appendCandidate(candidate)
+	}
+
+	payloads := make([]map[string]interface{}, 0, len(ordered))
+	for _, candidate := range ordered {
+		payloads = append(payloads, integratedPlaybackPayloadForSource(sourceID, candidate, title, sourceLabel))
+	}
+	return payloads
+}
+
+func shouldUseIntegratedTranscode(sourceID string, stream extensions.StreamSource) bool {
+	if strings.TrimSpace(stream.URL) == "" {
+		return false
+	}
+	if sourceID != "animepahe-en" {
+		return false
+	}
+	return inferStreamKind(stream.URL) == "hls"
+}
+
+func integratedTranscodeExpectedDurationSec(stream extensions.StreamSource, fallbackDurationSec int) float64 {
+	if fallbackDurationSec > 0 {
+		return float64(fallbackDurationSec)
+	}
+	durationSec, err := transcode.ProbeDurationSeconds("", stream.URL, stream.Referer, stream.Cookie)
+	if err != nil {
+		log.Debug().
+			Err(err).
+			Str("stream_host", hostFromURL(stream.URL)).
+			Str("referer_host", hostFromURL(stream.Referer)).
+			Msg("integrated transcode duration probe unavailable")
+		return 0
+	}
+	return durationSec
 }
 
 func (a *App) onlineSourceName(sourceID string) string {
@@ -2320,9 +2419,15 @@ func (a *App) OpenOnlineEpisode(sourceID, episodeID, animeID, animeTitle, coverU
 				Str("chosen_referer_host", hostFromURL(chosenStream.Referer)).
 				Msg("integrated playback selected fallback candidate")
 		}
-		payload := integratedPlaybackPayload(chosenStream.URL, chosenStream.Referer, chosenStream.Cookie, inferStreamKind(chosenStream.URL), playbackCtx.EpisodeTitle, srcName)
-		payload["resume_sec"] = playbackCtx.ProgressSec
-		payload["duration_sec"] = playbackCtx.DurationSec
+		payload := integratedPlaybackPayloadForSource(sourceID, chosenStream, playbackCtx.EpisodeTitle, srcName)
+		payload["stream_candidates"] = integratedPlaybackCandidatePayloadsForSource(sourceID, chosenStream, candidates, playbackCtx.EpisodeTitle, srcName)
+		if shouldUseIntegratedTranscode(sourceID, chosenStream) {
+			payload["resume_sec"] = 0
+			payload["duration_sec"] = integratedTranscodeExpectedDurationSec(chosenStream, playbackCtx.DurationSec)
+		} else {
+			payload["resume_sec"] = playbackCtx.ProgressSec
+			payload["duration_sec"] = playbackCtx.DurationSec
+		}
 		payload["episode_thumbnail"] = playbackCtx.EpisodeThumb
 		return payload, nil
 	}
@@ -2517,7 +2622,7 @@ func (a *App) StreamTorrentMagnet(magnet, displayTitle, playerMode string) (map[
 	}
 	localURL := internalServerBaseURL + "/torrent/stream?id=" + url.QueryEscape(session.ID)
 	if a.playbackMode(playerMode) == "integrated" {
-		payload := integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle, "Torrent")
+		payload := integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle, "Torrent", "")
 		payload["session_id"] = session.ID
 		payload["info_hash"] = session.InfoHash
 		payload["file_name"] = session.FileName
@@ -2525,7 +2630,7 @@ func (a *App) StreamTorrentMagnet(magnet, displayTitle, playerMode string) (map[
 		return payload, nil
 	}
 	if a.player == nil {
-		payload := integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle, "Torrent")
+		payload := integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle, "Torrent", "")
 		payload["session_id"] = session.ID
 		payload["info_hash"] = session.InfoHash
 		payload["file_name"] = session.FileName
@@ -2533,7 +2638,7 @@ func (a *App) StreamTorrentMagnet(magnet, displayTitle, playerMode string) (map[
 		return payload, nil
 	}
 	if err := a.player.OpenEpisode(localURL, -1, 0, session.DisplayTitle, session.FileName, 0); err != nil {
-		payload := integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle, "Torrent")
+		payload := integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle, "Torrent", "")
 		payload["session_id"] = session.ID
 		payload["info_hash"] = session.InfoHash
 		payload["file_name"] = session.FileName

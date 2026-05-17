@@ -9,6 +9,7 @@ description: "Anime streaming and manga reader desktop client with AniList sync.
 homepage: "https://github.com/NipahDevTeam/Nipah--Anime"
 license: "Proprietary"
 depends:
+  - ffmpeg
   - mpv
   - libgtk-3-0
   - libwebkit2gtk-4.1-0

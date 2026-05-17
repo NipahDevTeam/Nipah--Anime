@@ -12,6 +12,7 @@ import {
   getReaderCanvasVariables,
   getReaderScrollPageLayout,
   getReaderScrollSheetVariables,
+  getReaderSpreadPages,
   getReaderViewMode,
   getReaderViewport,
   getSavedReaderBookmark,
@@ -268,6 +269,11 @@ export default function MangaReader({
     totalPages: pages.length,
     pageMetrics,
   }), [currentPage, pageMetrics, pages.length, readerSettings.readingMode])
+  const spreadPages = useMemo(() => getReaderSpreadPages({
+    readingMode: readerSettings.readingMode,
+    readingDirection: readerSettings.readingDirection,
+    visiblePages: viewport.visiblePages,
+  }), [readerSettings.readingDirection, readerSettings.readingMode, viewport.visiblePages])
 
   const progressPage = viewport.visiblePages.length
     ? viewport.visiblePages[viewport.visiblePages.length - 1] + 1
@@ -631,7 +637,7 @@ export default function MangaReader({
     }, 40)
 
     return () => window.clearTimeout(timeout)
-  }, [chapterID, error, loading, pages.length, readerSettings.readingMode, resetReaderViewportToStart])
+  }, [chapterID, error, loading, pages.length, resetReaderViewportToStart])
 
   useEffect(() => {
     if (loading || error || pages.length === 0) return
@@ -1062,7 +1068,7 @@ export default function MangaReader({
                 </button>
 
                 <div className={`reader-spread reader-spread--${readerSettings.readingMode}`} style={readerCanvasStyle}>
-                  {(readerSettings.readingDirection === 'rtl' ? [...viewport.visiblePages].reverse() : viewport.visiblePages).map((pageIndex, spreadSlotIndex) => {
+                  {spreadPages.map(({ pageIndex, slot }, spreadSlotIndex) => {
                     const page = pages[pageIndex]
                     if (!page) return null
                     const intrinsicPageSize = pageIntrinsicSizes[page.renderKey]
@@ -1089,7 +1095,7 @@ export default function MangaReader({
                       })
                       : null
                     const sheetClassName = readerSettings.readingMode === 'double'
-                      ? `reader-page-sheet--double ${spreadSlotIndex === 0 ? 'reader-page-sheet--double-left' : 'reader-page-sheet--double-right'}`
+                      ? `reader-page-sheet--double ${slot === 'left' ? 'reader-page-sheet--double-left' : 'reader-page-sheet--double-right'}`
                       : 'reader-page-sheet--paged'
                     return (
                       <ReaderPageSheet

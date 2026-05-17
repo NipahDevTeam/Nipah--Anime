@@ -16,6 +16,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -41,6 +43,23 @@ type animePaheCookieSolveState struct {
 	err     error
 }
 
+type animePahePersistedCookie struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Domain string `json:"domain,omitempty"`
+	Path   string `json:"path,omitempty"`
+}
+
+type animePahePersistedCookieEntry struct {
+	Base      string                     `json:"base"`
+	ExpiresAt time.Time                  `json:"expires_at"`
+	Cookies   []animePahePersistedCookie `json:"cookies"`
+}
+
+type animePahePersistedCookieFile struct {
+	Entries map[string]animePahePersistedCookieEntry `json:"entries"`
+}
+
 var (
 	cachedMu            sync.Mutex
 	cachedCookiesByBase = map[string]animePaheCookieCacheEntry{}
@@ -49,6 +68,7 @@ var (
 
 	getAnimePaheValidCookies = getValidCookies
 	solveAnimePaheDDoSGuard  = solveDDoSGuard
+	animePaheCookieCachePath = defaultAnimePaheCookieCachePath
 )
 
 // getValidCookies returns cached DDoS-Guard cookies, refreshing if expired.
@@ -64,6 +84,14 @@ func getValidCookiesWithContext(ctx context.Context, targetBase string) ([]*http
 		cookies := cloneAnimePaheCookies(entry.cookies)
 		cachedMu.Unlock()
 		return cookies, nil
+	}
+	if cookies, expiresAt, ok := loadPersistedAnimePaheCookies(targetBase); ok {
+		cachedCookiesByBase[targetBase] = animePaheCookieCacheEntry{
+			cookies:   cloneAnimePaheCookies(cookies),
+			expiresAt: expiresAt,
+		}
+		cachedMu.Unlock()
+		return cloneAnimePaheCookies(cookies), nil
 	}
 
 	if inflight, ok := inflightSolveByBase[targetBase]; ok {
@@ -97,9 +125,13 @@ func getValidCookiesWithContext(ctx context.Context, targetBase string) ([]*http
 			cookies:   cloneAnimePaheCookies(storedCookies),
 			expiresAt: time.Now().Add(cookieTTL),
 		}
+		if persistErr := persistAnimePaheCookies(targetBase, storedCookies, time.Now().Add(cookieTTL)); persistErr != nil {
+			browserLog.Debug().Err(persistErr).Str("base", targetBase).Msg("Persisting AnimePahe cookies failed")
+		}
 		browserLog.Info().Str("base", targetBase).Int("cookies", len(storedCookies)).Dur("ttl", cookieTTL).Msg("DDoS-Guard solved")
 	} else {
 		delete(cachedCookiesByBase, targetBase)
+		_ = clearPersistedAnimePaheCookies(targetBase)
 	}
 	inflight.cookies = storedCookies
 	inflight.err = err
@@ -119,11 +151,14 @@ func invalidateCookies(targetBases ...string) {
 
 	if len(targetBases) == 0 {
 		cachedCookiesByBase = map[string]animePaheCookieCacheEntry{}
+		_ = clearPersistedAnimePaheCookies()
 		return
 	}
 
 	for _, base := range targetBases {
-		delete(cachedCookiesByBase, animePaheOrigin(base))
+		normalizedBase := animePaheOrigin(base)
+		delete(cachedCookiesByBase, normalizedBase)
+		_ = clearPersistedAnimePaheCookies(normalizedBase)
 	}
 }
 
@@ -379,4 +414,146 @@ func animePaheSelectBrowserFetchContent(bodyText, preText, outerHTML string, aja
 		return bodyText
 	}
 	return preText
+}
+
+func defaultAnimePaheCookieCachePath() string {
+	if configDir, err := os.UserConfigDir(); err == nil && strings.TrimSpace(configDir) != "" {
+		return filepath.Join(configDir, "Nipah", "animepahe-cookies.json")
+	}
+	return filepath.Join(os.TempDir(), "animepahe-cookies.json")
+}
+
+func persistAnimePaheCookies(targetBase string, cookies []*http.Cookie, expiresAt time.Time) error {
+	targetBase = animePaheOrigin(targetBase)
+	path := animePaheCookieCachePath()
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+
+	store, err := readAnimePahePersistedCookieFile(path)
+	if err != nil {
+		return err
+	}
+	if store.Entries == nil {
+		store.Entries = map[string]animePahePersistedCookieEntry{}
+	}
+
+	persisted := make([]animePahePersistedCookie, 0, len(cookies))
+	for _, cookie := range cookies {
+		if cookie == nil {
+			continue
+		}
+		persisted = append(persisted, animePahePersistedCookie{
+			Name:   cookie.Name,
+			Value:  cookie.Value,
+			Domain: cookie.Domain,
+			Path:   cookie.Path,
+		})
+	}
+
+	store.Entries[targetBase] = animePahePersistedCookieEntry{
+		Base:      targetBase,
+		ExpiresAt: expiresAt,
+		Cookies:   persisted,
+	}
+	return writeAnimePahePersistedCookieFile(path, store)
+}
+
+func loadPersistedAnimePaheCookies(targetBase string) ([]*http.Cookie, time.Time, bool) {
+	targetBase = animePaheOrigin(targetBase)
+	path := animePaheCookieCachePath()
+	if strings.TrimSpace(path) == "" {
+		return nil, time.Time{}, false
+	}
+
+	store, err := readAnimePahePersistedCookieFile(path)
+	if err != nil || store.Entries == nil {
+		return nil, time.Time{}, false
+	}
+
+	entry, ok := store.Entries[targetBase]
+	if !ok || time.Now().After(entry.ExpiresAt) {
+		return nil, time.Time{}, false
+	}
+
+	cookies := make([]*http.Cookie, 0, len(entry.Cookies))
+	for _, cookie := range entry.Cookies {
+		cookies = append(cookies, &http.Cookie{
+			Name:   cookie.Name,
+			Value:  cookie.Value,
+			Domain: cookie.Domain,
+			Path:   cookie.Path,
+		})
+	}
+	if !animePaheHasUsableCookies(cookies) {
+		return nil, time.Time{}, false
+	}
+	return cookies, entry.ExpiresAt, true
+}
+
+func clearPersistedAnimePaheCookies(targetBases ...string) error {
+	path := animePaheCookieCachePath()
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+
+	if len(targetBases) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+
+	store, err := readAnimePahePersistedCookieFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if store.Entries == nil {
+		return nil
+	}
+	for _, base := range targetBases {
+		delete(store.Entries, animePaheOrigin(base))
+	}
+	if len(store.Entries) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return writeAnimePahePersistedCookieFile(path, store)
+}
+
+func readAnimePahePersistedCookieFile(path string) (animePahePersistedCookieFile, error) {
+	var store animePahePersistedCookieFile
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return animePahePersistedCookieFile{Entries: map[string]animePahePersistedCookieEntry{}}, nil
+		}
+		return animePahePersistedCookieFile{}, err
+	}
+	if len(body) == 0 {
+		return animePahePersistedCookieFile{Entries: map[string]animePahePersistedCookieEntry{}}, nil
+	}
+	if err := json.Unmarshal(body, &store); err != nil {
+		return animePahePersistedCookieFile{}, err
+	}
+	if store.Entries == nil {
+		store.Entries = map[string]animePahePersistedCookieEntry{}
+	}
+	return store, nil
+}
+
+func writeAnimePahePersistedCookieFile(path string, store animePahePersistedCookieFile) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	body, err := json.Marshal(store)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, body, 0600)
 }

@@ -353,6 +353,28 @@ export function getReaderViewport({ readingMode = 'paged', currentPage = 0, tota
   }
 }
 
+export function getReaderSpreadPages({
+  readingMode = DEFAULT_READER_SETTINGS.readingMode,
+  readingDirection = DEFAULT_READER_SETTINGS.readingDirection,
+  visiblePages = [],
+} = {}) {
+  const safeVisiblePages = Array.isArray(visiblePages) ? visiblePages : []
+
+  if (readingMode !== 'double') {
+    return safeVisiblePages.map((pageIndex) => ({
+      pageIndex,
+      slot: 'single',
+    }))
+  }
+
+  return safeVisiblePages.map((pageIndex, spreadSlotIndex) => ({
+    pageIndex,
+    slot: readingDirection === 'rtl'
+      ? (spreadSlotIndex === 0 ? 'right' : 'left')
+      : (spreadSlotIndex === 0 ? 'left' : 'right'),
+  }))
+}
+
 export function stepReaderIndex({ readingMode = 'paged', currentPage = 0, totalPages = 0, direction = 'next', pageMetrics = [] }) {
   const safeTotal = Math.max(0, Number(totalPages) || 0)
   if (safeTotal <= 1) return 0

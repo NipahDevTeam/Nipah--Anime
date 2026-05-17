@@ -54,6 +54,18 @@ assert.ok(
   'GUI v2 Home should compute a reduced opening manga lane set before deferred hydration completes',
 )
 
+assert.equal(
+  source.indexOf('{lane.subtitle ? <div className="gui2-homev2-band-subtitle">{lane.subtitle}</div> : null}'),
+  -1,
+  'GUI v2 Home discovery lanes should not render subtitle copy under row titles',
+)
+
+assert.equal(
+  source.indexOf('{section.subtitle ? <div className="gui2-homev2-band-subtitle">{section.subtitle}</div> : null}'),
+  -1,
+  'GUI v2 Home shelf bands should not render subtitle copy under row titles',
+)
+
 assert.ok(
   source.includes('return (openingLanes.length > 0 ? openingLanes : mangaLanes).slice(0, 3)'),
   'GUI v2 Home should keep the first Manga reveal to a compact multi-lane set instead of collapsing to a single shelf',

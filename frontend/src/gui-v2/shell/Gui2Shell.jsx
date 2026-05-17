@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import NipahLogo from './NipahLogo'
+import appIconToolbar from '../../assets/branding/app-icon-toolbar.png'
 import { getGui2Navigation } from '../routeRegistry'
 import { useI18n } from '../../lib/i18n'
 import { wails } from '../../lib/wails'
@@ -99,7 +99,7 @@ export default function Gui2Shell({ routeMeta, preview, children }) {
       <aside className="gui2-sidebar gui2-smart-rail">
         <div className="gui2-rail-brand">
           <div className="gui2-rail-brand-mark" aria-hidden="true">
-            <NipahLogo className="gui2-rail-logo" />
+            <img className="gui2-rail-logo" src={appIconToolbar} alt="" />
           </div>
         </div>
 
