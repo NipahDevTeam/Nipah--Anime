@@ -7,6 +7,9 @@
 # === Go Build Cache ===
 .gocache/
 .gocache-release/
+.gocache-local/
+.gocache-probe/
+.gocache-wsl/
 gocache/
 build/*
 !build/appicon.png
@@ -39,6 +42,7 @@ frontend/tmp-preview-*.out
 
 # === Temporary & Scrape Cache Files ===
 .tmp_*
+.tmp-handle/
 .tmp-cdp-client/
 *.tmp
 tmp_*.html
@@ -47,6 +51,8 @@ tmp_*.log
 tmp_*.png
 tmp-preview.*
 ERROR.txt
+wails-dev.log
+.tmp-wails-dev.log
 wails-live.*
 wailsreport.txt
 gitprogress.txt
@@ -59,12 +65,16 @@ gitprogress.txt
 *.a
 
 # === Browser QA Profiles ===
+.claude/
 .chrome-headless/
+.playwright-cli/
 .edge-profile*/
 artifacts/
 
 
 # === Personal / Internal Files ===
+.codex-*/
+.worktrees/
 backup/
 backups/
 PROJECT_HANDOFF*.md
