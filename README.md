@@ -2,34 +2,29 @@
 
 # Nipah! Anime
 
-**A desktop app for anime, manga, and AniList sync.**  
-**Una app de escritorio para anime, manga, y sincronizacion con AniList.**
+**A bilingual desktop app for anime streaming, manga reading, AniList sync, and local library management.**  
+**Una app de escritorio bilingue para streaming de anime, lectura de manga, sincronizacion con AniList, y gestion de biblioteca local.**
 
 </div>
 
 <p align="center">
-  <img src="./docs/assets/readme/app1.png" alt="Nipah! Anime home" width="100%" />
-</p>
-
-<p align="center">
-  <img src="./docs/assets/readme/app2.png" alt="Nipah! Anime anime catalog" width="49%" />
-  <img src="./docs/assets/readme/app3.png" alt="Nipah! Anime manga catalog" width="49%" />
+  <img src="./banner.png" alt="Nipah! Anime banner" width="100%" />
 </p>
 
 ---
 
 ## English
 
-Nipah! Anime brings anime streaming, manga reading, AniList sync, and local library management into one desktop app.
+Nipah! Anime is an app for anime streaming, manga reading, AniList sync, and local library management for a smooth desktop-first experience.
 
 ### Donations
 
-Nipah! Anime is a one-man project, developed and constantly maintained by yours truly. If you are enjoying Nipah! Anime and it has been of use to you, please consider supporting me:
+Nipah! Anime is a one-man project, developed and maintained with ongoing care. If the app has been useful to you and you would like to support its continued development, please consider donating:
 
 **BTC**  
-`bc1q806k3948azqzc97nr0u3cp39ynevjm8jdvlsk4`
+`bc1qqcdz2dx4jl9n04u6gpxcvw2y5050vwepxcymeh`
 
-You can also support me by giving this repo a star and sharing it with others.
+You can also support the project by starring the repository and sharing it with other anime and manga fans.
 
 ### Tech Stack
 
@@ -42,29 +37,28 @@ You can also support me by giving this repo a star and sharing it with others.
 
 ### Feature Highlights
 
-- Stream anime from multiple online providers inside one desktop app.
-- Read manga with a dedicated reader built for long reading sessions.
-- Sync anime and manga progress with AniList.
-- Keep watching, reading, and list management in the same workflow.
-- Use a bilingual desktop experience built for English and Spanish users.
+- Stream anime from multiple online providers.
+- Watch anime through a fully integrated in-app player built for desktop viewing.
+- Read manga with a dedicated reader.
+- Sync anime and manga progress with AniList in the same workflow.
+- Keep streaming, reading, tracking, and list management in one place.
+- Bilingual desktop experience built for both English and Spanish users.
 - Manage personal lists with score, progress, status, and date editing.
-- Use premium desktop-focused navigation, smoother transitions, and stronger library UX.
-- Mix online usage with local library management in one place.
 
 ---
 
-## Espanol
+## Español
 
-Nipah! Anime reune streaming de anime, lectura de manga, sincronizacion con AniList y gestion de biblioteca local en una sola app de escritorio.
+Nipah! Anime es una app de streaming de anime, lectura de manga, sincronizacion con AniList y gestion de biblioteca local.
 
-### Donaciones
+### Donaciones / Apoyo
 
-Nipah! Anime es un proyecto desarrollado y mantenido constantemente por una sola persona. Si te ha gustado Nipah! Anime, considera apoyarme para seguir trabajando en el proyecto:
+Nipah! Anime es un proyecto desarrollado y mantenido por una sola persona con trabajo constante. Si la app te ha sido util y quieres apoyar su desarrollo, considera hacer una donacion:
 
 **BTC**  
-`bc1q806k3948azqzc97nr0u3cp39ynevjm8jdvlsk4`
+`bc1qqcdz2dx4jl9n04u6gpxcvw2y5050vwepxcymeh`
 
-Tambien puedes apoyar el proyecto dandole una estrella al repositorio y compartiendolo con otras personas.
+También puedes apoyar el proyecto dándole una estrella al repositorio y compartiéndolo con otros fans del anime y el manga.
 
 ### Tech Stack
 
@@ -77,14 +71,13 @@ Tambien puedes apoyar el proyecto dandole una estrella al repositorio y comparti
 
 ### Funcionalidades Destacadas
 
-- Reproduce anime desde multiples proveedores online dentro de una sola app de escritorio.
+- Reproduce anime desde multiples proveedores online.
+- Mira anime con un reproductor totalmente integrado dentro de la app.
 - Lee manga con un lector dedicado pensado para sesiones largas.
-- Sincroniza el progreso de anime y manga con AniList.
-- Mantiene visualizacion, lectura y gestion de listas dentro del mismo flujo.
-- Ofrece una experiencia bilingue pensada para usuarios de ingles y espanol.
-- Permite gestionar listas personales con score, progreso, estado y fechas.
-- Usa una interfaz de escritorio con transiciones mas suaves y una experiencia de biblioteca mas cuidada.
-- Combina uso online con gestion de biblioteca local en un solo lugar.
+- Sincroniza el progreso de anime y manga con AniList dentro del mismo flujo.
+- Mantiene visualización, lectura, seguimiento y gestion de listas en un solo lugar.
+- Ofrece una experiencia bilingue pensada para usuarios de ingles y español.
+- Permite gestionar listas personales con puntuacion, progreso, estado y fechas.
 
 ---
 
