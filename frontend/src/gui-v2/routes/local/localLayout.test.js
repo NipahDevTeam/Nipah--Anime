@@ -33,6 +33,12 @@ assert.ok(!animeRoute.includes('gui2-detail-page'), 'local anime route should no
 assert.ok(!mangaRoute.includes('gui2-detail-page'), 'local manga route should not use the old gui2 detail page shell')
 assert.ok(!animeRoute.includes('Local anime landing'), 'local anime route should not inject the old local landing eyebrow copy')
 assert.ok(!mangaRoute.includes('Local manga landing'), 'local manga route should not inject the old local landing eyebrow copy')
+assert.ok(!animeRoute.includes('<aside className="gui2-landing-sidecard">'), 'local anime landing hero should not render a duplicate Details sidecard above the workspace')
+assert.ok(!mangaRoute.includes('<aside className="gui2-landing-sidecard">'), 'local manga landing hero should not render a duplicate Details sidecard above the workspace')
+assert.ok(animeRoute.includes('<LandingMetaPanel title={isEnglish ? \'Details\' : \'Detalles\'} rows={detailRows} />'), 'local anime landing should keep the lower Details panel in the aside')
+assert.ok(mangaRoute.includes('<LandingMetaPanel title={isEnglish ? \'Details\' : \'Detalles\'} rows={detailRows} />'), 'local manga landing should keep the lower Details panel in the aside')
+assert.ok(animeRoute.includes('className="gui2-landing-panel gui2-landing-panel--progression"'), 'local anime landing should mark the episode queue as a progression surface')
+assert.ok(mangaRoute.includes('className="gui2-landing-panel gui2-landing-panel--progression"'), 'local manga landing should mark the chapter queue as a progression surface')
 assert.ok(animeRoute.includes('buildEpisodeGroups'), 'local anime route should preserve subfolder grouping')
 assert.ok(animeRoute.includes('folder_name'), 'local anime route should still read folder_name from episode payloads')
 

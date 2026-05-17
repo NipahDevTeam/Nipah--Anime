@@ -230,7 +230,7 @@ func (a *App) resolveOnlineMangaIdentityWithNeedles(sourceID, sourceMangaID, sou
 	allowUnresolvedThrottle := len(extraNeedles) == 0
 	if existing, err := a.db.GetOnlineMangaSourceMapForGeneration(sourceID, sourceMangaID, currentGeneration); err == nil && existing != nil {
 		if existing.AniListID > 0 {
-			meta, err := a.metadata.GetAniListMangaByID(existing.AniListID)
+			meta, err := a.loadAniListMangaMetadata(existing.AniListID)
 			if err == nil && meta != nil {
 				return a.buildResolvedMangaIdentity(meta, existing.Confidence), nil
 			}
@@ -244,7 +244,7 @@ func (a *App) resolveOnlineMangaIdentityWithNeedles(sourceID, sourceMangaID, sou
 		existingAnyGeneration.AniListID > 0 &&
 		existingAnyGeneration.ResolverGeneration != currentGeneration &&
 		cachedMangaSourceMapLooksPlausible(*existingAnyGeneration) {
-		meta, err := a.metadata.GetAniListMangaByID(existingAnyGeneration.AniListID)
+		meta, err := a.loadAniListMangaMetadata(existingAnyGeneration.AniListID)
 		if err == nil && meta != nil {
 			return a.buildResolvedMangaIdentity(meta, existingAnyGeneration.Confidence), nil
 		}
@@ -346,7 +346,7 @@ func (a *App) matchAniListMangaCandidates(candidates []string, sourceYear int) (
 
 	seen := map[int]candidateResult{}
 	for _, query := range candidates[:queryLimit] {
-		entries, err := a.metadata.SearchAniListMangaEntries(query)
+		entries, _, err := a.searchAniListMangaEntriesCached(query)
 		if err != nil {
 			continue
 		}
@@ -1294,7 +1294,7 @@ func (a *App) SearchMangaGlobal(query, lang string) ([]map[string]interface{}, e
 		var lastErr error
 		var retryableFailure bool
 		for _, candidate := range searchCandidates {
-			results, err := a.metadata.SearchAniListMangaEntries(candidate)
+			results, _, err := a.searchAniListMangaEntriesCached(candidate)
 			if err != nil {
 				if metadata.IsRetryableAniListError(err) {
 					retryableFailure = true
@@ -1856,7 +1856,7 @@ func (a *App) GetHomeMangaRecommendations(seedAniListIDs []int, excludeAniListID
 		for _, seedID := range seeds {
 			seedID := seedID
 			seedPool.Go(func() *metadata.AniListMangaMetadata {
-				meta, err := a.metadata.GetAniListMangaByID(seedID)
+				meta, err := a.loadAniListMangaMetadata(seedID)
 				if err != nil || meta == nil {
 					return nil
 				}
@@ -2022,7 +2022,7 @@ func (a *App) hydrateOnlineMangaHistoryEntry(entry db.WatchHistoryEntry) db.Watc
 	}
 
 	if entry.AniListID > 0 {
-		if meta, err := a.metadata.GetAniListMangaByID(entry.AniListID); err == nil && meta != nil {
+		if meta, err := a.loadAniListMangaMetadata(entry.AniListID); err == nil && meta != nil {
 			resolveFromMeta(meta)
 			return entry
 		}
@@ -2031,7 +2031,7 @@ func (a *App) hydrateOnlineMangaHistoryEntry(entry db.WatchHistoryEntry) db.Watc
 	if a.db != nil && entry.SourceID != "" && entry.AnimeID != "" {
 		if mapped, err := a.db.GetOnlineMangaSourceMapForGeneration(entry.SourceID, entry.AnimeID, currentMangaResolverGeneration()); err == nil && mapped != nil && mapped.AniListID > 0 {
 			entry.AniListID = mapped.AniListID
-			if meta, metaErr := a.metadata.GetAniListMangaByID(mapped.AniListID); metaErr == nil && meta != nil {
+			if meta, metaErr := a.loadAniListMangaMetadata(mapped.AniListID); metaErr == nil && meta != nil {
 				resolveFromMeta(meta)
 				return entry
 			}

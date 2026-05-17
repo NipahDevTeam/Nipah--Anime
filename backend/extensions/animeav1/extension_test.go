@@ -162,3 +162,15 @@ func TestParseEpisodesPrefersEmbeddedHydrationEpisodeList(t *testing.T) {
 		t.Fatalf("expected final embedded episode to be 55, got %#v", episodes[len(episodes)-1])
 	}
 }
+
+func TestAnimeAV1ShouldDeferEmbedTreatsZillaPlayAsFast(t *testing.T) {
+	if animeAV1ShouldDeferEmbed("https://player.zilla-networks.com/play/895959da0493f8f975e01708b9237c34") {
+		t.Fatal("expected zilla play embeds to stay on the fast path")
+	}
+	if !animeAV1ShouldDeferEmbed("https://mega.nz/embed/H7gwBQTD#token") {
+		t.Fatal("expected mega embeds to remain deferred")
+	}
+	if animeAV1ShouldDeferEmbed("https://www.mp4upload.com/embed-ap9y5sdg4h0b.html") {
+		t.Fatal("expected mp4upload embeds to remain on the fast path")
+	}
+}

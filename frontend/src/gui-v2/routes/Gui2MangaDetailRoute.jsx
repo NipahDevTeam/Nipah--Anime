@@ -339,23 +339,12 @@ export default function Gui2MangaDetailRoute({ mediaID, preview = false }) {
             </div>
           </div>
 
-          <aside className="gui2-landing-sidecard">
-            <h3 className="gui2-landing-sidecard-title">{isEnglish ? 'Details' : 'Detalles'}</h3>
-            <div className="gui2-landing-sidecard-list">
-              {detailRows.map((row) => (
-                <div key={`detail-${row.label}`} className="gui2-landing-sidecard-row">
-                  <span>{row.label}</span>
-                  <strong>{row.value}</strong>
-                </div>
-              ))}
-            </div>
-          </aside>
         </div>
       </section>
 
       <div className="gui2-landing-workspace">
         <div className="gui2-landing-main">
-          <section className="gui2-landing-panel">
+          <section className="gui2-landing-panel gui2-landing-panel--progression">
             <div className="gui2-landing-section-head">
               <h3 className="gui2-landing-section-title">{isEnglish ? 'Release Info' : 'Informacion de lanzamiento'}</h3>
             </div>

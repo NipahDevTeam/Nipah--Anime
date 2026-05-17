@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -77,4 +78,10 @@ func TestReserveAniListTurnSerializesConcurrentReservations(t *testing.T) {
 	if want := now.Add(2 * aniListTurnDelay); !third.Equal(want) {
 		t.Fatalf("expected third AniList reservation at %s, got %s", want, third)
 	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }

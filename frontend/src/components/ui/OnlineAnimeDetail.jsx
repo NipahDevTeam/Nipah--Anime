@@ -5,10 +5,13 @@ import { providerUsesExplicitEpisodeAudioVariant, shouldAllowAutomaticAudioFallb
 import { toastError, toastSuccess } from '../ui/Toast'
 import { useI18n } from '../../lib/i18n'
 import { extractAniListAnimeSearchMedia } from '../../lib/anilistSearch'
-import { enrichEpisodesWithAnimePaheArtwork, mergeEpisodeArtworkByNumber } from '../../lib/episodeArtwork'
+import { enrichEpisodesWithAnimePaheArtwork, hasZeroThumbnailCoverage, mergeEpisodeArtworkByNumber } from '../../lib/episodeArtwork'
+import { pickEpisodeArtwork } from '../../lib/episodeArtworkPriority'
 import IntegratedVideoPlayer from './IntegratedVideoPlayer'
 import { perfEnd, perfMark } from '../../lib/perfTrace'
 import { buildMotionVars } from '../../gui-v2/motion/gui2Motion'
+import LandingRecommendationsStage from './landing/LandingRecommendationsStage'
+import { buildLandingQueueWindow } from './landing/landingQueueWindowing'
 
 const SOURCE_LABELS = {
   'jkanime-es': { name: 'JKAnime', color: '#c084fc', flag: 'ES' },
@@ -28,6 +31,76 @@ function detectOnlineAudioFlavor(values = []) {
     if (/\bsub(?:bed|titles?)?\b/.test(text)) return 'sub'
   }
   return ''
+}
+
+function getAnimeRecommendationTitle(item) {
+  const media = item?.media || item?.node || item
+  const directTitle = typeof item?.title === 'string' ? item.title : ''
+  return String(
+    directTitle
+    || item?.name
+    || item?.anime_title
+    || media?.title?.english
+    || media?.title?.romaji
+    || media?.title?.native
+    || '',
+  ).trim()
+}
+
+function getAnimeRecommendationImage(item) {
+  const media = item?.media || item?.node || item
+  return String(
+    media?.coverImage?.extraLarge
+    || media?.coverImage?.large
+    || media?.coverImage?.medium
+    || item?.coverImage?.extraLarge
+    || item?.coverImage?.large
+    || item?.coverImage?.medium
+    || media?.image
+    || item?.image
+    || '',
+  ).trim()
+}
+
+function getAnimeRecommendationSubtitle(item) {
+  const media = item?.media || item?.node || item
+  const values = [
+    media?.format,
+    media?.status ? String(media.status).replaceAll('_', ' ') : '',
+    item?.rating ? `${item.rating}` : '',
+  ].filter(Boolean)
+  return values.join(' · ')
+}
+
+function buildAnimeRecommendationNavigationEntry(item) {
+  const media = item?.media || item?.node || item
+  const anilistID = Number(media?.id || item?.anilist_id || item?.id || 0)
+  const title = {
+    english: typeof media?.title?.english === 'string' ? media.title.english : '',
+    romaji: typeof media?.title?.romaji === 'string' ? media.title.romaji : '',
+    native: typeof media?.title?.native === 'string' ? media.title.native : '',
+  }
+  const coverImage = media?.coverImage || item?.coverImage || null
+
+  if (anilistID <= 0 && !title.english && !title.romaji && !title.native) return null
+
+  return {
+    ...media,
+    id: anilistID > 0 ? anilistID : Number(media?.id || 0),
+    anilist_id: anilistID,
+    title,
+    title_english: title.english,
+    title_romaji: title.romaji,
+    title_native: title.native,
+    coverImage,
+    cover_large: coverImage?.extraLarge || coverImage?.large || '',
+    cover_medium: coverImage?.medium || '',
+    banner_image: media?.bannerImage || item?.bannerImage || '',
+    description: typeof media?.description === 'string' ? media.description : '',
+    format: media?.format || item?.format || '',
+    status: media?.status || item?.status || '',
+    seasonYear: Number(media?.seasonYear || item?.seasonYear || 0),
+  }
 }
 
 function EpisodeGridSkeleton({ count = 8 }) {
@@ -51,21 +124,30 @@ function EpisodeGridSkeleton({ count = 8 }) {
   )
 }
 
-export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null }) {
+export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null, onRecommendationSelect = null }) {
   const [episodes, setEpisodes] = useState(() => anime.prefetchedEpisodes ?? [])
   const [streaming, setStreaming] = useState(null)
   const [downloading, setDownloading] = useState(null)
   const [synopsis, setSynopsis] = useState('')
+  const [showFullSynopsis, setShowFullSynopsis] = useState(false)
   const [addingToList, setAddingToList] = useState(false)
   const [integratedPlayback, setIntegratedPlayback] = useState(null)
+  const [pendingIntegratedEpisode, setPendingIntegratedEpisode] = useState(null)
+  const [watchState, setWatchState] = useState('browse')
+  const [streamFamily, setStreamFamily] = useState('online')
+  const [playbackMode, setPlaybackMode] = useState('mpv')
   const [preferredAudio, setPreferredAudio] = useState('sub')
   const [desiredAudioFlavor, setDesiredAudioFlavor] = useState('sub')
   const [audioVariantSwitching, setAudioVariantSwitching] = useState(false)
   const [episodeFilter, setEpisodeFilter] = useState('unwatched')
+  const [episodePage, setEpisodePage] = useState(1)
   const [providerCoverFailed, setProviderCoverFailed] = useState(false)
   const { t, lang } = useI18n()
   const autoVariantSyncKeyRef = useRef('')
   const artworkEnrichmentKeyRef = useRef('')
+  const autoIntegratedLaunchKeyRef = useRef('')
+  const shouldScrollToPlayerRef = useRef(false)
+  const playerStageRef = useRef(null)
   const isEnglish = lang === 'en'
   const isResolvingSource = Boolean(anime.pending_resolve)
   const sourceAnimeID = String(anime.id ?? anime.anime_id ?? anime.animeID ?? '').trim()
@@ -105,8 +187,9 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
     audioSwitchHint: isEnglish ? 'Switch the provider edition above the episode list.' : 'Cambia la edición del proveedor encima de la lista de episodios.',
     mpvMode: 'MPV',
     integratedMode: isEnglish ? 'In-app' : 'Dentro de la app',
-    mpvModeDesc: isEnglish ? 'Temporarily the only playback mode while the in-app player is being stabilized.' : 'Temporalmente el unico modo de reproduccion mientras estabilizamos el reproductor interno.',
+    mpvModeDesc: isEnglish ? 'Use the desktop player for the fastest handoff and the most forgiving provider compatibility.' : 'Usa el reproductor de escritorio para el traspaso mas rapido y la compatibilidad mas tolerante entre fuentes.',
     integratedModeDesc: isEnglish ? 'Keeps playback inside Nipah! with quick episode controls and a darker theater view.' : 'Mantiene la reproducción dentro de Nipah! con controles rápidos y una vista más cinemática.',
+    preparingIntegrated: isEnglish ? 'Preparing the in-app stream...' : 'Preparando el stream dentro de la app...',
     loadingEpisodes: isEnglish ? 'Loading episodes...' : 'Cargando episodios...',
     resolvingSource: isEnglish ? 'Resolving source and preparing episodes...' : 'Resolviendo fuente y preparando episodios...',
     noEpisodesDesc: (name) => isEnglish ? `No episodes were found for this series on ${name}.` : `No se encontraron episodios para esta serie en ${name}.`,
@@ -126,19 +209,40 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
     watchAgain: isEnglish ? 'Watch again' : 'Ver de nuevo',
     previousEpisode: isEnglish ? 'Previous episode' : 'Episodio anterior',
     nextEpisode: isEnglish ? 'Next episode' : 'Siguiente episodio',
+    moreEpisodes: isEnglish ? 'More episodes' : 'Mas episodios',
+    currentlyPlaying: isEnglish ? 'Now playing' : 'Reproduciendo',
+    playThisEpisode: isEnglish ? 'Play this episode' : 'Reproducir este episodio',
     noArtwork: isEnglish ? 'No artwork' : 'Sin arte',
     watched: isEnglish ? 'Watched' : 'Visto',
     episode: isEnglish ? 'Episode' : 'Episodio',
     download: isEnglish ? 'Download' : 'Descargar',
-    sourceAccess: isEnglish ? 'Source access' : 'Acceso a fuente',
+    sourceAccess: isEnglish ? 'Streaming mode' : 'Modo de streaming',
     playbackMode: isEnglish ? 'Playback mode' : 'Modo de reproduccion',
     episodeQueue: isEnglish ? 'Episode queue' : 'Cola de episodios',
     episodeQueueCopy: isEnglish ? 'A cleaner list with quick playback actions and a stable desktop rhythm.' : 'Una lista mas limpia con acciones rapidas y un ritmo de escritorio estable.',
     continueLabel: isEnglish ? 'Continue watching' : 'Continuar viendo',
     fallbackCast: isEnglish ? 'Cast is still loading from AniList. The page stays usable in the meantime.' : 'El reparto sigue cargando desde AniList. La pagina se mantiene usable mientras tanto.',
+    onlineStreaming: isEnglish ? 'Online Streaming' : 'Streaming online',
+    torrentStreaming: isEnglish ? 'Torrent Streaming' : 'Streaming torrent',
+    streamFamilyCopy: isEnglish ? 'Start with instant streaming now. Torrent support can join this landing later without changing the primary watch flow.' : 'Empieza con streaming instantaneo ahora. El soporte torrent puede sumarse a este landing despues sin cambiar el flujo principal de ver.',
+    recommendationsTitle: isEnglish ? 'Keep watching' : 'Sigue viendo',
+    recommendationsCopy: isEnglish ? 'A quieter lower shelf for what should naturally follow this title once the landing room is fully enriched.' : 'Una repisa inferior mas tranquila para lo que deberia seguir de forma natural a este titulo cuando el landing termine de enriquecerse.',
+    recommendationsEmptyCopy: isEnglish ? 'Related anime will settle here as recommendation data and source enrichment finish wiring in.' : 'Los animes relacionados se acomodaran aqui cuando terminen de conectarse las recomendaciones y el enriquecimiento de fuentes.',
+    readMore: isEnglish ? 'Read more' : 'Leer mas',
+    readLess: isEnglish ? 'Show less' : 'Mostrar menos',
+    torrentUnavailable: isEnglish ? 'Torrent streaming UI is ready, but the backend handoff still needs to land before playback can start here.' : 'La UI de streaming torrent ya esta lista, pero el backend todavia debe aterrizar antes de que la reproduccion pueda empezar aqui.',
+    torrentQueueEmpty: isEnglish ? 'Torrent streaming is being wired in' : 'El streaming torrent se esta cableando',
+    torrentQueueCopy: isEnglish ? 'This watch surface is already reserved for the torrent flow. Once the backend lands, the same room will promote integrated playback and queue navigation here.' : 'Esta superficie ya esta reservada para el flujo torrent. Cuando aterrice el backend, este mismo espacio promovera la reproduccion integrada y la navegacion por episodios aqui.',
   }
 
   const cleanSynopsis = synopsis ? synopsis.replace(/<[^>]+>/g, '').trim() : ''
+  const synopsisPreview = useMemo(() => {
+    const text = cleanSynopsis.trim()
+    if (!text) return ''
+    if (showFullSynopsis) return text
+    const limit = watchState === 'watch' ? 140 : 220
+    return text.length > limit ? `${text.slice(0, limit).trim()}…` : text
+  }, [cleanSynopsis, showFullSynopsis, watchState])
 
   const extractEpisodeNumber = useCallback((value) => {
     if (!value) return null
@@ -167,10 +271,13 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
   }, [anime.anilistStreamingEpisodes, extractEpisodeNumber])
 
   const getEpisodeArtwork = useCallback((ep) => {
-    if (ep.thumbnail) return proxyImage(ep.thumbnail)
     const anilistThumb = getAniListEpisodeThumbnail(ep)
-    if (anilistThumb) return anilistThumb
-    return backdropSrc
+    const resolvedArtwork = pickEpisodeArtwork({
+      providerThumbnail: ep.thumbnail ? proxyImage(ep.thumbnail) : '',
+      anilistThumbnail: anilistThumb,
+      fallbackArtwork: backdropSrc,
+    })
+    return resolvedArtwork
   }, [backdropSrc, getAniListEpisodeThumbnail])
 
   useEffect(() => {
@@ -179,12 +286,15 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
       .then((settings) => {
         const value = String(settings?.preferred_audio ?? 'sub').trim().toLowerCase()
         const normalized = value === 'dub' ? 'dub' : 'sub'
+        const preferredPlayer = String(settings?.player ?? 'mpv').trim().toLowerCase() === 'integrated' ? 'integrated' : 'mpv'
         setPreferredAudio(normalized)
         setDesiredAudioFlavor(explicitAudio || normalized)
+        setPlaybackMode(preferredPlayer)
       })
       .catch(() => {
         setPreferredAudio('sub')
         setDesiredAudioFlavor(explicitAudio || 'sub')
+        setPlaybackMode('mpv')
       })
   }, [anime?.audio_variant, anime])
 
@@ -196,7 +306,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
   const activeAudioVariant = desiredAudioFlavor === 'dub' ? 'dub' : 'sub'
 
   const animeDetailQuery = useQuery({
-    queryKey: ['anime-detail-anilist', currentAniListID, anime.title, lang],
+    queryKey: ['anime-detail-anilist-v3', currentAniListID, lang],
     queryFn: async () => {
       let detail = null
 
@@ -287,6 +397,16 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
     }).catch(() => {})
   }, [])
 
+  const persistPreferredPlayerMode = useCallback(async (targetMode) => {
+    const normalized = targetMode === 'integrated' ? 'integrated' : 'mpv'
+    setPlaybackMode(normalized)
+    const settings = await wails.getSettings().catch(() => ({}))
+    await wails.saveSettings({
+      ...settings,
+      player: normalized,
+    }).catch(() => {})
+  }, [])
+
   const handleAudioVariantChange = useCallback(async (targetAudio, options = {}) => {
     if (!supportsAudioVariants) return false
     const normalizedTarget = targetAudio === 'dub' ? 'dub' : 'sub'
@@ -343,13 +463,14 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
   const episodesQuery = useQuery({
     queryKey: ['online-episodes', anime.source_id, sourceAnimeID, Number(anime.anilist_id || anime.anilistID || 0), Number(anime.episodes_watched || 0)],
     queryFn: async () => {
-      const nextEpisodes = anime.prefetchedEpisodes?.length
-        ? anime.prefetchedEpisodes
-        : await wails.getOnlineEpisodes(anime.source_id, sourceAnimeID)
+      const nextEpisodes = await wails.getOnlineEpisodes(anime.source_id, sourceAnimeID, 0)
+      const hydratedEpisodes = Array.isArray(anime.prefetchedEpisodes) && anime.prefetchedEpisodes.length > 0
+        ? mergeEpisodeArtworkByNumber(nextEpisodes ?? [], anime.prefetchedEpisodes)
+        : (nextEpisodes ?? [])
 
       const watchedFloor = Number(anime.episodes_watched || 0)
 
-      return (nextEpisodes ?? []).map((ep) => ({
+      return hydratedEpisodes.map((ep) => ({
         ...ep,
         watched: Boolean(ep.watched) || ((Number(ep.number) || 0) > 0 && (Number(ep.number) || 0) <= watchedFloor),
       }))
@@ -357,7 +478,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
     placeholderData: anime.prefetchedEpisodes ?? [],
     staleTime: 15 * 60_000,
     gcTime: 45 * 60_000,
-    refetchOnMount: false,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false,
     enabled: Boolean(anime.source_id && sourceAnimeID && !isResolvingSource),
   })
@@ -369,8 +490,16 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
   }, [episodesQuery.data])
 
   useEffect(() => {
+    if (!Array.isArray(anime.prefetchedEpisodes) || anime.prefetchedEpisodes.length === 0) return
+    setEpisodes((current) => {
+      if (!Array.isArray(current) || current.length === 0) return anime.prefetchedEpisodes
+      return mergeEpisodeArtworkByNumber(current, anime.prefetchedEpisodes)
+    })
+  }, [anime.prefetchedEpisodes])
+
+  useEffect(() => {
     if (!Array.isArray(episodes) || episodes.length === 0) return
-    if (episodes.some((ep) => ep?.thumbnail)) return
+    if (!hasZeroThumbnailCoverage(episodes)) return
     if (!anime?.title && !anime?.anilist_id && !anime?.anilistID) return
 
     const enrichmentKey = [
@@ -401,6 +530,33 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
   }, [anime.source_id, sourceAnimeID])
 
   useEffect(() => {
+    setStreamFamily('online')
+  }, [anime.source_id, sourceAnimeID])
+
+  useEffect(() => {
+    setEpisodePage(1)
+  }, [episodeFilter, anime.source_id, sourceAnimeID])
+
+  useEffect(() => {
+    setShowFullSynopsis(false)
+  }, [anime.source_id, sourceAnimeID])
+
+  useEffect(() => {
+    if (integratedPlayback?.url || pendingIntegratedEpisode) {
+      setWatchState('watch')
+      return
+    }
+    setWatchState('browse')
+  }, [integratedPlayback?.url, pendingIntegratedEpisode])
+
+  useEffect(() => {
+    setIntegratedPlayback(null)
+    setPendingIntegratedEpisode(null)
+    autoIntegratedLaunchKeyRef.current = ''
+    shouldScrollToPlayerRef.current = false
+  }, [anime.source_id, sourceAnimeID])
+
+  useEffect(() => {
     if (isResolvingSource || !sourceAnimeID || anime.source_id !== 'jkanime-es') {
       setSynopsis(anime.description || anime.anilistDescription || '')
       return
@@ -422,7 +578,14 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
       ? episodes
       : episodes.filter((ep) => !ep.watched)
   ), [episodeFilter, episodes])
-  const resumeEpisode = episodes.find((ep) => !ep.watched) ?? episodes[0] ?? null
+  const episodeWindow = useMemo(() => buildLandingQueueWindow({
+    items: visibleEpisodes,
+    page: episodePage,
+    pageSize: 12,
+  }), [episodePage, visibleEpisodes])
+  const pagedVisibleEpisodes = episodeWindow.items
+  const nextUnwatchedEpisode = episodes.find((ep) => !ep.watched) ?? null
+  const replayEpisode = episodes[0] ?? null
   const headlineFacts = [
     anime.year ? String(anime.year) : null,
     episodes.length > 0 ? `${episodes.length} ${t('Episodios')}` : null,
@@ -436,8 +599,9 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
     animeDetailQuery.data?.score ? { label: isEnglish ? 'Score' : 'Puntuacion', value: String(animeDetailQuery.data.score) } : null,
     animeDetailQuery.data?.source ? { label: isEnglish ? 'Source' : 'Origen', value: animeDetailQuery.data.source } : null,
   ].filter(Boolean)
+  const watchedCount = episodes.filter((ep) => ep.watched).length
   const progressValue = episodes.length > 0
-    ? Math.max(0, Math.min(100, Math.round(((episodes.length - visibleEpisodes.length) / episodes.length) * 100)))
+    ? Math.max(0, Math.min(100, Math.round((watchedCount / episodes.length) * 100)))
     : 0
   useEffect(() => {
     if (!anime.perf_token) return
@@ -486,9 +650,13 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
     }
   }, [integratedPlayback])
 
+  const handleIntegratedPlaybackEnd = useCallback((positionSec, durationSec) => {
+    void closeIntegratedPlayback(true, positionSec, durationSec)
+  }, [closeIntegratedPlayback])
+
   const launchEpisode = useCallback(async (ep, modeOverride = null, audioOverride = '') => {
     const openWithAudio = async (targetAudio, allowFallback) => {
-      const effectiveMode = modeOverride === 'integrated' ? 'integrated' : 'mpv'
+      const effectiveMode = (modeOverride ?? playbackMode) === 'integrated' ? 'integrated' : 'mpv'
       const useExplicitVariant = providerUsesExplicitEpisodeAudioVariant(anime.source_id)
         && supportsAudioVariants
         && ['sub', 'dub'].includes(targetAudio)
@@ -526,6 +694,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
             lastPositionSec: Number(playback.resume_sec || 0),
             lastDurationSec: Number(playback.duration_sec || 0),
           })
+          setPendingIntegratedEpisode(null)
           toastSuccess(ui.integratedOpen)
         }
         toastSuccess(ui.openingEpisode(ep.number))
@@ -570,6 +739,9 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
         } else {
           toastError(ui.playError(msg))
         }
+        if (effectiveMode === 'integrated') {
+          setPendingIntegratedEpisode(null)
+        }
         return false
       }
     }
@@ -585,11 +757,50 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
     } finally {
       setStreaming(null)
     }
-  }, [activeAudioVariant, anime, audioVariantAvailability?.dub, audioVariantAvailability?.sub, currentAniListID, currentMalID, isEnglish, source.name, sourceAnimeID, supportsAudioVariants, ui.challengeError, ui.integratedOpen, ui.mpvMissing, ui.openingEpisode, ui.playError, ui.resolveError])
+  }, [activeAudioVariant, anime, audioVariantAvailability?.dub, audioVariantAvailability?.sub, currentAniListID, currentMalID, isEnglish, playbackMode, source.name, sourceAnimeID, supportsAudioVariants, ui.challengeError, ui.integratedOpen, ui.mpvMissing, ui.openingEpisode, ui.playError, ui.resolveError])
 
   const handleStream = useCallback(async (ep) => {
+    if (streamFamily === 'torrent') {
+      toastError(ui.torrentUnavailable)
+      return
+    }
     await launchEpisode(ep)
-  }, [launchEpisode])
+  }, [launchEpisode, streamFamily, ui.torrentUnavailable])
+
+  const handleStreamFamilyChange = useCallback(async (targetFamily) => {
+    const normalized = targetFamily === 'torrent' ? 'torrent' : 'online'
+    setStreamFamily(normalized)
+
+    if (normalized !== 'online') {
+      setPendingIntegratedEpisode(null)
+      if (integratedPlayback?.url) {
+        await closeIntegratedPlayback(false)
+      }
+    }
+  }, [closeIntegratedPlayback, integratedPlayback?.url])
+
+  const handlePlayerModeChange = useCallback(async (targetMode) => {
+    const normalized = targetMode === 'integrated' ? 'integrated' : 'mpv'
+    await persistPreferredPlayerMode(normalized)
+
+    if (normalized === 'integrated') {
+      if (integratedPlayback?.url || pendingIntegratedEpisode) return
+      const episode = nextUnwatchedEpisode ?? replayEpisode
+      if (!episode) return
+      shouldScrollToPlayerRef.current = true
+      setPendingIntegratedEpisode(episode)
+      const launched = await launchEpisode(episode, 'integrated')
+      if (!launched) {
+        setPendingIntegratedEpisode(null)
+      }
+      return
+    }
+
+    setPendingIntegratedEpisode(null)
+    if (integratedPlayback?.url) {
+      await closeIntegratedPlayback(false)
+    }
+  }, [closeIntegratedPlayback, integratedPlayback?.url, launchEpisode, nextUnwatchedEpisode, pendingIntegratedEpisode, persistPreferredPlayerMode, replayEpisode])
 
   const handleUseExternalPlayer = useCallback(async () => {
     const playback = integratedPlayback
@@ -660,11 +871,22 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
   const animeDetail = animeDetailQuery.data
   const titleEnglish = animeDetail?.title_english || anime.title_english || anime.titleEnglish || anime.title || anime.anime_title || ''
   const titleNative = animeDetail?.title_native || anime.title_native || anime.titleNative || ''
-  const watchedCount = episodes.filter((ep) => ep.watched).length
   const canAddToList = currentAniListID > 0 && !anime.in_anime_list && !anime.in_list && !anime.anime_list_status
   const factsInline = headlineFacts.filter(Boolean)
   const airingInfoRows = [
-    resumeEpisode ? { label: isEnglish ? 'Next Episode' : 'Siguiente episodio', value: resumeEpisode.title ?? `${t('Episodio')} ${resumeEpisode.number}`, note: resumeEpisode.number ? `${t('Episodio')} ${resumeEpisode.number}` : '' } : null,
+    nextUnwatchedEpisode
+      ? {
+          label: isEnglish ? 'Next Episode' : 'Siguiente episodio',
+          value: nextUnwatchedEpisode.title ?? `${t('Episodio')} ${nextUnwatchedEpisode.number}`,
+          note: nextUnwatchedEpisode.number ? `${t('Episodio')} ${nextUnwatchedEpisode.number}` : '',
+        }
+      : replayEpisode
+        ? {
+            label: isEnglish ? 'Replay from' : 'Repetir desde',
+            value: replayEpisode.title ?? `${t('Episodio')} ${replayEpisode.number}`,
+            note: replayEpisode.number ? `${t('Episodio')} ${replayEpisode.number}` : '',
+          }
+        : null,
     animeDetail?.nextAiringEpisode?.airingAt ? { label: isEnglish ? 'Airing schedule' : 'Horario de estreno', value: new Date(animeDetail.nextAiringEpisode.airingAt * 1000).toLocaleString(isEnglish ? 'en-US' : 'es-CL') } : null,
     animeDetail?.nextAiringEpisode?.episode ? { label: isEnglish ? 'Upcoming' : 'Proximo', value: `${t('Episodio')} ${animeDetail.nextAiringEpisode.episode}` } : null,
     { label: isEnglish ? 'Watch on' : 'Ver en', value: source.name, note: supportsDownloads ? ui.streamingDownload : ui.streamingOnly },
@@ -688,11 +910,145 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
     animeDetail?.averageScore ? { label: isEnglish ? 'Score' : 'Puntuacion', value: `${animeDetail.averageScore}` } : null,
     animeDetail?.genres?.length ? { label: isEnglish ? 'Genres' : 'Generos', value: animeDetail.genres.join(', ') } : null,
   ].filter(Boolean)
-  const integratedEpisodeNumber = Number(integratedPlayback?.episode?.number || 0)
+  const streamFamilyOptions = [
+    { value: 'online', label: ui.onlineStreaming, active: streamFamily === 'online', disabled: false },
+    { value: 'torrent', label: ui.torrentStreaming, active: streamFamily === 'torrent', disabled: false },
+  ]
+  const playbackModeOptions = [
+    { value: 'mpv', label: ui.mpvMode, active: playbackMode === 'mpv' },
+    { value: 'integrated', label: ui.integratedMode, active: playbackMode === 'integrated' },
+  ]
+  const explicitRecommendationItems = useMemo(() => {
+    const rawGroups = [
+      animeDetail?.recommendations,
+      animeDetail?.related_recommendations,
+    ]
+    const normalized = rawGroups
+      .flatMap((group) => Array.isArray(group) ? group : [])
+      .map((item, index) => {
+        const title = getAnimeRecommendationTitle(item)
+        if (!title) return null
+
+        const keyParts = [
+          item?.id,
+          item?.media?.id,
+          item?.node?.id,
+          item?.mal_id,
+          item?.source_id,
+          item?.slug,
+          item?.url,
+          title,
+          index,
+        ].filter(Boolean)
+
+        return {
+          key: keyParts.join(':'),
+          title,
+          image: getAnimeRecommendationImage(item),
+          eyebrow: isEnglish ? 'Related anime' : 'Anime relacionado',
+          subtitle: getAnimeRecommendationSubtitle(item),
+          navigationEntry: buildAnimeRecommendationNavigationEntry(item),
+        }
+      })
+      .filter(Boolean)
+
+    return Array.from(new Map(normalized.map((item) => [item.key, item])).values()).slice(0, 6)
+  }, [animeDetail?.recommendations, animeDetail?.related_recommendations])
+  const recommendationItems = useMemo(() => {
+    return explicitRecommendationItems.slice(0, 6)
+  }, [explicitRecommendationItems])
+  const activeWatchEpisode = integratedPlayback?.episode ?? pendingIntegratedEpisode
+  const integratedEpisodeNumber = Number(activeWatchEpisode?.number || 0)
   const integratedPlayerTitle = anime.anime_title || anime.title
   const integratedPlayerEpisodeLabel = integratedEpisodeNumber > 0
     ? `${isEnglish ? 'Episode' : 'Episodio'} ${integratedEpisodeNumber}`
-    : (integratedPlayback?.subtitle || (isEnglish ? 'Episode' : 'Episodio'))
+    : (activeWatchEpisode?.title || integratedPlayback?.subtitle || (isEnglish ? 'Episode' : 'Episodio'))
+  const isWatchState = watchState === 'watch'
+  const showIntegratedWatchState = isWatchState && Boolean(integratedPlayback?.url || pendingIntegratedEpisode)
+  const heroPrimaryEpisode = nextUnwatchedEpisode ?? replayEpisode
+  const heroPrimaryLabel = nextUnwatchedEpisode
+    ? (watchedCount > 0
+        ? ui.continueLabel
+        : (isEnglish
+            ? `Play S1 E${nextUnwatchedEpisode.number || 1}`
+            : `Ver T1 E${nextUnwatchedEpisode.number || 1}`))
+    : replayEpisode
+      ? ui.watchAgain
+      : ''
+
+  useEffect(() => {
+    if (playbackMode !== 'integrated') return
+    if (streamFamily !== 'online') return
+    if (integratedPlayback?.url || pendingIntegratedEpisode) return
+    if (loading || isResolvingSource || error) return
+    const episode = nextUnwatchedEpisode ?? replayEpisode
+    if (!episode) return
+
+    const autoLaunchKey = `${anime.source_id}:${sourceAnimeID}:${episode.id}:${playbackMode}`
+    if (autoIntegratedLaunchKeyRef.current === autoLaunchKey) return
+    autoIntegratedLaunchKeyRef.current = autoLaunchKey
+    shouldScrollToPlayerRef.current = true
+    setPendingIntegratedEpisode(episode)
+    void launchEpisode(episode, 'integrated').then((launched) => {
+      if (!launched) {
+        setPendingIntegratedEpisode(null)
+      }
+    })
+  }, [
+    anime.source_id,
+    error,
+    integratedPlayback?.url,
+    isResolvingSource,
+    launchEpisode,
+    loading,
+    nextUnwatchedEpisode,
+    pendingIntegratedEpisode,
+    playbackMode,
+    replayEpisode,
+    sourceAnimeID,
+    streamFamily,
+  ])
+
+  useEffect(() => {
+    if (!showIntegratedWatchState) return
+    if (!shouldScrollToPlayerRef.current) return
+    const target = playerStageRef.current
+    if (!target) return
+    shouldScrollToPlayerRef.current = false
+    let cancelled = false
+
+    const runScroll = () => {
+      if (cancelled) return
+      const liveTarget = playerStageRef.current
+      if (!liveTarget) return
+      const scroller = liveTarget.closest('.gui2-content')
+      if (scroller && 'scrollTo' in scroller) {
+        const scrollerRect = scroller.getBoundingClientRect()
+        const targetRect = liveTarget.getBoundingClientRect()
+        const top = scroller.scrollTop + (targetRect.top - scrollerRect.top) - 24
+        scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+        return
+      }
+      liveTarget.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(runScroll)
+      })
+    }, 90)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
+  }, [showIntegratedWatchState, integratedPlayback?.url, pendingIntegratedEpisode])
+
+  useEffect(() => {
+    if (episodeWindow.currentPage !== episodePage) {
+      setEpisodePage(episodeWindow.currentPage)
+    }
+  }, [episodePage, episodeWindow.currentPage])
 
   const handleAddToList = useCallback(async () => {
     if (!canAddToList || addingToList) return
@@ -728,89 +1084,16 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
     }
   }, [addingToList, anime, animeDetail?.episodes, animeDetail?.seasonYear, animeDetail?.status, canAddToList, currentAniListID, currentMalID, episodes.length, isEnglish, onAnimeChange, titleEnglish, watchedCount])
 
-  if (integratedPlayback?.url) {
-    return (
-      <div
-        className="gui2-online-player-page"
-        style={backdropSrc ? { '--gui2-online-player-backdrop': `url(${backdropSrc})` } : undefined}
-      >
-        <div className="gui2-online-player-copy">
-          <h1 className="gui2-online-player-title">{integratedPlayerTitle}</h1>
-          <p className="gui2-online-player-episode">{integratedPlayerEpisodeLabel}</p>
-        </div>
-
-        <IntegratedVideoPlayer
-          open={Boolean(integratedPlayback?.url)}
-          title={integratedPlayback?.title}
-          subtitle={integratedPlayback?.subtitle}
-          streamURL={integratedPlayback?.url}
-          rawStreamURL={integratedPlayback?.rawStreamURL}
-          proxyURL={integratedPlayback?.proxyURL}
-          streamHost={integratedPlayback?.streamHost}
-          streamKind={integratedPlayback?.kind}
-          sourceLabel={integratedPlayback?.sourceLabel}
-          initialPositionSec={integratedPlayback?.lastPositionSec ?? 0}
-          onPlaybackUpdate={handleIntegratedPlaybackUpdate}
-          onPlaybackEnd={(positionSec, durationSec) => closeIntegratedPlayback(true, positionSec, durationSec)}
-          onUseExternalPlayer={handleUseExternalPlayer}
-          onPrev={previousIntegratedEpisode ? () => handleIntegratedEpisodeJump(previousIntegratedEpisode) : null}
-          onNext={nextIntegratedEpisode ? () => handleIntegratedEpisodeJump(nextIntegratedEpisode) : null}
-          prevLabel={ui.previousEpisode}
-          nextLabel={ui.nextEpisode}
-          audioLabel={ui.audioTrack}
-          activeAudio={activeAudioVariant}
-          audioSwitching={audioVariantSwitching}
-          audioOptions={supportsAudioVariants ? [
-            { value: 'sub', label: ui.subtitles },
-            { value: 'dub', label: ui.dubbed },
-          ] : []}
-          onAudioChange={supportsAudioVariants ? handleIntegratedAudioSwitch : null}
-          presentation="gui2-page"
-          onClose={() => closeIntegratedPlayback(false)}
-        />
-      </div>
-    )
-  }
-
   return (
     <div
       className="fade-in media-detail-page media-detail-page--online gui2-landing-page gui2-landing-page--anime gui2-motion-enter"
       style={buildMotionVars('page')}
     >
-      <IntegratedVideoPlayer
-        open={Boolean(integratedPlayback?.url)}
-        title={integratedPlayback?.title}
-        subtitle={integratedPlayback?.subtitle}
-        streamURL={integratedPlayback?.url}
-        rawStreamURL={integratedPlayback?.rawStreamURL}
-        proxyURL={integratedPlayback?.proxyURL}
-        streamHost={integratedPlayback?.streamHost}
-        streamKind={integratedPlayback?.kind}
-        sourceLabel={integratedPlayback?.sourceLabel}
-        initialPositionSec={integratedPlayback?.lastPositionSec ?? 0}
-        onPlaybackUpdate={handleIntegratedPlaybackUpdate}
-        onPlaybackEnd={(positionSec, durationSec) => closeIntegratedPlayback(true, positionSec, durationSec)}
-        onUseExternalPlayer={handleUseExternalPlayer}
-        onPrev={previousIntegratedEpisode ? () => handleIntegratedEpisodeJump(previousIntegratedEpisode) : null}
-        onNext={nextIntegratedEpisode ? () => handleIntegratedEpisodeJump(nextIntegratedEpisode) : null}
-        prevLabel={ui.previousEpisode}
-        nextLabel={ui.nextEpisode}
-        audioLabel={ui.audioTrack}
-        activeAudio={activeAudioVariant}
-        audioSwitching={audioVariantSwitching}
-        audioOptions={supportsAudioVariants ? [
-          { value: 'sub', label: ui.subtitles },
-          { value: 'dub', label: ui.dubbed },
-        ] : []}
-        onAudioChange={supportsAudioVariants ? handleIntegratedAudioSwitch : null}
-        onClose={() => closeIntegratedPlayback(false)}
-      />
-
       <section
-        className="gui2-landing-hero gui2-landing-hero-premium"
+        className={`gui2-landing-hero gui2-landing-hero-premium${watchState === 'watch' ? ' gui2-landing-hero--watch' : ''}`}
         style={backdropSrc ? {
-          backgroundImage: `linear-gradient(180deg, rgba(7,7,10,0.16) 0%, rgba(7,7,10,0.76) 44%, rgba(7,7,10,0.97) 82%, rgba(7,7,10,0.99) 100%), radial-gradient(circle at top right, rgba(63, 116, 189, 0.2) 0%, rgba(63, 116, 189, 0) 34%), url(${backdropSrc})`,
-        } : {}}
+          '--gui2-landing-backdrop-image': `url(${backdropSrc})`,
+        } : undefined}
       >
         <div className="gui2-landing-toolbar">
           <button className="btn btn-ghost media-detail-back-btn" onClick={onBack}>
@@ -818,9 +1101,9 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
           </button>
         </div>
 
-        <div className={`gui2-landing-hero-grid gui2-landing-hero-grid--anime${coverSrc ? '' : ' gui2-landing-hero-grid--coverless'}`}>
+        <div className={`gui2-landing-hero-grid gui2-landing-hero-grid--anime${coverSrc ? '' : ' gui2-landing-hero-grid--coverless'}${showIntegratedWatchState ? ' gui2-landing-hero-grid--watch' : ''}`}>
           {coverSrc ? (
-            <div className="gui2-landing-cover-wrap">
+            <div className={`gui2-landing-cover-wrap${showIntegratedWatchState ? ' gui2-landing-cover-wrap--watch' : ''}`}>
               <img src={coverSrc} alt={anime.title} className="gui2-landing-cover gui2-landing-cover--round" onError={handleProviderCoverError} />
             </div>
           ) : null}
@@ -828,66 +1111,301 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
           <div className="gui2-landing-copy">
             <div className="gui2-landing-kicker">{t('Anime')}</div>
             <h1 className="gui2-landing-title">{anime.anime_title || anime.title}</h1>
-            {titleNative ? <div className="gui2-landing-subtitle">{titleNative}</div> : null}
-            {factsInline.length > 0 ? (
+            {!showIntegratedWatchState && titleNative ? <div className="gui2-landing-subtitle">{titleNative}</div> : null}
+            {!showIntegratedWatchState && factsInline.length > 0 ? (
               <div className="gui2-landing-facts-inline">
                 {factsInline.map((fact, index) => (
                   <span key={`${fact}-${index}`} className="gui2-landing-inline-fact">{fact}</span>
                 ))}
               </div>
             ) : null}
-            {cleanSynopsis ? <p className="gui2-landing-story">{cleanSynopsis}</p> : null}
+            {synopsisPreview ? (
+              <div className="gui2-landing-story-wrap">
+                <p className="gui2-landing-story">{synopsisPreview}</p>
+                {cleanSynopsis.length > 220 ? (
+                  <button
+                    className="gui2-landing-story-toggle"
+                    type="button"
+                    onClick={() => setShowFullSynopsis((current) => !current)}
+                  >
+                    {showFullSynopsis ? ui.readLess : ui.readMore}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
 
-            <div className="gui2-landing-actions">
-              {episodes[0] && !resumeEpisode ? (
-                <button className="btn btn-primary gui2-landing-primary-btn" type="button" onClick={() => handleStream(episodes[0])} disabled={streaming === episodes[0].id}>
-                  {isEnglish ? `Play S1 E${episodes[0].number || 1}` : `Ver T1 E${episodes[0].number || 1}`}
-                </button>
-              ) : null}
-              {resumeEpisode ? (
-                <button className="btn btn-ghost gui2-landing-secondary-btn" type="button" onClick={() => handleStream(resumeEpisode)} disabled={streaming === resumeEpisode.id}>
-                  {ui.continueLabel}
-                  <span className="gui2-landing-inline-progress">
-                    <span className="gui2-landing-inline-progress-fill" style={{ width: `${progressValue}%` }} />
-                  </span>
-                </button>
-              ) : null}
-              {canAddToList ? (
-                <button className="btn btn-ghost gui2-landing-secondary-btn" type="button" onClick={handleAddToList} disabled={addingToList}>
-                  {addingToList ? (isEnglish ? 'Adding...' : 'Agregando...') : (isEnglish ? 'Add to List' : 'Agregar a lista')}
-                </button>
-              ) : null}
-            </div>
+            {!showIntegratedWatchState ? (
+              <div className="gui2-landing-actions">
+                {heroPrimaryEpisode ? (
+                  <button className="btn btn-primary gui2-landing-primary-btn" type="button" onClick={() => handleStream(heroPrimaryEpisode)} disabled={streamFamily === 'torrent' || streaming === heroPrimaryEpisode.id}>
+                    {heroPrimaryLabel}
+                  </button>
+                ) : null}
+                {nextUnwatchedEpisode && watchedCount > 0 ? (
+                  <button className="btn btn-ghost gui2-landing-secondary-btn" type="button" onClick={() => handleStream(nextUnwatchedEpisode)} disabled={streamFamily === 'torrent' || streaming === nextUnwatchedEpisode.id}>
+                    {`${watchedCount}/${episodes.length} ${isEnglish ? 'watched' : 'vistos'}`}
+                    <span className="gui2-landing-inline-progress">
+                      <span className="gui2-landing-inline-progress-fill" style={{ width: `${progressValue}%` }} />
+                    </span>
+                  </button>
+                ) : null}
+                {canAddToList ? (
+                  <button className="btn btn-ghost gui2-landing-secondary-btn" type="button" onClick={handleAddToList} disabled={addingToList}>
+                    {addingToList ? (isEnglish ? 'Adding...' : 'Agregando...') : (isEnglish ? 'Add to List' : 'Agregar a lista')}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
         </div>
       </section>
 
-      <div className="gui2-landing-workspace">
+      <div className={`gui2-landing-workspace${isWatchState ? ' gui2-landing-workspace--watch' : ''}`}>
         <div className="gui2-landing-main">
-          <section className="gui2-landing-panel">
-            <div className="gui2-landing-section-head">
-              <h3 className="gui2-landing-section-title">{isEnglish ? 'Airing Info' : 'Informacion de emision'}</h3>
-            </div>
-            <AnimeLandingFactList rows={airingInfoRows} />
-          </section>
+          {showIntegratedWatchState ? (
+            <>
+              <AnimeLandingCharacterStrip
+                characters={selectedCharacters}
+                loading={animeDetailQuery.isLoading}
+                loadingLabel={ui.castLoading}
+                emptyLabel={ui.castEmpty}
+                title={ui.castTitle}
+                ui={ui}
+                className="gui2-landing-watch-cast"
+              />
 
-          <AnimeLandingCharacterStrip
-            characters={selectedCharacters}
-            loading={animeDetailQuery.isLoading}
-            loadingLabel={ui.castLoading}
-            emptyLabel={ui.castEmpty}
-            title={ui.castTitle}
-            actionLabel={isEnglish ? 'View all' : 'Ver todos'}
-            ui={ui}
-          />
+              <section
+                ref={playerStageRef}
+                className={`gui2-online-player-page${isWatchState ? ' gui2-online-player-page--active' : ''}`}
+              >
+                {showIntegratedWatchState ? (
+                  <>
+                    <section className="gui2-landing-panel gui2-landing-watch-tools">
+                      <div className="gui2-landing-section-head gui2-landing-section-head--split">
+                        <h3 className="gui2-landing-section-title">{ui.episodeQueue}</h3>
+                        <div className="gui2-landing-section-tools gui2-landing-section-tools--wrap">
+                          <div className="gui2-landing-tool-group gui2-landing-tool-group--stream">
+                            <span className="gui2-landing-tool-label">{ui.sourceAccess}</span>
+                            <div className="gui2-landing-family-toggle" aria-label={ui.sourceAccess}>
+                              {streamFamilyOptions.map((family) => (
+                                <button
+                                  key={family.value}
+                                  type="button"
+                                  className={`gui2-landing-family-btn${family.active ? ' active' : ''}`}
+                                  disabled={family.disabled}
+                                  onClick={() => handleStreamFamilyChange(family.value)}
+                                >
+                                  {family.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="gui2-landing-tool-group gui2-landing-tool-group--playback">
+                            <span className="gui2-landing-tool-label">{ui.playbackMode}</span>
+                            <div className="episode-playback-switch gui2-landing-playback-toggle" aria-label={ui.playbackMode}>
+                              {playbackModeOptions.map((option) => (
+                                <button
+                                  key={option.value}
+                                  className={`episode-playback-pill${option.active ? ' active' : ''}`}
+                                  type="button"
+                                  onClick={() => handlePlayerModeChange(option.value)}
+                                  title={option.value === 'integrated' ? ui.integratedModeDesc : ui.mpvModeDesc}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          {supportsAudioVariants ? (
+                            <div className="episode-audio-toolbar episode-audio-toolbar--inline gui2-landing-audio-toolbar gui2-landing-tool-group">
+                              <span className="episode-audio-toolbar-label">{ui.audioTrack}</span>
+                              <div className="episode-playback-switch" style={{ flexShrink: 0 }}>
+                                <button
+                                  className={`episode-playback-pill${activeAudioVariant === 'sub' ? ' active' : ''}`}
+                                  type="button"
+                                  disabled={audioVariantSwitching}
+                                  onClick={() => handleAudioVariantChange('sub')}
+                                  title={audioVariantSwitching ? ui.audioLoading : ui.subtitles}
+                                >
+                                  {ui.subtitles}
+                                </button>
+                                <button
+                                  className={`episode-playback-pill${activeAudioVariant === 'dub' ? ' active' : ''}`}
+                                  type="button"
+                                  disabled={audioVariantSwitching}
+                                  onClick={() => handleAudioVariantChange('dub')}
+                                  title={audioVariantSwitching ? ui.audioLoading : ui.dubbed}
+                                >
+                                  {ui.dubbed}
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                          {episodes.length > 0 ? <span className="gui2-landing-count">{visibleEpisodes.length}/{episodes.length}</span> : null}
+                        </div>
+                      </div>
+                    </section>
 
-          <section className="gui2-landing-panel">
+                    <div className="gui2-online-player-copy">
+                      <p className="gui2-online-player-episode">{ui.currentlyPlaying}</p>
+                      <h2 className="gui2-online-player-title">{integratedPlayerEpisodeLabel}</h2>
+                    </div>
+
+                    {integratedPlayback?.url ? (
+                      <IntegratedVideoPlayer
+                        open={Boolean(integratedPlayback?.url)}
+                        title={integratedPlayback?.title}
+                        subtitle={integratedPlayback?.subtitle}
+                        streamURL={integratedPlayback?.url}
+                        rawStreamURL={integratedPlayback?.rawStreamURL}
+                        proxyURL={integratedPlayback?.proxyURL}
+                        streamHost={integratedPlayback?.streamHost}
+                        streamKind={integratedPlayback?.kind}
+                        sourceLabel={integratedPlayback?.sourceLabel}
+                        initialPositionSec={integratedPlayback?.lastPositionSec ?? 0}
+                        onPlaybackUpdate={handleIntegratedPlaybackUpdate}
+                        onPlaybackEnd={handleIntegratedPlaybackEnd}
+                        onUseExternalPlayer={handleUseExternalPlayer}
+                        onPrev={previousIntegratedEpisode ? () => handleIntegratedEpisodeJump(previousIntegratedEpisode) : null}
+                        prevLabel={ui.previousEpisode}
+                        audioLabel={ui.audioTrack}
+                        activeAudio={activeAudioVariant}
+                        audioSwitching={audioVariantSwitching}
+                        audioOptions={supportsAudioVariants ? [
+                          { value: 'sub', label: ui.subtitles },
+                          { value: 'dub', label: ui.dubbed },
+                        ] : []}
+                        onAudioChange={supportsAudioVariants ? handleIntegratedAudioSwitch : null}
+                        presentation="gui2-page"
+                        onClose={() => closeIntegratedPlayback(false)}
+                      />
+                    ) : (
+                      <div className="gui2-online-player-loading">
+                        <div className="gui2-online-player-loading-spinner" aria-hidden="true" />
+                        <div className="gui2-online-player-loading-copy">{ui.preparingIntegrated}</div>
+                      </div>
+                    )}
+                  </>
+                ) : null}
+              </section>
+
+              <section className="gui2-landing-panel gui2-landing-watchnav">
+                <div className="gui2-landing-section-head gui2-landing-section-head--split gui2-landing-watchnav-head">
+                  <h3 className="gui2-landing-section-title">{ui.moreEpisodes}</h3>
+                  {episodeWindow.showPagination ? (
+                    <div className="gui2-landing-queue-pagination" aria-label={isEnglish ? 'Episode pages' : 'Paginas de episodios'}>
+                      <button
+                        type="button"
+                        className="gui2-landing-pagechip"
+                        onClick={() => setEpisodePage((page) => Math.max(1, page - 1))}
+                        disabled={episodeWindow.currentPage <= 1}
+                        aria-label={isEnglish ? 'Previous episode page' : 'Pagina anterior'}
+                      >
+                        {isEnglish ? 'Prev' : 'Anterior'}
+                      </button>
+                      {episodeWindow.pageChips.map((pageNumber) => (
+                        <button
+                          key={`episode-page-${pageNumber}`}
+                          type="button"
+                          className={`gui2-landing-pagechip${pageNumber === episodeWindow.currentPage ? ' active' : ''}`}
+                          onClick={() => setEpisodePage(pageNumber)}
+                          aria-current={pageNumber === episodeWindow.currentPage ? 'page' : undefined}
+                        >
+                          {pageNumber}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="gui2-landing-pagechip"
+                        onClick={() => setEpisodePage((page) => Math.min(episodeWindow.totalPages, page + 1))}
+                        disabled={episodeWindow.currentPage >= episodeWindow.totalPages}
+                        aria-label={isEnglish ? 'Next episode page' : 'Pagina siguiente'}
+                      >
+                        {isEnglish ? 'Next' : 'Siguiente'}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+                {visibleEpisodes.length > 0 ? (
+                  <div className="gui2-landing-watchnav-grid">
+                    {pagedVisibleEpisodes.map((ep) => {
+                      const artSrc = getEpisodeArtwork(ep)
+                      const isActive = integratedPlayback?.episodeID === ep.id
+                      return (
+                        <OnlineEpisodeWatchCard
+                          key={ep.id}
+                          ep={ep}
+                          artSrc={artSrc}
+                          sourceName={source.name}
+                          isActive={isActive}
+                          onSelect={handleIntegratedEpisodeJump}
+                          labels={ui}
+                        />
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="empty-state manga-filter-empty-state">
+                    <div className="empty-state-title">{ui.episodeFilterEmpty}</div>
+                    <p className="empty-state-desc">{ui.episodeFilterEmptyDesc}</p>
+                  </div>
+                )}
+              </section>
+            </>
+          ) : (
+            <>
+              <section className="gui2-landing-panel gui2-landing-panel--progression">
+                <AnimeLandingFactList rows={airingInfoRows} />
+              </section>
+
+              <AnimeLandingCharacterStrip
+                characters={selectedCharacters}
+                loading={animeDetailQuery.isLoading}
+                loadingLabel={ui.castLoading}
+                emptyLabel={ui.castEmpty}
+                title={ui.castTitle}
+                ui={ui}
+              />
+
+              <section className="gui2-landing-panel">
             <div className="gui2-landing-section-head gui2-landing-section-head--split">
               <h3 className="gui2-landing-section-title">{ui.episodeQueue}</h3>
               <div className="gui2-landing-section-tools gui2-landing-section-tools--wrap">
+                <div className="gui2-landing-tool-group gui2-landing-tool-group--stream">
+                  <span className="gui2-landing-tool-label">{ui.sourceAccess}</span>
+                  <div className="gui2-landing-family-toggle" aria-label={ui.sourceAccess}>
+                    {streamFamilyOptions.map((family) => (
+                      <button
+                        key={family.value}
+                        type="button"
+                        className={`gui2-landing-family-btn${family.active ? ' active' : ''}`}
+                        disabled={family.disabled}
+                        onClick={() => handleStreamFamilyChange(family.value)}
+                      >
+                        {family.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="gui2-landing-tool-group gui2-landing-tool-group--playback">
+                  <span className="gui2-landing-tool-label">{ui.playbackMode}</span>
+                  <div className="episode-playback-switch gui2-landing-playback-toggle" aria-label={ui.playbackMode}>
+                    {playbackModeOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        className={`episode-playback-pill${option.active ? ' active' : ''}`}
+                        type="button"
+                        onClick={() => handlePlayerModeChange(option.value)}
+                        title={option.value === 'integrated' ? ui.integratedModeDesc : ui.mpvModeDesc}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 {supportsAudioVariants ? (
-                  <div className="episode-audio-toolbar episode-audio-toolbar--inline gui2-landing-audio-toolbar">
+                  <div className="episode-audio-toolbar episode-audio-toolbar--inline gui2-landing-audio-toolbar gui2-landing-tool-group">
                     <span className="episode-audio-toolbar-label">{ui.audioTrack}</span>
                     <div className="episode-playback-switch" style={{ flexShrink: 0 }}>
                       <button
@@ -911,7 +1429,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
                     </div>
                   </div>
                 ) : null}
-                {episodes.length > 0 ? <span className="media-detail-count-pill">{visibleEpisodes.length}/{episodes.length}</span> : null}
+                {episodes.length > 0 ? <span className="gui2-landing-count">{visibleEpisodes.length}/{episodes.length}</span> : null}
                 <div className="manga-filter-toggle" role="tablist" aria-label={t('Episodios')}>
                   <button
                     type="button"
@@ -941,9 +1459,14 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
             ) : null}
 
             {!loading && !error ? (
-              visibleEpisodes.length > 0 ? (
+              streamFamily === 'torrent' ? (
+                <div className="empty-state manga-filter-empty-state">
+                  <div className="empty-state-title">{ui.torrentQueueEmpty}</div>
+                  <p className="empty-state-desc">{ui.torrentQueueCopy}</p>
+                </div>
+              ) : visibleEpisodes.length > 0 ? (
                 <div className="gui2-landing-episode-list gui2-landing-episodes-mediafirst">
-                  {visibleEpisodes.map((ep) => {
+                  {pagedVisibleEpisodes.map((ep) => {
                     const isStreaming = streaming === ep.id
                     const isDownloading = downloading === ep.id
                     const artSrc = getEpisodeArtwork(ep)
@@ -963,785 +1486,80 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null 
                       />
                     )
                   })}
-                </div>
-              ) : (
-                <div className="empty-state manga-filter-empty-state">
-                  <div className="empty-state-title">{ui.episodeFilterEmpty}</div>
-                  <p className="empty-state-desc">{ui.episodeFilterEmptyDesc}</p>
-                </div>
-              )
-            ) : null}
-          </section>
-        </div>
-
-        <aside className="gui2-landing-aside">
-          <AnimeLandingMetaPanel title={isEnglish ? 'Details' : 'Detalles'} rows={detailRows} />
-          <AnimeLandingMetaPanel title={isEnglish ? 'More Info' : 'Mas informacion'} rows={moreInfoRows} />
-
-          <section className="gui2-landing-panel">
-            <div className="gui2-landing-section-head">
-              <h3 className="gui2-landing-section-title">{ui.playbackMode}</h3>
-            </div>
-            <div className="gui2-landing-setting-block">
-              <div className="manga-filter-toggle" role="tablist" aria-label={ui.playbackMode}>
-                <button
-                  type="button"
-                  className="manga-filter-toggle-btn active"
-                  disabled
-                >
-                  {ui.mpvMode}
-                </button>
-              </div>
-              <p className="gui2-landing-setting-copy">
-                {ui.mpvModeDesc}
-              </p>
-            </div>
-
-            <div className="gui2-landing-source-inline">{source.name}</div>
-          </section>
-        </aside>
-      </div>
-    </div>
-  )
-
-  return (
-    <div className="fade-in media-detail-page media-detail-page--online">
-      <IntegratedVideoPlayer
-        open={Boolean(integratedPlayback?.url)}
-        title={integratedPlayback?.title}
-        subtitle={integratedPlayback?.subtitle}
-        streamURL={integratedPlayback?.url}
-        rawStreamURL={integratedPlayback?.rawStreamURL}
-        proxyURL={integratedPlayback?.proxyURL}
-        streamHost={integratedPlayback?.streamHost}
-        streamKind={integratedPlayback?.kind}
-        sourceLabel={integratedPlayback?.sourceLabel}
-        initialPositionSec={integratedPlayback?.lastPositionSec ?? 0}
-        onPlaybackUpdate={handleIntegratedPlaybackUpdate}
-        onPlaybackEnd={(positionSec, durationSec) => closeIntegratedPlayback(true, positionSec, durationSec)}
-        onUseExternalPlayer={handleUseExternalPlayer}
-        onPrev={previousIntegratedEpisode ? () => handleIntegratedEpisodeJump(previousIntegratedEpisode) : null}
-        onNext={nextIntegratedEpisode ? () => handleIntegratedEpisodeJump(nextIntegratedEpisode) : null}
-        prevLabel={ui.previousEpisode}
-        nextLabel={ui.nextEpisode}
-        audioLabel={ui.audioTrack}
-        activeAudio={activeAudioVariant}
-        audioSwitching={audioVariantSwitching}
-        audioOptions={supportsAudioVariants ? [
-          { value: 'sub', label: ui.subtitles },
-          { value: 'dub', label: ui.dubbed },
-        ] : []}
-        onAudioChange={supportsAudioVariants ? handleIntegratedAudioSwitch : null}
-        onClose={() => closeIntegratedPlayback(false)}
-      />
-
-      <section
-        className="media-detail-hero online-detail-hero-shell"
-        style={backdropSrc ? {
-          backgroundImage: `linear-gradient(180deg, rgba(7,7,10,0.18) 0%, rgba(7,7,10,0.72) 40%, rgba(7,7,10,0.94) 78%, rgba(7,7,10,0.98) 100%), radial-gradient(circle at top right, rgba(245,166,35,0.14) 0%, rgba(245,166,35,0) 34%), url(${backdropSrc})`,
-        } : {}}
-      >
-        <div className="media-detail-toolbar">
-          <button className="btn btn-ghost media-detail-back-btn" onClick={onBack}>
-            {`< ${t('Volver')}`}
-          </button>
-          {resumeEpisode ? (
-            <div className="media-detail-toolbar-actions">
-              <button className="btn btn-primary media-detail-primary-btn" type="button" onClick={() => handleStream(resumeEpisode)}>
-                {ui.watchNow}
-              </button>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="media-detail-hero-grid online-detail-hero-grid">
-          {coverSrc ? (
-            <div className="media-detail-cover-wrap online-detail-cover-wrap">
-              <img src={coverSrc} alt={anime.title} className="media-detail-cover" onError={handleProviderCoverError} />
-            </div>
-          ) : null}
-
-          <div className="media-detail-hero-copy online-detail-copy">
-            <div className="media-detail-kicker">{source.name}{source.flag ? ` / ${source.flag}` : ''}</div>
-            <h1 className="media-detail-title">{anime.title}</h1>
-            {headlineFacts.length > 0 ? (
-              <div className="media-detail-facts-strip">
-                {headlineFacts.map((fact) => <span key={fact} className="media-detail-fact-chip">{fact}</span>)}
-              </div>
-            ) : null}
-            {cleanSynopsis ? (
-              <div className="media-detail-story-block">
-                <div className="media-detail-story-label">{isEnglish ? 'Story' : 'Historia'}</div>
-                <p className="media-detail-synopsis">{cleanSynopsis}</p>
-              </div>
-            ) : null}
-
-            <div className="online-detail-action-row">
-              {resumeEpisode ? (
-                <button className="btn btn-primary media-detail-primary-btn" type="button" onClick={() => handleStream(resumeEpisode)}>
-                  {ui.continueLabel}
-                </button>
-              ) : null}
-              <button className="btn btn-primary media-detail-secondary-btn" type="button" disabled>
-                {ui.mpvMode}
-              </button>
-            </div>
-
-            <div className="online-detail-stat-grid">
-              <div className="detail-stat-card">
-                <span className="detail-stat-label">{ui.sourceLabel}</span>
-                <span className="detail-stat-value">{source.name}</span>
-              </div>
-              <div className="detail-stat-card">
-                <span className="detail-stat-label">{t('Episodios')}</span>
-                <span className="detail-stat-value">{episodes.length || '-'}</span>
-              </div>
-              <div className="detail-stat-card">
-                <span className="detail-stat-label">{ui.availability}</span>
-                <span className="detail-stat-value">{supportsDownloads ? ui.streamingDownload : ui.streamingOnly}</span>
-              </div>
-            </div>
-          </div>
-
-          <aside className="media-detail-aside online-detail-hero-aside">
-            <section className="media-detail-panel">
-              <div className="media-detail-panel-title">{isEnglish ? 'Airing information' : 'Informacion de emision'}</div>
-              <div className="media-detail-fact-list">
-                {airingRows.map((row) => (
-                  <div key={row.label} className="media-detail-fact-row">
-                    <span className="media-detail-fact-label">{row.label}</span>
-                    <span className="media-detail-fact-value">{row.value}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="media-detail-panel">
-              <div className="media-detail-panel-title">{ui.castTitle}</div>
-              <p className="media-detail-panel-copy">{ui.castCopy}</p>
-              {animeDetailQuery.isLoading ? (
-                <div className="media-detail-empty-copy">{ui.fallbackCast}</div>
-              ) : selectedCharacters.length > 0 ? (
-                <div className="media-detail-cast-list">
-                  {selectedCharacters.map((character) => (
-                    <article key={`${character.id || character.name}-${character.role || ''}`} className="media-detail-cast-card">
-                      {character.image ? <img src={proxyImage(character.image)} alt={character.name} className="media-detail-cast-avatar" /> : <div className="media-detail-cast-avatar media-detail-cast-avatar-placeholder">{character.name?.slice(0, 1) || '?'}</div>}
-                      <div className="media-detail-cast-body">
-                        <div className="media-detail-cast-role">{character.role === 'MAIN' ? ui.mainRole : character.role === 'SUPPORTING' ? ui.supportingRole : character.role || ui.supportingRole}</div>
-                        <div className="media-detail-cast-name">{character.name}</div>
-                        {character.name_native ? <div className="media-detail-cast-native">{character.name_native}</div> : null}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="media-detail-empty-copy">{ui.castEmpty}</div>
-              )}
-            </section>
-          </aside>
-        </div>
-      </section>
-
-      <div className="media-detail-content-grid online-detail-workspace">
-        <div className="media-detail-main">
-          <section className="media-detail-panel media-detail-progress-panel online-detail-progress-panel">
-            <div className="media-detail-progress-head">
-              <div>
-                <div className="media-detail-panel-title">{ui.continueLabel}</div>
-                <p className="media-detail-panel-copy">
-                  {episodes.length > 0
-                    ? `${episodes.length - visibleEpisodes.length}/${episodes.length} ${isEnglish ? 'episodes watched' : 'episodios vistos'}`
-                    : ui.loadingEpisodes}
-                </p>
-              </div>
-              <div className="media-detail-progress-value">{progressValue}%</div>
-            </div>
-            <div className="media-detail-progress-track">
-              <div className="media-detail-progress-fill" style={{ width: `${progressValue}%` }} />
-            </div>
-            {resumeEpisode ? (
-              <div className="media-detail-resume-card online-detail-resume-card">
-                <div className="media-detail-resume-copy">
-                  <div className="media-detail-resume-label">{ui.continueLabel}</div>
-                  <div className="media-detail-resume-title">
-                    {resumeEpisode.title ?? `${t('Episodio')} ${resumeEpisode.number}`}
-                  </div>
-                  <div className="media-detail-resume-meta">{source.name}</div>
-                </div>
-                <button className="btn btn-primary media-detail-primary-btn" type="button" onClick={() => handleStream(resumeEpisode)}>
-                  {ui.watchNow}
-                </button>
-              </div>
-            ) : null}
-          </section>
-
-          <section className="media-detail-panel">
-            <div className="media-detail-tab-strip online-detail-tab-strip">
-              <button type="button" className="media-detail-tab-btn active">{t('Episodios')}</button>
-              {supportsAudioVariants ? (
-                <button type="button" className="media-detail-tab-btn" disabled>{ui.audioTrack}</button>
-              ) : null}
-            </div>
-
-            <div className="online-detail-control-grid">
-              <div className="online-detail-control-card">
-                <div className="detail-stat-label">{ui.playerMode}</div>
-                <div className="episode-playback-desc">{ui.mpvModeDesc}</div>
-                <div className="online-detail-inline-actions">
-                  <button className="btn btn-primary media-detail-secondary-btn" type="button" disabled>
-                    {ui.mpvMode}
-                  </button>
-                </div>
-              </div>
-
-              {supportsAudioVariants ? (
-                <div className="online-detail-control-card">
-                  <div className="detail-stat-label">{ui.audioTrack}</div>
-                  <div className="episode-playback-desc">
-                    {audioVariantSwitching || audioVariantsQuery.isLoading ? ui.audioLoading : ui.audioSwitchHint}
-                  </div>
-                  <div className="online-detail-inline-actions">
-                    <button className={`btn ${activeAudioVariant === 'sub' ? 'btn-primary' : 'btn-ghost'} media-detail-secondary-btn`} type="button" disabled={audioVariantSwitching} onClick={() => handleAudioVariantChange('sub')}>
-                      {ui.subtitles}
-                    </button>
-                    <button className={`btn ${activeAudioVariant === 'dub' ? 'btn-primary' : 'btn-ghost'} media-detail-secondary-btn`} type="button" disabled={audioVariantSwitching} onClick={() => handleAudioVariantChange('dub')}>
-                      {ui.dubbed}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="media-detail-section-head">
-              <div className="media-detail-panel-title">
-                {t('Episodios')}
-                {episodes.length > 0 ? <span className="media-detail-count-pill">{visibleEpisodes.length}/{episodes.length}</span> : null}
-              </div>
-              <div className="media-detail-panel-copy">{ui.episodeFilterHint}</div>
-            </div>
-
-            <div className="manga-chapter-toolbar online-detail-filter-toolbar">
-              <div className="manga-chapter-toolbar-copy">
-                <span className="manga-chapter-toolbar-title">{ui.episodeQueue}</span>
-              </div>
-              <div className="manga-filter-toggle" role="tablist" aria-label={t('Episodios')}>
-                <button
-                  type="button"
-                  className={`manga-filter-toggle-btn${episodeFilter === 'unwatched' ? ' active' : ''}`}
-                  onClick={() => setEpisodeFilter('unwatched')}
-                >
-                  {ui.unwatchedEpisodes}
-                </button>
-                <button
-                  type="button"
-                  className={`manga-filter-toggle-btn${episodeFilter === 'all' ? ' active' : ''}`}
-                  onClick={() => setEpisodeFilter('all')}
-                >
-                  {ui.allEpisodes}
-                </button>
-              </div>
-            </div>
-
-            {loading ? (
-              <>
-                <div className="manga-skeleton-caption">{isResolvingSource ? ui.resolvingSource : ui.loadingEpisodes}</div>
-                <EpisodeGridSkeleton count={8} />
-              </>
-            ) : null}
-
-            {error ? (
-              <div className="online-detail-error">{error}</div>
-            ) : null}
-
-            {!loading && !error && episodes.length === 0 ? (
-              <div className="empty-state" style={{ padding: '40px 0' }}>
-                <div className="empty-state-title">{t('Sin episodios')}</div>
-                <p className="empty-state-desc">{ui.noEpisodesDesc(source.name)}</p>
-              </div>
-            ) : null}
-
-            {!loading && episodes.length > 0 ? (
-              visibleEpisodes.length > 0 ? (
-                <div className="online-episode-row-list">
-                  {visibleEpisodes.map((ep) => {
-                    const isStreaming = streaming === ep.id
-                    const isDownloading = downloading === ep.id
-                    const artSrc = getEpisodeArtwork(ep)
-                    return (
-                      <OnlineEpisodeRow
-                        key={ep.id}
-                        ep={ep}
-                        totalEpisodes={episodes.length}
-                        artSrc={artSrc}
-                        sourceName={source.name}
-                        supportsDownloads={supportsDownloads}
-                        isStreaming={isStreaming}
-                        isDownloading={isDownloading}
-                        onWatch={handleStream}
-                        onDownload={handleDownload}
-                        labels={ui}
-                      />
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="empty-state manga-filter-empty-state">
-                  <div className="empty-state-title">{ui.episodeFilterEmpty}</div>
-                  <p className="empty-state-desc">{ui.episodeFilterEmptyDesc}</p>
-                </div>
-              )
-            ) : null}
-          </section>
-        </div>
-
-      </div>
-    </div>
-  )
-
-  return (
-    <div className="fade-in media-detail-page media-detail-page--online">
-      <IntegratedVideoPlayer
-        open={Boolean(integratedPlayback?.url)}
-        title={integratedPlayback?.title}
-        subtitle={integratedPlayback?.subtitle}
-        streamURL={integratedPlayback?.url}
-        rawStreamURL={integratedPlayback?.rawStreamURL}
-        proxyURL={integratedPlayback?.proxyURL}
-        streamHost={integratedPlayback?.streamHost}
-        streamKind={integratedPlayback?.kind}
-        sourceLabel={integratedPlayback?.sourceLabel}
-        initialPositionSec={integratedPlayback?.lastPositionSec ?? 0}
-        onPlaybackUpdate={handleIntegratedPlaybackUpdate}
-        onPlaybackEnd={(positionSec, durationSec) => closeIntegratedPlayback(true, positionSec, durationSec)}
-        onUseExternalPlayer={handleUseExternalPlayer}
-        onPrev={previousIntegratedEpisode ? () => handleIntegratedEpisodeJump(previousIntegratedEpisode) : null}
-        onNext={nextIntegratedEpisode ? () => handleIntegratedEpisodeJump(nextIntegratedEpisode) : null}
-        prevLabel={ui.previousEpisode}
-        nextLabel={ui.nextEpisode}
-        audioLabel={ui.audioTrack}
-        activeAudio={activeAudioVariant}
-        audioSwitching={audioVariantSwitching}
-        audioOptions={supportsAudioVariants ? [
-          { value: 'sub', label: ui.subtitles },
-          { value: 'dub', label: ui.dubbed },
-        ] : []}
-        onAudioChange={supportsAudioVariants ? handleIntegratedAudioSwitch : null}
-        onClose={() => closeIntegratedPlayback(false)}
-      />
-
-      <div
-        className="detail-hero media-detail-hero"
-        style={backdropSrc ? {
-          backgroundImage: `linear-gradient(180deg, rgba(7,7,10,0.22) 0%, rgba(7,7,10,0.6) 32%, rgba(7,7,10,0.88) 72%, rgba(7,7,10,0.98) 100%), radial-gradient(circle at top right, rgba(245,166,35,0.22) 0%, rgba(245,166,35,0) 32%), url(${backdropSrc})`,
-        } : {}}
-      >
-        <button className="btn btn-ghost detail-back" onClick={onBack}>
-          ← {t('Volver')}
-        </button>
-
-        <div className="detail-hero-content">
-          {coverSrc ? <img src={coverSrc} alt={anime.title} className="detail-cover" onError={handleProviderCoverError} /> : null}
-
-          <div className="detail-info">
-            <div className="detail-kicker">
-              {source.name} {source.flag ? `· ${source.flag}` : ''}
-            </div>
-
-            {headlineFacts.length > 0 ? (
-              <div className="media-detail-facts-strip" style={{ marginBottom: 12 }}>
-                {headlineFacts.map((fact) => <span key={fact} className="media-detail-fact-chip">{fact}</span>)}
-              </div>
-            ) : null}
-
-            <h1 className="detail-title">{anime.title}</h1>
-
-            {cleanSynopsis ? (
-              <p className="detail-synopsis" style={{ marginTop: 10, WebkitLineClamp: 5 }}>
-                {cleanSynopsis}
-              </p>
-            ) : null}
-
-            <div className="online-detail-action-row">
-              {resumeEpisode ? (
-                <button className="btn btn-primary media-detail-primary-btn" type="button" onClick={() => handleStream(resumeEpisode)}>
-                  {ui.watchNow}
-                </button>
-              ) : null}
-              <button className="btn btn-primary media-detail-secondary-btn" type="button" disabled>{ui.mpvMode}</button>
-              <button className="btn btn-ghost media-detail-secondary-btn" type="button" disabled>
-                {source.name}
-              </button>
-            </div>
-
-            <div className="detail-stat-row">
-              <div className="detail-stat-card">
-                <span className="detail-stat-label">{ui.sourceLabel}</span>
-                <span className="detail-stat-value">{source.name}</span>
-              </div>
-              <div className="detail-stat-card">
-                <span className="detail-stat-label">{t('Episodios')}</span>
-                <span className="detail-stat-value">{episodes.length || '—'}</span>
-              </div>
-              <div className="detail-stat-card">
-                <span className="detail-stat-label">{ui.availability}</span>
-                <span className="detail-stat-value">{supportsDownloads ? ui.streamingDownload : ui.streamingOnly}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="media-detail-content-grid">
-        <div className="media-detail-main">
-      <div className="episode-list-section media-detail-panel">
-        {resumeEpisode ? (
-          <div className="media-detail-resume-card online-detail-resume-card">
-            <div className="media-detail-resume-copy">
-              <div className="media-detail-resume-label">{isEnglish ? 'Continue watching' : 'Continuar viendo'}</div>
-              <div className="media-detail-resume-title">
-                {resumeEpisode.title ?? `${t('Episodio')} ${resumeEpisode.number}`}
-              </div>
-              <div className="media-detail-resume-meta">{source.name}</div>
-            </div>
-            <button className="btn btn-primary media-detail-primary-btn" type="button" onClick={() => handleStream(resumeEpisode)}>
-              {ui.watchNow}
-            </button>
-          </div>
-        ) : null}
-
-        <div className="media-detail-tab-strip">
-          <button type="button" className="media-detail-tab-btn active">{t('Episodios')}</button>
-          <button type="button" className="media-detail-tab-btn" disabled>{ui.castTitle}</button>
-          <button type="button" className="media-detail-tab-btn" disabled>{isEnglish ? 'Related' : 'Relacionados'}</button>
-          <button type="button" className="media-detail-tab-btn" disabled>{isEnglish ? 'More info' : 'Mas info'}</button>
-        </div>
-
-        <div className="episode-section-head">
-          <div>
-            <div className="episode-section-kicker">{t('Anime online')}</div>
-            <span className="section-title">
-              {t('Episodios')}
-              {episodes.length > 0 ? <span className="badge badge-muted" style={{ marginLeft: 8 }}>{visibleEpisodes.length}/{episodes.length}</span> : null}
-            </span>
-          </div>
-          <div className="episode-playback-control">
-            <div className="episode-playback-copy">
-              <div className="episode-playback-label">{ui.playerMode}</div>
-              <div className="episode-playback-desc">
-                {ui.mpvModeDesc}
-              </div>
-            </div>
-            <div className="episode-playback-switch">
-              <button
-                className="episode-playback-pill active"
-                type="button"
-                disabled
-              >
-                {ui.mpvMode}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="manga-chapter-toolbar">
-          <div className="manga-chapter-toolbar-copy">
-            <span className="manga-chapter-toolbar-title">{t('Episodios')}</span>
-            <span className="manga-chapter-toolbar-note">{ui.episodeFilterHint}</span>
-          </div>
-          <div className="episode-toolbar-actions">
-            {supportsAudioVariants ? (
-              <div className="episode-audio-toolbar episode-audio-toolbar--inline">
-                <span className="episode-audio-toolbar-label">{ui.audioTrack}</span>
-                <div className="episode-playback-switch" style={{ flexShrink: 0 }}>
-                  <button
-                    className={`episode-playback-pill${activeAudioVariant === 'sub' ? ' active' : ''}`}
-                    type="button"
-                    disabled={audioVariantSwitching}
-                    onClick={() => handleAudioVariantChange('sub')}
-                    title={audioVariantSwitching ? ui.audioLoading : ui.subtitles}
-                  >
-                    {ui.subtitles}
-                  </button>
-                  <button
-                    className={`episode-playback-pill${activeAudioVariant === 'dub' ? ' active' : ''}`}
-                    type="button"
-                    disabled={audioVariantSwitching}
-                    onClick={() => handleAudioVariantChange('dub')}
-                    title={audioVariantSwitching ? ui.audioLoading : ui.dubbed}
-                  >
-                    {ui.dubbed}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            <div className="manga-filter-toggle" role="tablist" aria-label={t('Episodios')}>
-              <button
-                type="button"
-                className={`manga-filter-toggle-btn${episodeFilter === 'unwatched' ? ' active' : ''}`}
-                onClick={() => setEpisodeFilter('unwatched')}
-              >
-                {ui.unwatchedEpisodes}
-              </button>
-              <button
-                type="button"
-                className={`manga-filter-toggle-btn${episodeFilter === 'all' ? ' active' : ''}`}
-                onClick={() => setEpisodeFilter('all')}
-              >
-                {ui.allEpisodes}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {loading ? (
-          <>
-            <div className="manga-skeleton-caption">{isResolvingSource ? ui.resolvingSource : ui.loadingEpisodes}</div>
-            <EpisodeGridSkeleton count={8} />
-          </>
-        ) : null}
-
-        {error ? (
-          <div style={{
-            padding: '12px 14px',
-            background: 'rgba(224,82,82,0.08)',
-            border: '1px solid rgba(224,82,82,0.2)',
-            borderRadius: 'var(--radius-sm)',
-            color: 'var(--text-secondary)',
-            fontSize: 13,
-            marginTop: 8,
-          }}>
-            {error}
-          </div>
-        ) : null}
-
-        {!loading && !error && episodes.length === 0 ? (
-          <div className="empty-state" style={{ padding: '40px 0' }}>
-            <div className="empty-state-title">{t('Sin episodios')}</div>
-            <p className="empty-state-desc">{ui.noEpisodesDesc(source.name)}</p>
-          </div>
-        ) : null}
-
-        {false ? (
-          <div className="episode-grid">
-            {episodes.map((ep) => {
-              const isStreaming = streaming === ep.id
-              const isDownloading = downloading === ep.id
-              const artSrc = getEpisodeArtwork(ep)
-              return (
-                <div
-                  key={ep.id}
-                  className={`episode-card${ep.watched ? ' episode-watched' : ''}`}
-                  onClick={() => !isStreaming && handleStream(ep)}
-                  style={{ cursor: isStreaming ? 'wait' : 'pointer' }}
-                >
-                  <div
-                    className="episode-card-art"
-                    style={artSrc ? { backgroundImage: `linear-gradient(180deg, rgba(7,7,10,0.06) 0%, rgba(7,7,10,0.72) 100%), url(${artSrc})` } : undefined}
-                  >
-                    <div className="episode-card-art-badge">
-                      {ep.watched ? `✓ ${t('Visto')}` : `${t('Episodio')} ${ep.number}`}
-                    </div>
-                  </div>
-
-                  <div className="episode-card-body">
-                    <div className="episode-card-meta">
-                      <span>{source.name}</span>
-                      <span>{episodes.length > 0 ? `${ep.number}/${episodes.length}` : ep.number}</span>
-                    </div>
-
-                    <div className="episode-card-title">
-                      {ep.title ?? `${t('Episodio')} ${ep.number}`}
-                    </div>
-
-                    <div className="episode-card-desc">{ui.episodeDesc}</div>
-
-                    <div className="episode-card-actions">
-                      {supportsDownloads ? (
-                        <button
-                          className="btn btn-ghost episode-dl-btn"
-                          onClick={(event) => { event.stopPropagation(); handleDownload(ep) }}
-                          disabled={isDownloading}
-                          title={t('Descargar')}
-                        >
-                          {isDownloading
-                            ? <span className="btn-spinner" style={{ borderTopColor: 'var(--accent)', borderColor: 'rgba(245,166,35,0.25)', width: 14, height: 14 }} />
-                            : '⬇'}
-                          {t('Descargar')}
-                        </button>
-                      ) : null}
-
+                  {episodeWindow.showPagination ? (
+                    <div className="gui2-landing-queue-pagination" aria-label={isEnglish ? 'Episode pages' : 'Paginas de episodios'}>
                       <button
-                        className="btn btn-primary episode-play-btn"
-                        onClick={(event) => { event.stopPropagation(); handleStream(ep) }}
-                        disabled={isStreaming}
+                        type="button"
+                        className="gui2-landing-pagechip"
+                        onClick={() => setEpisodePage((page) => Math.max(1, page - 1))}
+                        disabled={episodeWindow.currentPage <= 1}
+                        aria-label={isEnglish ? 'Previous episode page' : 'Pagina anterior'}
                       >
-                          {isStreaming
-                            ? <><span className="btn-spinner" style={{ borderTopColor: '#0a0a0e', borderColor: 'rgba(10,10,14,0.25)' }} /> {ui.loading}</>
-                            : ep.watched
-                              ? `↩ ${isEnglish ? 'Watch again' : 'Ver de nuevo'}`
-                            : `▶ ${isEnglish ? 'Watch' : 'Ver'}`}
+                        {isEnglish ? 'Prev' : 'Anterior'}
+                      </button>
+                      {episodeWindow.pageChips.map((pageNumber) => (
+                        <button
+                          key={`episode-page-${pageNumber}`}
+                          type="button"
+                          className={`gui2-landing-pagechip${pageNumber === episodeWindow.currentPage ? ' active' : ''}`}
+                          onClick={() => setEpisodePage(pageNumber)}
+                          aria-current={pageNumber === episodeWindow.currentPage ? 'page' : undefined}
+                        >
+                          {pageNumber}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="gui2-landing-pagechip"
+                        onClick={() => setEpisodePage((page) => Math.min(episodeWindow.totalPages, page + 1))}
+                        disabled={episodeWindow.currentPage >= episodeWindow.totalPages}
+                        aria-label={isEnglish ? 'Next episode page' : 'Pagina siguiente'}
+                      >
+                        {isEnglish ? 'Next' : 'Siguiente'}
                       </button>
                     </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : null}
-
-        {!loading && episodes.length > 0 ? (
-          <>
-            <div className="manga-character-panel anime-cast-inline-panel media-detail-legacy-cast-panel">
-              <div className="manga-character-panel-head">
-                <div className="episode-section-kicker">{ui.castTitle}</div>
-                <p className="episode-section-copy">{ui.castCopy}</p>
-              </div>
-
-              {animeDetailQuery.isLoading ? (
-                <div className="manga-character-empty">{ui.castLoading}</div>
-              ) : selectedCharacters.length > 0 ? (
-                <div className="manga-character-list">
-                  {selectedCharacters.map((character) => (
-                    <article key={`${character.id || character.name}-${character.role || ''}`} className="manga-character-card">
-                      {character.image ? <img src={proxyImage(character.image)} alt={character.name} className="manga-character-avatar" /> : <div className="manga-character-avatar manga-character-avatar-placeholder">{character.name?.slice(0, 1) || '?'}</div>}
-                      <div className="manga-character-body">
-                        <div className="manga-character-role">{character.role === 'MAIN' ? ui.mainRole : character.role === 'SUPPORTING' ? ui.supportingRole : character.role || ui.supportingRole}</div>
-                        <div className="manga-character-name">{character.name}</div>
-                        {character.name_native ? <div className="manga-character-native">{character.name_native}</div> : null}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="manga-character-empty">{ui.castEmpty}</div>
-              )}
-            </div>
-
-            {visibleEpisodes.length > 0 ? (
-                <div className="anime-episode-grid">
-                  {visibleEpisodes.map((ep) => {
-                    const isStreaming = streaming === ep.id
-                    const isDownloading = downloading === ep.id
-                    const artSrc = getEpisodeArtwork(ep)
-                    return (
-                      <div
-                        key={ep.id}
-                        className={`anime-episode-card${ep.watched ? ' anime-episode-watched' : ''}`}
-                        onClick={() => !isStreaming && handleStream(ep)}
-                        style={{ cursor: isStreaming ? 'wait' : 'pointer' }}
-                      >
-                        <div className="anime-episode-num">
-                          <span className="anime-episode-num-label">{ep.number || '?'}</span>
-                        </div>
-                        <div className="anime-episode-body">
-                          <div className="anime-episode-meta">
-                            <span>{source.name}</span>
-                            <span>{episodes.length > 0 ? `${ep.number}/${episodes.length}` : ep.number}</span>
-                            {ep.watched ? <span>OK {t('Visto')}</span> : null}
-                          </div>
-
-                          <div className="anime-episode-title">
-                            {ep.title ?? `${t('Episodio')} ${ep.number}`}
-                          </div>
-
-                          <div className="anime-episode-desc">
-                            {supportsDownloads ? ui.streamingDownload : ui.streamingOnly}
-                          </div>
-                        </div>
-                        {artSrc ? (
-                          <div className="anime-episode-thumb" style={{ backgroundImage: `linear-gradient(180deg, rgba(7,7,10,0.08) 0%, rgba(7,7,10,0.56) 100%), url(${artSrc})` }} />
-                        ) : null}
-                        <div className="anime-episode-actions">
-                          {supportsDownloads ? (
-                            <button
-                              className="btn btn-ghost episode-dl-btn"
-                              onClick={(event) => { event.stopPropagation(); handleDownload(ep) }}
-                              disabled={isDownloading}
-                              title={t('Descargar')}
-                            >
-                              {isDownloading
-                                ? <span className="btn-spinner" style={{ borderTopColor: 'var(--accent)', borderColor: 'rgba(245,166,35,0.25)', width: 14, height: 14 }} />
-                                : 'â¬‡'}
-                              {t('Descargar')}
-                            </button>
-                          ) : null}
-
-                          <button
-                            className="btn btn-primary episode-play-btn"
-                            onClick={(event) => { event.stopPropagation(); handleStream(ep) }}
-                            disabled={isStreaming}
-                          >
-                            {isStreaming
-                              ? <><span className="btn-spinner" style={{ borderTopColor: '#0a0a0e', borderColor: 'rgba(10,10,14,0.25)' }} /> {ui.loading}</>
-                              : ep.watched
-                                ? ui.watchAgain
-                                : ui.watchNow}
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
+                  ) : null}
                 </div>
               ) : (
                 <div className="empty-state manga-filter-empty-state">
                   <div className="empty-state-title">{ui.episodeFilterEmpty}</div>
                   <p className="empty-state-desc">{ui.episodeFilterEmptyDesc}</p>
                 </div>
-              )}
-          </>
-        ) : null}
-
-      </div>
+              )
+            ) : null}
+              </section>
+            </>
+          )}
         </div>
 
-        <aside className="media-detail-aside">
-          <section className="media-detail-panel">
-            <div className="media-detail-panel-title">{isEnglish ? 'Airing information' : 'Informacion'}</div>
-            <div className="media-detail-fact-list">
-              {airingRows.map((row) => (
-                <div key={row.label} className="media-detail-fact-row">
-                  <span className="media-detail-fact-label">{row.label}</span>
-                  <span className="media-detail-fact-value">{row.value}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="media-detail-panel">
-            <div className="media-detail-panel-title">{ui.castTitle}</div>
-            <p className="media-detail-panel-copy">{ui.castCopy}</p>
-            {animeDetailQuery.isLoading ? (
-              <div className="media-detail-empty-copy">{ui.castLoading}</div>
-            ) : selectedCharacters.length > 0 ? (
-              <div className="media-detail-cast-list">
-                {selectedCharacters.map((character) => (
-                  <article key={`${character.id || character.name}-${character.role || ''}`} className="media-detail-cast-card">
-                    {character.image ? <img src={proxyImage(character.image)} alt={character.name} className="media-detail-cast-avatar" /> : <div className="media-detail-cast-avatar media-detail-cast-avatar-placeholder">{character.name?.slice(0, 1) || '?'}</div>}
-                    <div className="media-detail-cast-body">
-                      <div className="media-detail-cast-role">{character.role === 'MAIN' ? ui.mainRole : character.role === 'SUPPORTING' ? ui.supportingRole : character.role || ui.supportingRole}</div>
-                      <div className="media-detail-cast-name">{character.name}</div>
-                      {character.name_native ? <div className="media-detail-cast-native">{character.name_native}</div> : null}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="media-detail-empty-copy">{ui.castEmpty}</div>
-            )}
-          </section>
-        </aside>
+        {!showIntegratedWatchState ? (
+          <aside className="gui2-landing-aside">
+            <AnimeLandingMetaPanel title={isEnglish ? 'Details' : 'Detalles'} rows={detailRows} />
+            <AnimeLandingMetaPanel title={isEnglish ? 'More Info' : 'Mas informacion'} rows={moreInfoRows} />
+          </aside>
+        ) : null}
       </div>
+
+      <LandingRecommendationsStage
+        title={ui.recommendationsTitle}
+        copy={ui.recommendationsCopy}
+        items={recommendationItems}
+        onSelectItem={onRecommendationSelect}
+        emptyCopy={ui.recommendationsEmptyCopy}
+        placeholderCount={5}
+      />
     </div>
   )
+
 }
 
 function AnimeLandingFactList({ rows }) {
   const items = rows.filter((row) => row?.label && row?.value)
   if (!items.length) return null
   return (
-    <div className="gui2-landing-fact-grid">
+    <div className="gui2-landing-fact-band">
       {items.map((row) => (
-        <div key={`${row.label}-${row.value}`} className="gui2-landing-fact-card">
+        <div key={`${row.label}-${row.value}`} className="gui2-landing-fact-item">
           <span className="gui2-landing-fact-label">{row.label}</span>
           <strong className="gui2-landing-fact-value">{row.value}</strong>
           {row.note ? <span className="gui2-landing-fact-note">{row.note}</span> : null}
@@ -1771,12 +1589,11 @@ function AnimeLandingMetaPanel({ title, rows }) {
   )
 }
 
-function AnimeLandingCharacterStrip({ characters, loading, loadingLabel, emptyLabel, title, actionLabel, ui }) {
+function AnimeLandingCharacterStrip({ characters, loading, loadingLabel, emptyLabel, title, ui, className = '' }) {
   return (
-    <section className="gui2-landing-panel">
+    <section className={`gui2-landing-panel${className ? ` ${className}` : ''}`}>
       <div className="gui2-landing-section-head">
         <h3 className="gui2-landing-section-title">{title}</h3>
-        {characters.length > 0 ? <span className="gui2-landing-section-link">{actionLabel}</span> : null}
       </div>
       {loading ? (
         <div className="media-detail-empty-copy">{loadingLabel}</div>
@@ -1804,6 +1621,44 @@ function AnimeLandingCharacterStrip({ characters, loading, loadingLabel, emptyLa
         <div className="media-detail-empty-copy">{emptyLabel}</div>
       )}
     </section>
+  )
+}
+
+function OnlineEpisodeWatchCard({ ep, artSrc, sourceName, isActive, onSelect, labels }) {
+  return (
+    <button
+      type="button"
+      className={`gui2-landing-watchcard${isActive ? ' active' : ''}`}
+      onClick={() => !isActive && onSelect(ep)}
+      aria-pressed={isActive}
+      title={isActive ? labels.currentlyPlaying : labels.playThisEpisode}
+    >
+      <div className="gui2-landing-watchcard-media">
+        {artSrc ? (
+          <div
+            className="gui2-landing-watchcard-thumb"
+            style={{ backgroundImage: `linear-gradient(180deg, rgba(7,7,10,0.04) 0%, rgba(7,7,10,0.52) 100%), url(${artSrc})` }}
+          />
+        ) : (
+          <div className="gui2-landing-watchcard-thumb gui2-landing-watchcard-thumb--placeholder">
+            {labels.noArtwork}
+          </div>
+        )}
+        <span className="gui2-landing-watchcard-number">
+          {labels.episode} {ep.number || '?'}
+        </span>
+      </div>
+      <div className="gui2-landing-watchcard-copy">
+        <div className="gui2-landing-watchcard-title">
+          {ep.title ?? `${labels.episode} ${ep.number}`}
+        </div>
+        <div className="gui2-landing-watchcard-meta">
+          <span>{sourceName}</span>
+          {ep.watched ? <span>{labels.watched}</span> : null}
+          {isActive ? <span>{labels.currentlyPlaying}</span> : null}
+        </div>
+      </div>
+    </button>
   )
 }
 
@@ -1889,3 +1744,4 @@ function OnlineEpisodeRow({
     </article>
   )
 }
+

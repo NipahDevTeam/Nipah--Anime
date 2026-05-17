@@ -270,7 +270,7 @@ func (a *App) ensurePassiveAnimeTracked(anilistID, malID int, title, titleEnglis
 			Year:            year,
 		}
 		if a.metadata != nil {
-			if meta, err := a.metadata.GetAnimeByID(anilistID); err == nil && meta != nil {
+			if meta, err := a.loadAniListAnimeMetadata(anilistID); err == nil && meta != nil {
 				next.MalID = chooseResolvedInt(next.MalID, meta.MalID)
 				next.Title = firstNonEmpty(meta.TitleRomaji, meta.TitleEnglish, next.Title)
 				next.TitleEnglish = firstNonEmpty(meta.TitleEnglish, next.TitleEnglish)
@@ -330,7 +330,7 @@ func (a *App) ensurePassiveMangaTracked(anilistID, malID int, title, titleEnglis
 			Year:          year,
 		}
 		if a.metadata != nil {
-			if meta, err := a.metadata.GetAniListMangaByID(anilistID); err == nil && meta != nil {
+			if meta, err := a.loadAniListMangaMetadata(anilistID); err == nil && meta != nil {
 				next.MalID = chooseResolvedInt(next.MalID, meta.MalID)
 				next.Title = firstNonEmpty(meta.TitleRomaji, meta.TitleEnglish, meta.TitleNative, next.Title)
 				next.TitleEnglish = firstNonEmpty(meta.TitleEnglish, next.TitleEnglish)

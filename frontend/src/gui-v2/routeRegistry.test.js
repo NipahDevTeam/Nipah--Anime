@@ -34,17 +34,34 @@ assert.equal(nav.secondary.some((item) => item.key === 'help'), false)
 const navEs = getGui2Navigation(false, 'es')
 assert.equal(navEs.primary[0].label, 'Inicio')
 assert.equal(navEs.primary[1].label, 'Anime Online')
+assert.equal(navEs.primary.find((item) => item.key === 'anime-online')?.label, 'Anime Online')
 assert.equal(navEs.secondary[0].label, 'Ajustes')
 
 const homeMeta = getGui2RouteMeta('/home')
 assert.equal(homeMeta.key, 'home')
 assert.equal(homeMeta.title, 'Home')
+assert.equal(homeMeta.shellVariant, 'immersive')
 
 const homeMetaEs = getGui2RouteMeta('/home', 'es')
 assert.equal(homeMetaEs.title, 'Inicio')
+assert.equal(homeMetaEs.shellVariant, 'immersive')
 
-const detailMeta = getGui2RouteMeta('/__rebuild/anime/44')
-assert.equal(detailMeta.key, 'anime-detail')
-assert.equal(detailMeta.canonicalPath, '/anime/44')
+const animeCatalogMeta = getGui2RouteMeta('/anime-online')
+assert.equal(animeCatalogMeta.shellVariant, 'standard')
+
+const mangaCatalogMeta = getGui2RouteMeta('/manga-online')
+assert.equal(mangaCatalogMeta.shellVariant, 'standard')
+
+const settingsMeta = getGui2RouteMeta('/settings')
+assert.equal(settingsMeta.shellVariant, 'standard')
+
+const animeDetailMeta = getGui2RouteMeta('/__rebuild/anime/44')
+assert.equal(animeDetailMeta.key, 'anime-detail')
+assert.equal(animeDetailMeta.canonicalPath, '/anime/44')
+assert.equal(animeDetailMeta.shellVariant, 'immersive')
+
+const mangaDetailMeta = getGui2RouteMeta('/manga/99')
+assert.equal(mangaDetailMeta.key, 'manga-detail')
+assert.equal(mangaDetailMeta.shellVariant, 'immersive')
 
 console.log('gui-v2 route registry tests passed')

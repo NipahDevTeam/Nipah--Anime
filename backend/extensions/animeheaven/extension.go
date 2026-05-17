@@ -151,7 +151,7 @@ func parseSearchHTML(body string) []extensions.SearchResult {
 //   <a href="/watch.php?{animeId}&ep={num}">
 // ─────────────────────────────────────────────────────────────────────────────
 
-var epLinkRe = regexp.MustCompile(`onclick=['"]gatea\("([a-f0-9]+)"\)['"][^>]*id=["'][a-f0-9]+["'][^>]*>[\s\S]*?<div class=['"]\s*watch2 bc['"]>\s*(\d+)`)
+var epLinkRe = regexp.MustCompile(`onclick=['"]gatea\("([a-f0-9]+)"\)['"][^>]*id=["'][a-f0-9]+["'][^>]*>[\s\S]*?<div class=['"][^'"]*\bwatch2\b[^'"]*\bbc\b[^'"]*['"]>\s*(\d+)`)
 var epCountRe = regexp.MustCompile(`(?i)(\d+)\s*episodes?`)
 
 func (e *Extension) GetEpisodes(animeID string) ([]extensions.Episode, error) {

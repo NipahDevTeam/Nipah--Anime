@@ -17,6 +17,16 @@ assert.ok(
 )
 
 assert.ok(
+  componentSource.includes('const blockingPreloadResults = await Promise.allSettled(nextPages.slice(0, blockingPreloadCount).map(preloadReaderPage))'),
+  'reader should await the first visible page preloads and capture their intrinsic metrics before revealing a paged chapter',
+)
+
+assert.ok(
+  componentSource.includes('setPageIntrinsicSizes(blockingMetrics)'),
+  'reader should seed visible page intrinsic sizes from the blocking preload results to avoid first-render layout snaps',
+)
+
+assert.ok(
   normalizedSource.includes('if (chapterLoadGeneration.current !== loadGeneration) return'),
   'reader should bail out when an older chapter load resolves after a newer one starts',
 )
@@ -29,6 +39,11 @@ assert.ok(
 assert.ok(
   /\.finally\(\(\)\s*=>\s*\{\s*if\s*\(chapterLoadGeneration\.current\s*!==\s*loadGeneration\)\s*return\s+setLoading\(false\)/.test(componentSource),
   'reader should not let stale chapter loads clear the active loading state in finally',
+)
+
+assert.ok(
+  componentSource.includes('createPortal(') || componentSource.includes('reader-settings-panel'),
+  'reader rebuild should keep settings as an explicit overlay surface instead of an inline content column',
 )
 
 console.log('manga reader load guard tests passed')

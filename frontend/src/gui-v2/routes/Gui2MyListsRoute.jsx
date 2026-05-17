@@ -1,6 +1,7 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { toastError, toastSuccess } from '../../components/ui/Toast'
 import { useI18n } from '../../lib/i18n'
 import { extractAniListAnimeSearchMedia } from '../../lib/anilistSearch'
@@ -753,16 +754,17 @@ function Gui2MyListsCoverDriven(props) {
 
 export default function Gui2MyListsRoute({ preview = false }) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { lang } = useI18n()
   const isEnglish = lang === 'en'
   const [activeMediaType, setActiveMediaType] = useState('anime')
-  const [animeEntries, setAnimeEntries] = useState([])
-  const [animeCounts, setAnimeCounts] = useState({})
-  const [mangaEntries, setMangaEntries] = useState([])
-  const [mangaCounts, setMangaCounts] = useState({})
-  const [loadingAnime, setLoadingAnime] = useState(true)
-  const [loadingManga, setLoadingManga] = useState(true)
-  const [syncStatus, setSyncStatus] = useState(null)
+  const [animeEntries, setAnimeEntries] = useState(() => queryClient.getQueryData(['gui2-my-lists-anime-entries']) ?? [])
+  const [animeCounts, setAnimeCounts] = useState(() => queryClient.getQueryData(['gui2-my-lists-anime-counts']) ?? {})
+  const [mangaEntries, setMangaEntries] = useState(() => queryClient.getQueryData(['gui2-my-lists-manga-entries']) ?? [])
+  const [mangaCounts, setMangaCounts] = useState(() => queryClient.getQueryData(['gui2-my-lists-manga-counts']) ?? {})
+  const [loadingAnime, setLoadingAnime] = useState(() => !queryClient.getQueryData(['gui2-my-lists-anime-entries']) || !queryClient.getQueryData(['gui2-my-lists-anime-counts']))
+  const [loadingManga, setLoadingManga] = useState(() => !queryClient.getQueryData(['gui2-my-lists-manga-entries']) || !queryClient.getQueryData(['gui2-my-lists-manga-counts']))
+  const [syncStatus, setSyncStatus] = useState(() => queryClient.getQueryData(['gui2-remote-sync-status']) ?? null)
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [sortKey, setSortKey] = useState('UPDATED_DESC')
@@ -797,9 +799,13 @@ export default function Gui2MyListsRoute({ preview = false }) {
       ])
       setAnimeEntries(entries ?? [])
       setAnimeCounts(counts ?? {})
+      queryClient.setQueryData(['gui2-my-lists-anime-entries'], entries ?? [])
+      queryClient.setQueryData(['gui2-my-lists-anime-counts'], counts ?? {})
     } catch {
       setAnimeEntries([])
       setAnimeCounts({})
+      queryClient.setQueryData(['gui2-my-lists-anime-entries'], [])
+      queryClient.setQueryData(['gui2-my-lists-anime-counts'], {})
     } finally {
       setLoadingAnime(false)
     }
@@ -814,9 +820,13 @@ export default function Gui2MyListsRoute({ preview = false }) {
       ])
       setMangaEntries(entries ?? [])
       setMangaCounts(counts ?? {})
+      queryClient.setQueryData(['gui2-my-lists-manga-entries'], entries ?? [])
+      queryClient.setQueryData(['gui2-my-lists-manga-counts'], counts ?? {})
     } catch {
       setMangaEntries([])
       setMangaCounts({})
+      queryClient.setQueryData(['gui2-my-lists-manga-entries'], [])
+      queryClient.setQueryData(['gui2-my-lists-manga-counts'], {})
     } finally {
       setLoadingManga(false)
     }
@@ -824,16 +834,29 @@ export default function Gui2MyListsRoute({ preview = false }) {
 
   const loadSyncMeta = async () => {
     try {
-      setSyncStatus(await wails.getRemoteListSyncStatus())
+      const status = await wails.getRemoteListSyncStatus()
+      setSyncStatus(status)
+      queryClient.setQueryData(['gui2-remote-sync-status'], status)
     } catch {
       setSyncStatus(null)
+      queryClient.setQueryData(['gui2-remote-sync-status'], null)
     }
   }
 
   useEffect(() => {
-    loadAnime()
-    loadManga()
-    loadSyncMeta()
+    if (animeEntries.length === 0 && Object.keys(animeCounts).length === 0) {
+      loadAnime()
+    } else {
+      setLoadingAnime(false)
+    }
+    if (mangaEntries.length === 0 && Object.keys(mangaCounts).length === 0) {
+      loadManga()
+    } else {
+      setLoadingManga(false)
+    }
+    if (!syncStatus) {
+      loadSyncMeta()
+    }
   }, [])
 
   const activeEntries = activeMediaType === 'anime' ? animeEntries : mangaEntries

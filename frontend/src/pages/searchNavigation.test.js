@@ -35,13 +35,58 @@ assert.ok(
 )
 
 assert.ok(
+  source.includes('const hydrateSelectedAnimeDetail = useCallback(async (selectedAnime) => {'),
+  'Search should expose a dedicated detail hydrator for direct navigation payloads that already include a source match',
+)
+
+assert.ok(
+  source.includes('const maybeEnrichSelectedEpisodeArtwork = useCallback(async (selectedAnime, selectionToken, perfToken = \'\') => {'),
+  'Search should define an early donor-art enrichment pass for resolved source hits before the landing page has to recover thumbnail coverage later',
+)
+
+assert.ok(
+  source.includes('if (!hasZeroThumbnailCoverage(prefetchedEpisodes)) return'),
+  'Search should only trigger AnimePahe donor-art enrichment when the resolved provider episode list has zero thumbnail coverage',
+)
+
+assert.ok(
+  source.includes('await enrichEpisodesWithAnimePaheArtwork(selectedAnime, prefetchedEpisodes, wails, appLang === \'en\' ? \'en\' : \'es\')'),
+  'Search should start AnimePahe donor-art enrichment as soon as source resolution confirms the provider episode list has no episode art',
+)
+
+assert.ok(
+  source.includes('void hydrateSelectedAnimeDetail(navState.selectedAnime)'),
+  'Search should immediately hydrate direct selected anime navigation payloads instead of relying on a later silent detail fetch',
+)
+
+assert.ok(
+  source.includes('const handleRecommendationOpen = useCallback((item) => {'),
+  'Search should define a dedicated in-place recommendation opener instead of re-routing through the same page',
+)
+
+assert.ok(
+  source.includes("document.querySelector('.gui2-content')?.scrollTo({ top: 0, left: 0, behavior: 'smooth' })"),
+  'Search recommendation hops should smoothly reset the shell scroll container before opening the next entry',
+)
+
+assert.ok(
+  source.includes('void resolveAniListMedia(') && source.includes("`recommendation-${navigationEntry?.id || navigationEntry?.anilist_id || item?.key || 'anime'}`"),
+  'Search recommendation clicks should reuse the same AniList-to-source resolution path as catalog cards',
+)
+
+assert.ok(
+  source.includes('onRecommendationSelect={handleRecommendationOpen}'),
+  'Search should pass the in-place recommendation opener down to the online anime detail view',
+)
+
+assert.ok(
   source.includes('searchAniListAnimeWithFallback('),
   'Search should run AniList anime lookups through the shared fallback helper so aliases and sequel fragments stay visible',
 )
 
 assert.ok(
-  source.includes('wails.getAniListAnimeCatalogHome(season, year)'),
-  'Anime Online catalog fallback should reuse the bundled AniList home payload instead of collapsing to the 20-card trending fallback',
+  !source.includes('wails.getAniListAnimeCatalogHome(season, year)'),
+  'Anime Online catalog should stay on the direct discover path instead of silently falling back to the heavier AniList home payload',
 )
 
 assert.ok(

@@ -7,8 +7,349 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet" />
+    <style>
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background:
+          radial-gradient(circle at 10% 12%, rgba(233, 171, 82, 0.22), transparent 26%),
+          radial-gradient(circle at 88% 72%, rgba(233, 171, 82, 0.14), transparent 22%),
+          linear-gradient(180deg, #080605 0%, #0f0907 100%);
+      }
+
+      body {
+        font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+      }
+
+      #boot-fallback {
+        position: fixed;
+        inset: 0;
+        z-index: 120;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+      }
+
+      .boot-fallback-scene {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+      }
+
+      .boot-fallback-scene::before,
+      .boot-fallback-scene::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .boot-fallback-scene::before {
+        background:
+          radial-gradient(circle at 18% 18%, rgba(255, 195, 112, 0.16), transparent 24%),
+          radial-gradient(circle at 84% 24%, rgba(255, 192, 98, 0.06), transparent 18%),
+          radial-gradient(circle at 82% 78%, rgba(255, 175, 82, 0.08), transparent 16%);
+        opacity: 0.92;
+      }
+
+      .boot-fallback-scene::after {
+        background:
+          linear-gradient(180deg, rgba(5, 4, 4, 0.22), rgba(8, 6, 6, 0.04) 18%, rgba(10, 8, 7, 0.18) 100%),
+          radial-gradient(circle at 50% 50%, transparent 56%, rgba(0, 0, 0, 0.12) 100%);
+      }
+
+      .boot-fallback-scene-lamp,
+      .boot-fallback-scene-shelf,
+      .boot-fallback-scene-desk {
+        position: absolute;
+        pointer-events: none;
+      }
+
+      .boot-fallback-scene-lamp {
+        top: 0;
+        left: 0;
+        width: min(34vw, 460px);
+        height: min(34vh, 280px);
+        background:
+          radial-gradient(circle at 18% 12%, rgba(255, 196, 106, 0.94), rgba(255, 180, 86, 0.52) 24%, rgba(255, 180, 86, 0.12) 48%, transparent 70%);
+        filter: blur(10px);
+        opacity: 0.92;
+        animation: bootFallbackLampDrift 6.2s ease-in-out infinite alternate;
+      }
+
+      .boot-fallback-scene-shelf {
+        top: 8vh;
+        right: clamp(18px, 4vw, 88px);
+        width: min(28vw, 380px);
+        height: min(46vh, 340px);
+        background:
+          linear-gradient(180deg, rgba(21, 14, 10, 0.08), rgba(10, 8, 7, 0.48)),
+          radial-gradient(circle at 50% 30%, rgba(255, 192, 98, 0.08), transparent 42%);
+        filter: blur(12px);
+        opacity: 0.58;
+      }
+
+      .boot-fallback-scene-desk {
+        inset: auto 0 0;
+        height: 28vh;
+        background:
+          linear-gradient(180deg, rgba(42, 24, 14, 0), rgba(28, 18, 12, 0.86) 56%, rgba(22, 14, 10, 0.98)),
+          radial-gradient(circle at 16% 68%, rgba(255, 183, 89, 0.18), transparent 18%);
+      }
+
+      .boot-fallback-room {
+        position: relative;
+        width: 100%;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 0;
+      }
+
+      .boot-fallback-glow {
+        position: absolute;
+        width: clamp(220px, 20vw, 320px);
+        height: clamp(220px, 20vw, 320px);
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(245, 183, 90, 0.32) 0%, rgba(245, 183, 90, 0.08) 42%, transparent 74%);
+        filter: blur(18px);
+        opacity: 0.72;
+        pointer-events: none;
+        animation: bootFallbackAtmosphereFloat 8s ease-in-out infinite alternate;
+      }
+
+      .boot-fallback-glow-left {
+        top: clamp(28px, 7vh, 90px);
+        left: clamp(-18px, 2vw, 34px);
+      }
+
+      .boot-fallback-glow-right {
+        right: clamp(8px, 2vw, 40px);
+        bottom: clamp(54px, 10vh, 124px);
+      }
+
+      .boot-fallback-chamber {
+        position: relative;
+        z-index: 1;
+        width: 100vw;
+        min-height: 100dvh;
+        display: grid;
+        justify-items: center;
+        align-content: center;
+        gap: 18px;
+        padding: clamp(54px, 6vw, 76px) clamp(42px, 4.5vw, 64px) clamp(86px, 9vw, 110px);
+        border-radius: 0;
+        border: none;
+        background:
+          linear-gradient(180deg, rgba(36, 26, 21, 0.94), rgba(18, 13, 11, 0.985)),
+          radial-gradient(circle at 50% 42%, rgba(245, 184, 90, 0.08), transparent 42%),
+          radial-gradient(circle at 18% 16%, rgba(255, 196, 106, 0.1), transparent 18%);
+        box-shadow:
+          0 0 0 1px rgba(255, 233, 205, 0.018),
+          inset 0 1px 0 rgba(255, 240, 220, 0.04);
+        overflow: hidden;
+        transform: none;
+      }
+
+      .boot-fallback-chamber::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(180deg, rgba(255, 246, 232, 0.04), transparent 18%),
+          radial-gradient(circle at 50% 100%, rgba(245, 184, 90, 0.1), transparent 38%),
+          linear-gradient(90deg, rgba(255, 228, 192, 0.03), transparent 16%, transparent 84%, rgba(255, 228, 192, 0.03));
+        pointer-events: none;
+      }
+
+      .boot-fallback-chamber::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 50% 36%, rgba(255, 210, 146, 0.06), transparent 30%),
+          radial-gradient(circle at 46% 40%, rgba(255, 184, 92, 0.05), transparent 18%);
+        animation: bootFallbackDustPulse 7.2s ease-in-out infinite;
+        pointer-events: none;
+      }
+
+      .boot-fallback-lamp {
+        position: absolute;
+        top: 12%;
+        left: 50%;
+        width: clamp(360px, 40vw, 520px);
+        height: clamp(240px, 30vw, 360px);
+        transform: translateX(-50%);
+        background: radial-gradient(circle, rgba(244, 179, 86, 0.28) 0%, rgba(244, 179, 86, 0.1) 36%, transparent 72%);
+        filter: blur(24px);
+        opacity: 0.9;
+        pointer-events: none;
+        animation: bootFallbackLampDrift 6.2s ease-in-out infinite alternate;
+      }
+
+      .boot-fallback-illustration {
+        position: relative;
+        z-index: 1;
+        width: clamp(290px, 28vw, 420px);
+        height: auto;
+        display: block;
+        -webkit-mask-image: radial-gradient(circle at 50% 54%, rgba(0, 0, 0, 1) 66%, rgba(0, 0, 0, 0.88) 78%, rgba(0, 0, 0, 0.24) 92%, transparent 100%);
+        mask-image: radial-gradient(circle at 50% 54%, rgba(0, 0, 0, 1) 66%, rgba(0, 0, 0, 0.88) 78%, rgba(0, 0, 0, 0.24) 92%, transparent 100%);
+        filter: saturate(0.92) brightness(0.96) contrast(0.98) drop-shadow(0 18px 34px rgba(0, 0, 0, 0.22));
+        animation: bootFallbackBreath 4.8s ease-in-out infinite;
+      }
+
+      .boot-fallback-copy {
+        position: relative;
+        z-index: 1;
+        margin: 0;
+        color: rgba(232, 206, 170, 0.76);
+        font-family: 'DM Sans', 'Plus Jakarta Sans', sans-serif;
+        font-size: clamp(24px, 2vw, 31px);
+        font-weight: 400;
+        letter-spacing: 0;
+        line-height: 1.14;
+        text-align: center;
+        text-wrap: balance;
+        max-width: 15ch;
+      }
+
+      .boot-fallback-status {
+        position: absolute;
+        right: clamp(30px, 3.4vw, 48px);
+        bottom: clamp(30px, 3.4vw, 44px);
+        z-index: 1;
+        display: block;
+      }
+
+      .boot-fallback-status-track {
+        position: relative;
+        width: 58px;
+        height: 14px;
+        display: block;
+      }
+
+      .boot-fallback-status-ember {
+        position: absolute;
+        left: 0;
+        top: 50%;
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(244, 184, 92, 0.96);
+        box-shadow:
+          0 0 12px rgba(244, 184, 92, 0.34),
+          0 0 22px rgba(244, 184, 92, 0.16);
+        transform: translate3d(0, -50%, 0);
+        animation: bootFallbackDropWander 1.9s ease-in-out infinite;
+      }
+
+      @keyframes bootFallbackBreath {
+        0%, 100% {
+          transform: translateY(0) scale(0.985);
+          opacity: 0.94;
+        }
+        50% {
+          transform: translateY(-4px) scale(1);
+          opacity: 1;
+        }
+      }
+
+      @keyframes bootFallbackLampDrift {
+        0% {
+          transform: translate3d(0, 0, 0) scale(0.98);
+          opacity: 0.82;
+        }
+        100% {
+          transform: translate3d(10px, -8px, 0) scale(1.04);
+          opacity: 0.96;
+        }
+      }
+
+      @keyframes bootFallbackAtmosphereFloat {
+        0% {
+          transform: translate3d(0, 0, 0) scale(0.98);
+        }
+        100% {
+          transform: translate3d(0, -10px, 0) scale(1.04);
+        }
+      }
+
+      @keyframes bootFallbackDustPulse {
+        0%, 100% {
+          opacity: 0.36;
+        }
+        50% {
+          opacity: 0.68;
+        }
+      }
+
+      @keyframes bootFallbackDropWander {
+        0%, 100% {
+          transform: translate3d(0, -50%, 0) scale(0.9);
+          opacity: 0.86;
+        }
+        50% {
+          transform: translate3d(42px, -50%, 0) scale(1.03);
+          opacity: 1;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .boot-fallback-scene-lamp {
+          width: 46vw;
+          height: 20vh;
+        }
+
+        .boot-fallback-scene-shelf {
+          right: 12px;
+          width: 34vw;
+          height: 26vh;
+          opacity: 0.42;
+        }
+
+        .boot-fallback-chamber {
+          width: 100vw;
+          min-height: 100dvh;
+          padding: 40px 18px 78px;
+          border-radius: 0;
+        }
+
+        .boot-fallback-copy {
+          font-size: clamp(19px, 5.4vw, 27px);
+          max-width: 14ch;
+        }
+
+        .boot-fallback-status {
+          left: auto;
+          right: 24px;
+          bottom: 24px;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="boot-fallback" aria-hidden="true">
+      <div class="boot-fallback-scene">
+        <div class="boot-fallback-scene-lamp"></div>
+        <div class="boot-fallback-scene-shelf"></div>
+        <div class="boot-fallback-scene-desk"></div>
+        <div class="boot-fallback-room">
+          <div class="boot-fallback-glow boot-fallback-glow-left"></div>
+          <div class="boot-fallback-glow boot-fallback-glow-right"></div>
+          <div class="boot-fallback-chamber">
+            <div class="boot-fallback-lamp"></div>
+            <img class="boot-fallback-illustration" src="/nipah-boot-cozy-host-transparent.png" alt="" />
+            <p class="boot-fallback-copy">setting the room for tonight</p>
+            <div class="boot-fallback-status">
+              <span class="boot-fallback-status-track" aria-hidden="true">
+                <span class="boot-fallback-status-ember"></span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

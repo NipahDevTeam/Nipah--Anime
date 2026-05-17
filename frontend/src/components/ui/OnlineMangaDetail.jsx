@@ -1,6 +1,10 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { buildMotionVars } from '../../gui-v2/motion/gui2Motion'
-import { proxyImage } from '../../lib/wails'
+import { proxyImage, wails } from '../../lib/wails'
 import { getMangaSourceMeta } from '../../lib/mangaSources'
+import LandingRecommendationsStage from './landing/LandingRecommendationsStage'
+import { buildLandingQueueWindow } from './landing/landingQueueWindowing'
 
 function formatDetailDate(value, locale) {
   if (!value) return ''
@@ -27,13 +31,122 @@ function detailRowsToGrid(rows) {
   return rows.filter((row) => row?.label && row?.value)
 }
 
+function normalizeChapterNumber(value) {
+  const numericValue =
+    typeof value === 'string'
+      ? Number(value.trim())
+      : value
+
+  return Number.isFinite(numericValue) ? numericValue : null
+}
+
+function getChapterSortValue(chapter) {
+  const chapterNumber = normalizeChapterNumber(chapter?.number)
+  if (chapterNumber !== null) return chapterNumber
+
+  const uploadedAt = chapter?.uploaded_at ? new Date(chapter.uploaded_at).getTime() : Number.NaN
+  if (Number.isFinite(uploadedAt)) return uploadedAt
+
+  return Number.NEGATIVE_INFINITY
+}
+
+function getRecommendationTitle(item) {
+  if (!item || typeof item !== 'object') return ''
+
+  if (typeof item.title === 'string' && item.title.trim()) return item.title.trim()
+  if (typeof item.name === 'string' && item.name.trim()) return item.name.trim()
+
+  const nestedTitle = item.title && typeof item.title === 'object'
+    ? item.title.english || item.title.romaji || item.title.native
+    : ''
+
+  if (typeof nestedTitle === 'string' && nestedTitle.trim()) return nestedTitle.trim()
+  if (typeof item.canonical_title === 'string' && item.canonical_title.trim()) return item.canonical_title.trim()
+
+  return ''
+}
+
+function getRecommendationDiscriminator(item) {
+  if (!item || typeof item !== 'object') return ''
+
+  const discriminator = item?.source_id
+    || item?.format
+    || item?.status
+    || item?.siteUrl
+    || item?.site_url
+    || item?.url
+    || item?.slug
+    || item?.canonical_title
+    || item?.name
+
+  return typeof discriminator === 'string' || typeof discriminator === 'number'
+    ? String(discriminator).trim()
+    : ''
+}
+
+function getRecommendationImage(item) {
+  if (!item || typeof item !== 'object') return ''
+  const media = item?.media || item?.node || item
+  return String(
+    media?.coverImage?.extraLarge
+    || media?.coverImage?.large
+    || media?.coverImage?.medium
+    || item?.coverImage?.extraLarge
+    || item?.coverImage?.large
+    || item?.coverImage?.medium
+    || media?.image
+    || item?.image
+    || '',
+  ).trim()
+}
+
+function getRecommendationSubtitle(item) {
+  if (!item || typeof item !== 'object') return ''
+  const media = item?.media || item?.node || item
+  const parts = [
+    media?.format || item?.format || '',
+    media?.status || item?.status ? String(media?.status || item?.status).replaceAll('_', ' ') : '',
+  ].filter(Boolean)
+  return parts.join(' · ')
+}
+
+function buildMangaRecommendationNavigationEntry(item) {
+  if (!item || typeof item !== 'object') return null
+
+  const media = item?.media || item?.node || item
+  const titleEnglish = typeof media?.title?.english === 'string' ? media.title.english : ''
+  const titleRomaji = typeof media?.title?.romaji === 'string' ? media.title.romaji : ''
+  const titleNative = typeof media?.title?.native === 'string' ? media.title.native : ''
+  const title = getRecommendationTitle(item)
+  const anilistID = Number(media?.id || item?.anilist_id || item?.id || 0)
+  const coverImage = media?.coverImage || item?.coverImage || null
+
+  if (anilistID <= 0 && !title) return null
+
+  return {
+    ...media,
+    anilist_id: anilistID,
+    title,
+    title_english: titleEnglish || title,
+    title_romaji: titleRomaji || title,
+    title_native: titleNative,
+    cover_image: coverImage?.extraLarge || coverImage?.large || coverImage?.medium || '',
+    banner_image: media?.bannerImage || item?.bannerImage || '',
+    description: typeof media?.description === 'string' ? media.description : '',
+    year: Number(media?.seasonYear || item?.seasonYear || media?.startDate?.year || item?.startDate?.year || 0),
+    format: media?.format || item?.format || '',
+    status: media?.status || item?.status || '',
+    chapters_total: Number(media?.chapters || item?.chapters || 0),
+  }
+}
+
 function LandingFactList({ rows }) {
   const items = detailRowsToGrid(rows)
   if (!items.length) return null
   return (
-    <div className="gui2-landing-fact-grid">
+    <div className="gui2-landing-fact-band">
       {items.map((row) => (
-        <div key={`${row.label}-${row.value}`} className="gui2-landing-fact-card">
+        <div key={`${row.label}-${row.value}`} className="gui2-landing-fact-item">
           <span className="gui2-landing-fact-label">{row.label}</span>
           <strong className="gui2-landing-fact-value">{row.value}</strong>
           {row.note ? <span className="gui2-landing-fact-note">{row.note}</span> : null}
@@ -63,12 +176,11 @@ function LandingMetaPanel({ title, rows }) {
   )
 }
 
-function LandingCharacterStrip({ characters, emptyLabel, title, actionLabel }) {
+function LandingCharacterStrip({ characters, emptyLabel, title }) {
   return (
     <section className="gui2-landing-panel">
       <div className="gui2-landing-section-head">
         <h3 className="gui2-landing-section-title">{title}</h3>
-        {characters.length > 0 ? <span className="gui2-landing-section-link">{actionLabel}</span> : null}
       </div>
       {characters.length > 0 ? (
         <div className="gui2-landing-character-strip">
@@ -204,7 +316,9 @@ export default function OnlineMangaDetail({
   resumeChapterID,
   onOpenChapter,
   chapterSectionCopy,
+  onRecommendationSelect = null,
 }) {
+  const [chapterPage, setChapterPage] = useState(1)
   const activeSourceLabel = getMangaSourceMeta(activeSourceID).label
   const progressBase = chapters.length || selected?.chapters_total || detail?.chapters || 0
   const progressCount = chapters.filter((chapter) => chapter.completed).length
@@ -214,6 +328,12 @@ export default function OnlineMangaDetail({
   const resumeChapter = resumeChapterID
     ? chapters.find((chapter) => chapter.id === resumeChapterID) || null
     : null
+  const latestChapter = useMemo(() => (
+    chapters.reduce((latest, chapter) => {
+      if (!latest) return chapter
+      return getChapterSortValue(chapter) > getChapterSortValue(latest) ? chapter : latest
+    }, null)
+  ), [chapters])
   const heading = selected.canonical_title || selected.title
   const subheading = detail?.title_native || detail?.canonical_title_native || selected?.canonical_title_native || ''
   const storyCopy = selectedDescription || detail?.resolved_description || ''
@@ -224,7 +344,7 @@ export default function OnlineMangaDetail({
   ].filter(Boolean)
   const publicationDate = formatAniListDateValue(detail?.startDate, isEnglish ? 'en-US' : 'es-CL')
   const releaseRows = [
-    resumeChapter ? { label: isEnglish ? 'Latest chapter' : 'Ultimo capitulo', value: resumeChapter.title || `${isEnglish ? 'Chapter' : 'Capitulo'} ${resumeChapter.number || '?'}` } : null,
+    latestChapter ? { label: isEnglish ? 'Latest chapter' : 'Ultimo capitulo', value: latestChapter.title || `${isEnglish ? 'Chapter' : 'Capitulo'} ${latestChapter.number || '?'}` } : null,
     resumeChapter ? { label: isEnglish ? 'Resume from' : 'Continuar desde', value: `${resumeChapter.number || '?'} · ${activeSourceLabel}` } : null,
     detail?.serialization ? { label: isEnglish ? 'Publication' : 'Publicacion', value: detail.serialization } : null,
     publicationDate ? { label: isEnglish ? 'Started' : 'Inicio', value: publicationDate } : null,
@@ -247,6 +367,71 @@ export default function OnlineMangaDetail({
     (detail?.countryOfOrigin || detail?.country_of_origin) ? { label: isEnglish ? 'Country' : 'Pais', value: detail.countryOfOrigin || detail.country_of_origin } : null,
     (detail?.averageScore || detail?.average_score) ? { label: isEnglish ? 'Rating' : 'Puntuacion', value: `${detail.averageScore || detail.average_score}` } : null,
   ]
+  const explicitRecommendationItems = useMemo(() => {
+    const localSources = [
+      detail?.recommendations,
+      detail?.recommendedMedia,
+      detail?.relatedRecommendations,
+      detail?.related_recommendations,
+      selected?.recommendations,
+      selected?.recommendedMedia,
+    ].filter(Array.isArray)
+
+    const seen = new Set()
+    return localSources
+      .flat()
+      .map((item) => {
+        const title = getRecommendationTitle(item)
+        const discriminator = getRecommendationDiscriminator(item)
+        const key = String(item?.id || item?.anilist_id || item?.mal_id || `${title}::${discriminator}`).trim()
+        if (!title || !key || seen.has(key)) return null
+        seen.add(key)
+        return {
+          key,
+          title,
+          image: getRecommendationImage(item),
+          eyebrow: isEnglish ? 'Related manga' : 'Manga relacionado',
+          subtitle: getRecommendationSubtitle(item),
+          navigationEntry: buildMangaRecommendationNavigationEntry(item),
+        }
+      })
+      .filter(Boolean)
+      .slice(0, 6)
+  }, [detail, isEnglish, selected])
+  const recommendationItems = useMemo(() => {
+    return explicitRecommendationItems.slice(0, 6)
+  }, [explicitRecommendationItems])
+  const recommendationsTitle = ui.recommendationsTitle || (isEnglish ? 'Keep reading' : 'Sigue leyendo')
+  const recommendationsCopy = ui.recommendationsCopy || (isEnglish
+    ? 'A calmer lower shelf for what should naturally follow this series once the reading room is fully enriched.'
+    : 'Una repisa inferior mas tranquila para lo que deberia seguir de forma natural a esta serie cuando el espacio de lectura termine de enriquecerse.')
+  const recommendationsEmptyCopy = ui.recommendationsEmptyCopy || (isEnglish
+    ? 'Related manga will settle here as recommendation data and source enrichment finish wiring in.'
+    : 'Los mangas relacionados se acomodaran aqui cuando terminen de conectarse las recomendaciones y el enriquecimiento de fuentes.')
+  const chapterWindow = useMemo(() => buildLandingQueueWindow({
+    items: visibleChapters,
+    page: chapterPage,
+    pageSize: 16,
+  }), [chapterPage, visibleChapters])
+  const pagedVisibleChapters = chapterWindow.items
+  const visibleChapterDatasetIdentity = useMemo(
+    () => [
+      activeSourceID || '',
+      chapterFilter,
+      visibleChapters.map((chapter) => String(chapter?.id || chapter?.number || '')).join('|'),
+    ].join('::'),
+    [activeSourceID, chapterFilter, visibleChapters],
+  )
+
+  useEffect(() => {
+    setChapterPage(1)
+  }, [visibleChapterDatasetIdentity])
+
+  useEffect(() => {
+    if (chapterPage !== chapterWindow.currentPage) {
+      setChapterPage(chapterWindow.currentPage)
+    }
+  }, [chapterPage, chapterWindow.currentPage])
 
   return (
     <div
@@ -256,8 +441,8 @@ export default function OnlineMangaDetail({
       <section
         className="gui2-landing-hero gui2-manga-landing-hero-premium"
         style={selectedBanner ? {
-          backgroundImage: `linear-gradient(180deg, rgba(7,7,10,0.16) 0%, rgba(7,7,10,0.76) 44%, rgba(7,7,10,0.97) 82%, rgba(7,7,10,0.99) 100%), radial-gradient(circle at top right, rgba(184, 78, 49, 0.18) 0%, rgba(184, 78, 49, 0) 34%), url(${selectedBanner})`,
-        } : {}}
+          '--gui2-landing-backdrop-image': `url(${selectedBanner})`,
+        } : undefined}
       >
         <div className="gui2-landing-toolbar">
           <button className="btn btn-ghost media-detail-back-btn" onClick={onBack}>
@@ -312,10 +497,7 @@ export default function OnlineMangaDetail({
 
       <div className="gui2-landing-workspace">
         <div className="gui2-landing-main">
-          <section className="gui2-landing-panel">
-            <div className="gui2-landing-section-head">
-              <h3 className="gui2-landing-section-title">{isEnglish ? 'Release Info' : 'Informacion de lanzamiento'}</h3>
-            </div>
+          <section className="gui2-landing-panel gui2-landing-panel--progression">
             <LandingFactList rows={releaseRows} />
           </section>
 
@@ -323,7 +505,6 @@ export default function OnlineMangaDetail({
             characters={selectedCharacters}
             emptyLabel={ui.chapterSidebarEmpty}
             title={isEnglish ? 'Characters' : 'Personajes'}
-            actionLabel={isEnglish ? 'View all' : 'Ver todos'}
           />
 
           <section className="gui2-landing-panel">
@@ -332,8 +513,20 @@ export default function OnlineMangaDetail({
                 <h3 className="gui2-landing-section-title">{ui.chapters}</h3>
                 <p className="gui2-landing-section-copy">{chapterSectionCopy}</p>
               </div>
-              <div className="gui2-landing-section-tools">
-                {chapters.length > 0 ? <span className="media-detail-count-pill">{visibleChapters.length}/{chapters.length}</span> : null}
+              <div className="gui2-landing-section-tools gui2-landing-section-tools--wrap">
+                <div className="gui2-landing-source-stack gui2-landing-source-stack--inline">
+                  {sourceCards.map((item) => (
+                    <OnlineMangaSourceButton
+                      key={`header-${item.source_id}`}
+                      item={item}
+                      active={item.source_id === activeSourceID}
+                      busy={activeSourceQuery.isFetching && item.source_id === activeSourceID}
+                      onClick={() => onSelectSource(item.source_id)}
+                      ui={ui}
+                    />
+                  ))}
+                </div>
+                {chapters.length > 0 ? <span className="gui2-landing-count">{visibleChapters.length}/{chapters.length}</span> : null}
                 {canShowChapters ? (
                   <div className="manga-filter-toggle" role="tablist" aria-label={ui.chapters}>
                     <button type="button" className={`manga-filter-toggle-btn${chapterFilter === 'unread' ? ' active' : ''}`} onClick={() => onChapterFilterChange('unread')}>{ui.unreadChapters}</button>
@@ -390,7 +583,7 @@ export default function OnlineMangaDetail({
 
             {canShowChapters ? (
               visibleChapters.length > 0 ? (
-            <div className="gui2-landing-chapter-table gui2-manga-landing-chapters-editorial">
+                <div className="gui2-landing-chapter-table gui2-manga-landing-chapters-editorial">
                   <div className="gui2-landing-chapter-header">
                     <span>#</span>
                     <span>{isEnglish ? 'Chapter' : 'Capitulo'}</span>
@@ -400,7 +593,7 @@ export default function OnlineMangaDetail({
                     <span>{isEnglish ? 'Action' : 'Accion'}</span>
                   </div>
                   <div className="gui2-landing-chapter-list">
-                    {visibleChapters.map((chapter) => (
+                    {pagedVisibleChapters.map((chapter) => (
                       <OnlineMangaChapterRow
                         key={chapter.id}
                         chapter={chapter}
@@ -411,6 +604,42 @@ export default function OnlineMangaDetail({
                       />
                     ))}
                   </div>
+                  {chapterWindow.showPagination ? (
+                    <div
+                      className="gui2-landing-queue-pagination gui2-landing-queue-pagination--editorial"
+                      aria-label={isEnglish ? 'Chapter pages' : 'Paginas de capitulos'}
+                    >
+                      <button
+                        type="button"
+                        className="gui2-landing-pagechip"
+                        onClick={() => setChapterPage((page) => Math.max(1, page - 1))}
+                        disabled={chapterWindow.currentPage <= 1}
+                        aria-label={isEnglish ? 'Previous chapter page' : 'Pagina anterior'}
+                      >
+                        {isEnglish ? 'Prev' : 'Anterior'}
+                      </button>
+                      {chapterWindow.pageChips.map((pageNumber) => (
+                        <button
+                          key={`chapter-page-${pageNumber}`}
+                          type="button"
+                          className={`gui2-landing-pagechip${pageNumber === chapterWindow.currentPage ? ' active' : ''}`}
+                          onClick={() => setChapterPage(pageNumber)}
+                          aria-current={pageNumber === chapterWindow.currentPage ? 'page' : undefined}
+                        >
+                          {pageNumber}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="gui2-landing-pagechip"
+                        onClick={() => setChapterPage((page) => Math.min(chapterWindow.totalPages, page + 1))}
+                        disabled={chapterWindow.currentPage >= chapterWindow.totalPages}
+                        aria-label={isEnglish ? 'Next chapter page' : 'Pagina siguiente'}
+                      >
+                        {isEnglish ? 'Next' : 'Siguiente'}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="empty-state manga-filter-empty-state">
@@ -425,25 +654,17 @@ export default function OnlineMangaDetail({
         <aside className="gui2-landing-aside">
           <LandingMetaPanel title={isEnglish ? 'Details' : 'Detalles'} rows={detailRows} />
           <LandingMetaPanel title={isEnglish ? 'More Info' : 'Mas informacion'} rows={moreInfoRows} />
-          <section className="gui2-landing-panel">
-            <div className="gui2-landing-section-head">
-              <h3 className="gui2-landing-section-title">{ui.sourceTabsTitle}</h3>
-            </div>
-            <div className="gui2-landing-source-stack">
-              {sourceCards.map((item) => (
-                <OnlineMangaSourceButton
-                  key={`aside-${item.source_id}`}
-                  item={item}
-                  active={item.source_id === activeSourceID}
-                  busy={activeSourceQuery.isFetching && item.source_id === activeSourceID}
-                  onClick={() => onSelectSource(item.source_id)}
-                  ui={ui}
-                />
-              ))}
-            </div>
-          </section>
         </aside>
       </div>
+
+      <LandingRecommendationsStage
+        title={recommendationsTitle}
+        copy={recommendationsCopy}
+        items={recommendationItems}
+        onSelectItem={onRecommendationSelect}
+        emptyCopy={recommendationsEmptyCopy}
+        placeholderCount={4}
+      />
     </div>
   )
 }

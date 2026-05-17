@@ -15,8 +15,25 @@
   --gui2-danger: #c66767;
   --gui2-success: #7dbd92;
   --gui2-shadow: 0 16px 48px rgba(0, 0, 0, 0.34);
-  --gui2-sidebar-w: 156px;
+  --gui2-rail-w: 82px;
+  --gui2-rail-w-immersive: 68px;
+  --gui2-sidebar-w: var(--gui2-rail-w);
   --gui2-topbar-h: 52px;
+  --gui2-shell-safe-right: 112px;
+  --gui2-shell-density-shell-blur: 14px;
+  --gui2-shell-density-topbar-blur: 12px;
+  --gui2-shell-density-flyout-blur: 10px;
+  --gui2-shell-density-rail-fill:
+    linear-gradient(180deg, rgba(9, 10, 12, 0.58), rgba(12, 13, 16, 0.18)),
+    radial-gradient(circle at top center, rgba(242, 140, 40, 0.1), transparent 38%);
+  --gui2-shell-density-rail-fill-immersive:
+    linear-gradient(180deg, rgba(8, 9, 11, 0.36), rgba(8, 9, 11, 0.08)),
+    radial-gradient(circle at top center, rgba(242, 140, 40, 0.12), transparent 40%);
+  --gui2-shell-density-topbar-fill:
+    linear-gradient(180deg, rgba(10, 11, 14, 0.84), rgba(10, 11, 14, 0.48));
+  --gui2-shell-density-topbar-fill-immersive:
+    linear-gradient(180deg, rgba(6, 7, 10, 0.78) 0%, rgba(6, 7, 10, 0.34) 58%, rgba(6, 7, 10, 0) 100%);
+  --gui2-shell-density-flyout-fill: rgba(18, 24, 27, 0.82);
   --gui2-radius: 0;
   --gui2-gap: 16px;
   --gui2-soft: rgba(243, 239, 232, 0.72);
@@ -76,10 +93,46 @@ body.gui2-boot-active {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  :root {
+    --gui2-shell-density-shell-blur: 0px;
+    --gui2-shell-density-topbar-blur: 0px;
+    --gui2-shell-density-flyout-blur: 0px;
+    --gui2-shell-density-rail-fill:
+      linear-gradient(180deg, rgba(9, 10, 12, 0.62), rgba(12, 13, 16, 0.2)),
+      radial-gradient(circle at top center, rgba(242, 140, 40, 0.08), transparent 38%);
+    --gui2-shell-density-rail-fill-immersive:
+      linear-gradient(180deg, rgba(8, 9, 11, 0.42), rgba(8, 9, 11, 0.12)),
+      radial-gradient(circle at top center, rgba(242, 140, 40, 0.1), transparent 40%);
+    --gui2-shell-density-topbar-fill:
+      linear-gradient(180deg, rgba(10, 11, 14, 0.88), rgba(10, 11, 14, 0.52));
+    --gui2-shell-density-topbar-fill-immersive:
+      linear-gradient(180deg, rgba(6, 7, 10, 0.82) 0%, rgba(6, 7, 10, 0.38) 58%, rgba(6, 7, 10, 0) 100%);
+    --gui2-shell-density-flyout-fill: rgba(18, 24, 27, 0.9);
+  }
+
   .gui2-motion-enter {
     animation: none;
     opacity: 1;
     transform: none;
+  }
+}
+
+@media (max-width: 1440px) {
+  :root {
+    --gui2-shell-density-shell-blur: 8px;
+    --gui2-shell-density-topbar-blur: 6px;
+    --gui2-shell-density-flyout-blur: 6px;
+    --gui2-shell-density-rail-fill:
+      linear-gradient(180deg, rgba(9, 10, 12, 0.48), rgba(12, 13, 16, 0.14)),
+      radial-gradient(circle at top center, rgba(242, 140, 40, 0.08), transparent 38%);
+    --gui2-shell-density-rail-fill-immersive:
+      linear-gradient(180deg, rgba(8, 9, 11, 0.28), rgba(8, 9, 11, 0.04)),
+      radial-gradient(circle at top center, rgba(242, 140, 40, 0.1), transparent 40%);
+    --gui2-shell-density-topbar-fill:
+      linear-gradient(180deg, rgba(10, 11, 14, 0.78), rgba(10, 11, 14, 0.4));
+    --gui2-shell-density-topbar-fill-immersive:
+      linear-gradient(180deg, rgba(6, 7, 10, 0.72) 0%, rgba(6, 7, 10, 0.28) 58%, rgba(6, 7, 10, 0) 100%);
+    --gui2-shell-density-flyout-fill: rgba(18, 24, 27, 0.76);
   }
 }
 
@@ -100,6 +153,10 @@ a {
   min-height: 100vh;
   background: transparent;
   position: relative;
+}
+
+.gui2-shell[data-shell-variant='immersive'] {
+  --gui2-sidebar-w: var(--gui2-rail-w-immersive);
 }
 
 .gui2-sidebar {
@@ -221,6 +278,65 @@ a {
   background: rgba(12, 13, 16, 0.98);
 }
 
+.gui2-shell-chrome {
+  --wails-draggable: drag;
+}
+
+.gui2-window-controls {
+  position: relative;
+  z-index: 6;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 10px;
+  padding-left: 10px;
+  padding-right: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gui2-window-control {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(8, 9, 11, 0.62);
+  color: rgba(255, 247, 238, 0.86);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 10px 22px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  transition:
+    background 180ms var(--gui2-ease-premium),
+    color 180ms var(--gui2-ease-premium),
+    border-color 180ms var(--gui2-ease-premium),
+    transform 180ms var(--gui2-ease-premium),
+    box-shadow 180ms var(--gui2-ease-premium);
+}
+
+.gui2-window-control svg {
+  width: 14px;
+  height: 14px;
+}
+
+.gui2-window-control:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff8f0;
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 14px 26px rgba(0, 0, 0, 0.28);
+}
+
+.gui2-window-control-close {
+  background: rgba(242, 140, 40, 0.2);
+  color: rgba(255, 248, 240, 0.96);
+}
+
 .gui2-command-surface {
   height: 32px;
   min-width: min(520px, 100%);
@@ -243,6 +359,20 @@ a {
   margin-left: auto;
 }
 
+.gui2-topbar-actions,
+.gui2-topbar-actions *,
+.gui2-window-controls,
+.gui2-window-controls *,
+.gui2-rail-link,
+.gui2-rail-link *,
+.gui2-lang-button,
+.gui2-user-chip,
+.gui2-icon-button,
+.gui2-content,
+.gui2-content * {
+  --wails-draggable: no-drag;
+}
+
 .gui2-boot-overlay {
   position: fixed;
   inset: 0;
@@ -250,7 +380,10 @@ a {
   display: grid;
   place-items: center;
   padding: 0;
-  background: #07080b;
+  background:
+    radial-gradient(circle at 10% 12%, rgba(233, 171, 82, 0.22), transparent 26%),
+    radial-gradient(circle at 88% 72%, rgba(233, 171, 82, 0.14), transparent 22%),
+    linear-gradient(180deg, #080605 0%, #0f0907 100%);
   opacity: 1;
   transition: opacity 360ms ease;
 }
@@ -260,128 +393,325 @@ a {
   pointer-events: none;
 }
 
-.gui2-boot-stage {
+.gui2-boot-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.gui2-boot-scene::before,
+.gui2-boot-scene::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.gui2-boot-scene::before {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255, 195, 112, 0.16), transparent 24%),
+    radial-gradient(circle at 84% 24%, rgba(255, 192, 98, 0.06), transparent 18%),
+    radial-gradient(circle at 82% 78%, rgba(255, 175, 82, 0.08), transparent 16%);
+  opacity: 0.92;
+}
+
+.gui2-boot-scene::after {
+  background:
+    linear-gradient(180deg, rgba(5, 4, 4, 0.22), rgba(8, 6, 6, 0.04) 18%, rgba(10, 8, 7, 0.18) 100%),
+    radial-gradient(circle at 50% 50%, transparent 56%, rgba(0, 0, 0, 0.12) 100%);
+}
+
+.gui2-boot-scene-lamp,
+.gui2-boot-scene-shelf,
+.gui2-boot-scene-desk {
+  position: absolute;
+  pointer-events: none;
+}
+
+.gui2-boot-scene-lamp {
+  top: 0;
+  left: 0;
+  width: min(34vw, 460px);
+  height: min(34vh, 280px);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 196, 106, 0.94), rgba(255, 180, 86, 0.52) 24%, rgba(255, 180, 86, 0.12) 48%, transparent 70%);
+  filter: blur(10px);
+  opacity: 0.92;
+  animation: gui2BootLampDrift 6.2s ease-in-out infinite alternate;
+}
+
+.gui2-boot-scene-shelf {
+  top: 8vh;
+  right: clamp(18px, 4vw, 88px);
+  width: min(28vw, 380px);
+  height: min(46vh, 340px);
+  background:
+    linear-gradient(180deg, rgba(21, 14, 10, 0.08), rgba(10, 8, 7, 0.48)),
+    radial-gradient(circle at 50% 30%, rgba(255, 192, 98, 0.08), transparent 42%);
+  filter: blur(12px);
+  opacity: 0.58;
+}
+
+.gui2-boot-scene-desk {
+  inset: auto 0 0;
+  height: 28vh;
+  background:
+    linear-gradient(180deg, rgba(42, 24, 14, 0), rgba(28, 18, 12, 0.86) 56%, rgba(22, 14, 10, 0.98)),
+    radial-gradient(circle at 16% 68%, rgba(255, 183, 89, 0.18), transparent 18%);
+}
+
+.gui2-boot-room {
   position: relative;
   width: 100%;
   min-height: 100dvh;
   display: grid;
   place-items: center;
   overflow: hidden;
-  background:
-    radial-gradient(circle at center, rgba(215, 163, 90, 0.07), transparent 36%),
-    linear-gradient(180deg, rgba(9, 10, 12, 0.98), rgba(9, 10, 12, 0.96));
+  padding: 0;
 }
 
-.gui2-boot-grid,
-.gui2-boot-sweep {
+.gui2-boot-room-glow,
+.gui2-boot-lamp-glow {
   position: absolute;
-  inset: 0;
   pointer-events: none;
 }
 
-.gui2-boot-grid {
-  background-image:
-    linear-gradient(rgba(215, 163, 90, 0.09) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(215, 163, 90, 0.09) 1px, transparent 1px);
-  background-size: 96px 96px;
-  mask-image: radial-gradient(circle at center, black 58%, transparent 100%);
-  opacity: 0.92;
+.gui2-boot-room-glow {
+  width: clamp(220px, 20vw, 320px);
+  height: clamp(220px, 20vw, 320px);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, rgba(245, 183, 90, 0.32) 0%, rgba(245, 183, 90, 0.08) 42%, transparent 74%);
+  filter: blur(18px);
+  opacity: 0.72;
+  animation: gui2BootAtmosphereFloat 8s ease-in-out infinite alternate;
 }
 
-.gui2-boot-sweep::before,
-.gui2-boot-sweep::after {
+.gui2-boot-room-glow-left {
+  top: clamp(28px, 7vh, 90px);
+  left: clamp(-18px, 2vw, 34px);
+}
+
+.gui2-boot-room-glow-right {
+  right: clamp(8px, 2vw, 40px);
+  bottom: clamp(54px, 10vh, 124px);
+}
+
+.gui2-boot-chamber {
+  position: relative;
+  z-index: 1;
+  width: 100vw;
+  min-height: 100dvh;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 18px;
+  padding: clamp(54px, 6vw, 76px) clamp(42px, 4.5vw, 64px) clamp(86px, 9vw, 110px);
+  border-radius: 0;
+  border: none;
+  background:
+    linear-gradient(180deg, rgba(36, 26, 21, 0.94), rgba(18, 13, 11, 0.985)),
+    radial-gradient(circle at 50% 42%, rgba(245, 184, 90, 0.08), transparent 42%),
+    radial-gradient(circle at 18% 16%, rgba(255, 196, 106, 0.1), transparent 18%);
+  box-shadow:
+    0 0 0 1px rgba(255, 233, 205, 0.018),
+    inset 0 1px 0 rgba(255, 240, 220, 0.04);
+  overflow: hidden;
+  transform: none;
+}
+
+.gui2-boot-chamber::before {
   content: '';
   position: absolute;
-  left: -8%;
-  right: -8%;
-}
-
-.gui2-boot-sweep::before {
-  top: 50%;
-  height: 1px;
-  transform: translateY(-50%);
-  background: linear-gradient(90deg, transparent, rgba(239, 191, 122, 0.84), transparent);
-  box-shadow:
-    0 0 24px rgba(239, 191, 122, 0.52),
-    0 0 42px rgba(239, 191, 122, 0.24);
-  animation: gui2BootShine 4.4s ease-in-out infinite;
-}
-
-.gui2-boot-sweep::after {
-  top: 34%;
-  bottom: 22%;
+  inset: 0;
   background:
-    radial-gradient(circle at 22% 64%, rgba(239, 191, 122, 0.14), transparent 18%),
-    radial-gradient(circle at 76% 62%, rgba(239, 191, 122, 0.14), transparent 18%);
-  animation: gui2BootGlow 4.4s ease-in-out infinite;
+    linear-gradient(180deg, rgba(255, 246, 232, 0.04), transparent 18%),
+    radial-gradient(circle at 50% 100%, rgba(245, 184, 90, 0.1), transparent 38%),
+    linear-gradient(90deg, rgba(255, 228, 192, 0.03), transparent 16%, transparent 84%, rgba(255, 228, 192, 0.03));
+  pointer-events: none;
 }
 
-.gui2-boot-brand {
+.gui2-boot-chamber::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 36%, rgba(255, 210, 146, 0.06), transparent 30%),
+    radial-gradient(circle at 46% 40%, rgba(255, 184, 92, 0.05), transparent 18%);
+  animation: gui2BootDustPulse 7.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.gui2-boot-lamp-glow {
+  top: 12%;
+  left: 50%;
+  width: clamp(360px, 40vw, 520px);
+  height: clamp(240px, 30vw, 360px);
+  transform: translateX(-50%);
+  background:
+    radial-gradient(circle, rgba(244, 179, 86, 0.28) 0%, rgba(244, 179, 86, 0.1) 36%, transparent 72%);
+  filter: blur(24px);
+  opacity: 0.9;
+  animation: gui2BootLampDrift 6.2s ease-in-out infinite alternate;
+}
+
+.gui2-boot-illustration-wrap {
   position: relative;
   z-index: 1;
   display: grid;
-  justify-items: center;
-  overflow: hidden;
+  place-items: center;
+  margin-top: 6px;
+  animation: gui2BootBreath 4.8s ease-in-out infinite;
 }
 
-.gui2-boot-brand::after {
-  content: '';
-  position: absolute;
-  top: -20%;
-  bottom: -20%;
-  width: 34%;
-  background: linear-gradient(90deg, transparent, rgba(255, 246, 232, 0.18), rgba(255, 246, 232, 0.68), rgba(255, 246, 232, 0.18), transparent);
-  transform: translateX(-220%) skewX(-18deg);
-  filter: blur(10px);
-  mix-blend-mode: screen;
-  animation: gui2BootLogoSweep 4.4s ease-in-out infinite;
-}
-
-.gui2-boot-logo {
-  width: clamp(116px, 12vw, 172px);
+.gui2-boot-illustration {
+  width: clamp(290px, 28vw, 420px);
   height: auto;
   display: block;
+  -webkit-mask-image: radial-gradient(circle at 50% 54%, rgba(0, 0, 0, 1) 66%, rgba(0, 0, 0, 0.88) 78%, rgba(0, 0, 0, 0.24) 92%, transparent 100%);
+  mask-image: radial-gradient(circle at 50% 54%, rgba(0, 0, 0, 1) 66%, rgba(0, 0, 0, 0.88) 78%, rgba(0, 0, 0, 0.24) 92%, transparent 100%);
   filter:
-    drop-shadow(0 0 18px rgba(239, 191, 122, 0.16))
-    drop-shadow(0 0 32px rgba(239, 191, 122, 0.12));
+    saturate(0.92)
+    brightness(0.96)
+    contrast(0.98)
+    drop-shadow(0 18px 34px rgba(0, 0, 0, 0.22));
 }
 
-@keyframes gui2BootShine {
-  0%,
-  100% {
-    opacity: 0.56;
-    transform: translateY(-50%) scaleX(0.96);
-  }
-  45% {
-    opacity: 1;
-    transform: translateY(-50%) scaleX(1.02);
-  }
+.gui2-boot-catchphrase {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  color: rgba(232, 206, 170, 0.76);
+  font-family: 'DM Sans', 'Plus Jakarta Sans', sans-serif;
+  font-size: clamp(24px, 2vw, 31px);
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.14;
+  text-align: center;
+  text-wrap: balance;
+  max-width: 15ch;
 }
 
-@keyframes gui2BootGlow {
+.gui2-boot-status {
+  position: absolute;
+  right: clamp(30px, 3.4vw, 48px);
+  bottom: clamp(30px, 3.4vw, 44px);
+  z-index: 1;
+  display: block;
+}
+
+.gui2-boot-status-track {
+  position: relative;
+  width: 58px;
+  height: 14px;
+  display: block;
+}
+
+.gui2-boot-status-ember {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(244, 184, 92, 0.96);
+  box-shadow:
+    0 0 12px rgba(244, 184, 92, 0.34),
+    0 0 22px rgba(244, 184, 92, 0.16);
+  transform: translate3d(0, -50%, 0);
+  animation: gui2BootDropWander 1.9s var(--gui2-ease-premium) infinite;
+}
+
+@keyframes gui2BootBreath {
   0%,
   100% {
-    opacity: 0.46;
+    transform: translateY(0) scale(0.985);
+    opacity: 0.94;
   }
   50% {
+    transform: translateY(-4px) scale(1);
     opacity: 1;
   }
 }
 
-@keyframes gui2BootLogoSweep {
-  0%,
-  12%,
+@keyframes gui2BootLampDrift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.98);
+    opacity: 0.82;
+  }
   100% {
-    opacity: 0;
-    transform: translateX(-220%) skewX(-18deg);
+    transform: translate3d(10px, -8px, 0) scale(1.04);
+    opacity: 0.96;
   }
-  32% {
-    opacity: 0.9;
-    transform: translateX(90%) skewX(-18deg);
+}
+
+@keyframes gui2BootAtmosphereFloat {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.98);
   }
-  44% {
-    opacity: 0;
-    transform: translateX(190%) skewX(-18deg);
+  100% {
+    transform: translate3d(0, -10px, 0) scale(1.04);
+  }
+}
+
+@keyframes gui2BootDustPulse {
+  0%,
+  100% {
+    opacity: 0.36;
+  }
+  50% {
+    opacity: 0.68;
+  }
+}
+
+@keyframes gui2BootDropWander {
+  0%,
+  100% {
+    transform: translate3d(0, -50%, 0) scale(0.9);
+    opacity: 0.86;
+  }
+  50% {
+    transform: translate3d(42px, -50%, 0) scale(1.03);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 720px) {
+  .gui2-boot-scene-lamp {
+    width: 46vw;
+    height: 20vh;
+  }
+
+  .gui2-boot-scene-shelf {
+    right: 12px;
+    width: 34vw;
+    height: 26vh;
+    opacity: 0.42;
+  }
+
+  .gui2-boot-chamber {
+    width: 100vw;
+    min-height: 100dvh;
+    padding: 40px 18px 78px;
+    border-radius: 0;
+  }
+
+  .gui2-boot-catchphrase {
+    font-size: clamp(19px, 5.4vw, 27px);
+    max-width: 14ch;
+  }
+
+  .gui2-boot-status {
+    left: auto;
+    right: 24px;
+    bottom: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gui2-boot-illustration-wrap,
+  .gui2-boot-status-ember {
+    animation: none;
   }
 }
 
@@ -900,6 +1230,33 @@ a {
 .gui2-shell[data-route='downloads'] .gui2-content-frame,
 .gui2-shell[data-route='settings'] .gui2-content-frame {
   gap: 16px;
+}
+
+.gui2-shell[data-route='home'] .gui2-topbar {
+  position: relative;
+  z-index: 4;
+  border-bottom: 0;
+  background: linear-gradient(180deg, rgba(6, 7, 10, 0.56) 0%, rgba(6, 7, 10, 0.34) 42%, rgba(6, 7, 10, 0.14) 70%, rgba(6, 7, 10, 0) 100%);
+  backdrop-filter: none;
+}
+
+.gui2-shell[data-route='home'] .gui2-content {
+  padding: 0 0 14px;
+}
+
+.gui2-shell[data-route='home'] .gui2-topbar-actions,
+.gui2-shell[data-route='home'] .gui2-window-controls,
+.gui2-shell[data-route='home'] .gui2-lang-button,
+.gui2-shell[data-route='home'] .gui2-user-chip {
+  position: relative;
+  z-index: 6;
+}
+
+.gui2-shell[data-route='home'] .gui2-lang-button,
+.gui2-shell[data-route='home'] .gui2-user-chip {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(8, 9, 11, 0.58);
+  backdrop-filter: none;
 }
 
 .empty-state {
@@ -2220,117 +2577,289 @@ textarea {
   position: fixed;
   top: 0;
   left: 0;
-  width: var(--gui2-sidebar-w);
+  width: var(--gui2-rail-w);
   height: 100dvh;
   z-index: 24;
-  gap: 14px;
-  padding: 12px 10px 14px;
+  gap: 18px;
+  padding: 16px 11px 18px;
   overflow-y: auto;
   scrollbar-width: none;
+  border-right: 0;
+  background: var(--gui2-shell-density-rail-fill);
 }
 
 .gui2-sidebar::-webkit-scrollbar {
   display: none;
 }
 
-.gui2-brand {
-  gap: 4px;
-  padding-bottom: 14px;
+.gui2-smart-rail {
+  align-items: center;
 }
 
-.gui2-brand-lockup {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.gui2-brand-mark {
-  width: 26px;
-  height: 30px;
-  border: none;
-  background: transparent;
-  color: var(--gui2-gold);
-  }
-
-.gui2-brand-copy {
+.gui2-rail-brand {
+  --wails-draggable: drag;
+  width: 100%;
   display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 6px 0 16px;
+}
+
+.gui2-rail-brand-mark {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01)),
+    linear-gradient(180deg, rgba(242, 140, 40, 0.16), rgba(126, 143, 122, 0.08));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 18px 32px rgba(0, 0, 0, 0.28);
+}
+
+.gui2-rail-logo {
+  width: 28px;
+  height: 32px;
+  display: block;
+}
+
+.gui2-rail-brand-copy {
+  display: grid;
+  justify-items: center;
   gap: 2px;
+  text-align: center;
 }
 
-.gui2-brand-word {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  font-size: 15px;
-  letter-spacing: -0.03em;
-}
-
-.gui2-brand-word-accent {
-  color: var(--gui2-gold-strong);
-}
-
-.gui2-brand-word-main {
+.gui2-rail-brand-name {
+  max-width: 64px;
   color: var(--gui2-text);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 
-.gui2-brand-subword,
-.gui2-brand-version,
-.gui2-nav-heading {
+.gui2-rail-brand-sub {
   color: var(--gui2-text-dim);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+.gui2-nav {
+  width: 100%;
 }
 
 .gui2-nav-group,
 .gui2-nav-footer {
-  gap: 6px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.gui2-rail-nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0;
+}
+
+.gui2-rail-group {
+  width: 100%;
 }
 
 .gui2-nav-footer {
   margin-top: auto;
-  padding-top: 12px;
-  background: linear-gradient(180deg, rgba(10, 11, 14, 0.02), rgba(10, 11, 14, 0.96) 24%);
+  padding-top: 18px;
 }
 
-.gui2-nav-heading {
-  padding: 10px 8px 6px;
+.gui2-rail-link {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  color: var(--gui2-text-soft);
+  text-decoration: none;
+  transition:
+    transform 160ms var(--gui2-ease-premium),
+    color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
 }
 
-.gui2-nav-link {
-  grid-template-columns: 18px minmax(0, 1fr);
+.gui2-rail-link::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  opacity: 0;
+  transition: opacity 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.gui2-rail-link::after {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 3px;
+  height: 22px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--gui2-gold-strong), #f28c28);
+  box-shadow: 0 0 14px rgba(242, 140, 40, 0.34);
+  opacity: 0;
+  transform: translateY(-50%) scaleY(0.7);
+  transition: opacity 160ms ease, transform 160ms var(--gui2-ease-premium);
+}
+
+.gui2-rail-link:hover,
+.gui2-rail-link:focus-visible {
+  transform: translateY(-1px);
+  color: var(--gui2-text);
+}
+
+.gui2-rail-link:hover::before,
+.gui2-rail-link:focus-visible::before {
+  opacity: 0;
+}
+
+.gui2-rail-link.active {
+  color: var(--gui2-text);
+}
+
+.gui2-rail-link.active::before {
+  opacity: 1;
+  background:
+    linear-gradient(180deg, rgba(242, 140, 40, 0.24), rgba(242, 140, 40, 0.06)),
+    linear-gradient(135deg, rgba(126, 143, 122, 0.14), rgba(255, 255, 255, 0.02));
+  box-shadow:
+    inset 0 0 0 1px rgba(242, 140, 40, 0.22),
+    0 12px 28px rgba(242, 140, 40, 0.12);
+}
+
+.gui2-rail-link.active::after {
+  opacity: 1;
+  transform: translateY(-50%) scaleY(1);
+}
+
+.gui2-rail-link-secondary.active::before {
+  background:
+    linear-gradient(180deg, rgba(126, 143, 122, 0.18), rgba(126, 143, 122, 0.05)),
+    linear-gradient(135deg, rgba(242, 140, 40, 0.08), rgba(255, 255, 255, 0.02));
+  box-shadow:
+    inset 0 0 0 1px rgba(126, 143, 122, 0.2),
+    0 12px 24px rgba(126, 143, 122, 0.1);
+}
+
+.gui2-rail-icon {
+  position: relative;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  transition: transform 160ms var(--gui2-ease-premium), filter 160ms ease;
+}
+
+.gui2-rail-link:hover .gui2-rail-icon,
+.gui2-rail-link:focus-visible .gui2-rail-icon {
+  transform: translateY(-1px);
+  filter: drop-shadow(0 0 10px rgba(242, 140, 40, 0.16));
+}
+
+.gui2-rail-flyout {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 12px);
+  z-index: 30;
   min-height: 38px;
-  padding: 8px 10px;
-}
-
-.gui2-nav-label {
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--gui2-shell-density-flyout-fill);
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(var(--gui2-shell-density-flyout-blur));
+  color: var(--gui2-text);
   font-size: 12px;
+  font-weight: 700;
   letter-spacing: -0.01em;
-  font-weight: 600;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-50%) translateX(-6px);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 160ms var(--gui2-ease-premium);
 }
 
-.gui2-nav-link:hover,
-.gui2-nav-link.active {
-  background: rgba(215, 163, 90, 0.08);
+.gui2-rail-link:hover .gui2-rail-flyout,
+.gui2-rail-link:focus-visible .gui2-rail-flyout {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
 }
 
 .gui2-topbar {
   position: fixed;
   top: 0;
-  left: var(--gui2-sidebar-w);
+  left: var(--gui2-rail-w);
   right: 0;
   z-index: 20;
   gap: 14px;
-  padding: 0 16px;
+  padding: 0 var(--gui2-shell-safe-right) 0 18px;
+  background: var(--gui2-shell-density-topbar-fill);
+  backdrop-filter: blur(var(--gui2-shell-density-topbar-blur));
 }
 
+.gui2-shell[data-shell-variant='immersive'] .gui2-sidebar {
+  background: var(--gui2-shell-density-rail-fill-immersive);
+}
+
+.gui2-shell[data-shell-variant='immersive'] .gui2-topbar {
+  left: var(--gui2-sidebar-w);
+  border-bottom: 0;
+  background: var(--gui2-shell-density-topbar-fill-immersive);
+  backdrop-filter: blur(var(--gui2-shell-density-topbar-blur));
+}
+
+.gui2-shell[data-shell-variant='immersive'][data-route='home'] .gui2-topbar {
+  background: linear-gradient(180deg, rgba(6, 7, 10, 0.56) 0%, rgba(6, 7, 10, 0.34) 42%, rgba(6, 7, 10, 0.14) 70%, rgba(6, 7, 10, 0) 100%);
+  backdrop-filter: none;
+}
+
+.gui2-shell[data-shell-variant='immersive'][data-route='anime-detail'] .gui2-topbar,
+.gui2-shell[data-shell-variant='immersive'][data-route='manga-detail'] .gui2-topbar {
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+.gui2-shell[data-route='anime-detail'] .gui2-topbar-actions,
+.gui2-shell[data-route='anime-detail'] .gui2-window-controls,
+.gui2-shell[data-route='anime-detail'] .gui2-lang-button,
+.gui2-shell[data-route='anime-detail'] .gui2-user-chip,
+.gui2-shell[data-route='manga-detail'] .gui2-topbar-actions,
+.gui2-shell[data-route='manga-detail'] .gui2-window-controls,
+.gui2-shell[data-route='manga-detail'] .gui2-lang-button,
+.gui2-shell[data-route='manga-detail'] .gui2-user-chip {
+  backdrop-filter: none;
+}
+
+.gui2-shell[data-shell-variant='full-stage'],
 body.reader-active .gui2-shell {
   grid-template-columns: 0 minmax(0, 1fr);
 }
 
+.gui2-shell[data-shell-variant='full-stage'] .gui2-sidebar,
+.gui2-shell[data-shell-variant='full-stage'] .gui2-topbar,
 body.reader-active .gui2-sidebar,
 body.reader-active .gui2-topbar {
   opacity: 0;
@@ -2339,22 +2868,27 @@ body.reader-active .gui2-topbar {
   transition: opacity 180ms ease, transform 180ms ease;
 }
 
+.gui2-shell[data-shell-variant='full-stage'] .gui2-sidebar,
 body.reader-active .gui2-sidebar {
   transform: translateX(-18px);
 }
 
+.gui2-shell[data-shell-variant='full-stage'] .gui2-topbar,
 body.reader-active .gui2-topbar {
   transform: translateY(-18px);
 }
 
+.gui2-shell[data-shell-variant='full-stage'] .gui2-main,
 body.reader-active .gui2-main {
   margin-left: 0;
 }
 
+.gui2-shell[data-shell-variant='full-stage'] .gui2-topbar,
 body.reader-active .gui2-topbar {
   left: 0;
 }
 
+.gui2-shell[data-shell-variant='full-stage'] .gui2-content,
 body.reader-active .gui2-content {
   min-height: 100dvh;
   height: 100dvh;
@@ -2814,26 +3348,22 @@ body.reader-active .gui2-content {
 }
 
 .gui2-homev2-shell-premium {
-  gap: 34px;
+  gap: 18px;
 }
 
-.gui2-homev2-hero-band {
+.gui2-homev2-stage-band {
   position: relative;
-  padding: 28px 0 18px;
+  margin-top: calc(var(--gui2-topbar-h) * -1);
+  padding: 0;
   background:
-    linear-gradient(180deg, rgba(255,145,56,0.12) 0%, rgba(8,8,11,0) 42%),
-    linear-gradient(180deg, rgba(8,8,11,0.08) 0%, rgba(8,8,11,0.88) 100%);
+    linear-gradient(180deg, rgba(255,145,56,0.12) 0%, rgba(8,8,11,0) 26%),
+    linear-gradient(180deg, rgba(8,8,11,0.02) 0%, rgba(8,8,11,0.96) 100%);
 }
 
-.gui2-homev2-hero-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
-  gap: 12px;
-  align-items: stretch;
+.gui2-homev2-stage-shell {
+  position: relative;
 }
 
-.gui2-homev2-hero,
-.gui2-homev2-recent,
 .gui2-homev2-band {
   border: 0;
   background: transparent;
@@ -2844,21 +3374,58 @@ body.reader-active .gui2-content {
   padding-inline: 0;
 }
 
-.gui2-homev2-hero {
-  display: flex;
-  padding: 0 10px 0 0;
-  min-height: 100%;
+.gui2-homev2-mode-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  padding: 4px;
+  background: rgba(8, 9, 11, 0.38);
+  backdrop-filter: blur(16px);
 }
 
-.gui2-homev2-hero-stage {
+.gui2-homev2-mode-tab {
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
+  color: rgba(243, 239, 232, 0.68);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.gui2-homev2-mode-tab.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff8f0;
+}
+
+.gui2-homev2-mode-tab:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.gui2-homev2-stage {
   position: relative;
-  flex: 1;
-  height: clamp(420px, 46vh, 520px);
-  min-height: 420px;
-  max-height: 520px;
+  height: clamp(580px, 46vw, 720px);
+  min-height: 580px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  background:
+    radial-gradient(circle at 10% 12%, rgba(242, 140, 40, 0.16), transparent 24%),
+    linear-gradient(180deg, rgba(8, 9, 11, 0.01), rgba(8, 9, 11, 0.94) 88%);
+}
+
+.gui2-homev2-stage::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 168px;
+  background: linear-gradient(180deg, rgba(8, 9, 11, 0) 0%, rgba(8, 9, 11, 0.46) 34%, rgba(8, 9, 11, 0.82) 62%, rgba(8, 9, 11, 1) 100%);
+  pointer-events: none;
 }
 
 .gui2-homev2-continue-shell-premium .gui2-homev2-continue {
@@ -2870,14 +3437,16 @@ body.reader-active .gui2-content {
   background: transparent;
 }
 
-.gui2-homev2-hero-stage-loading {
+.gui2-homev2-stage-loading {
   background:
     radial-gradient(circle at 18% 24%, rgba(215, 163, 90, 0.1), transparent 32%),
     linear-gradient(180deg, rgba(20, 21, 26, 0.98), rgba(11, 12, 15, 0.99));
 }
 
-.gui2-homev2-hero-image,
-.gui2-homev2-hero-fallback {
+.gui2-homev2-stage-image,
+.gui2-homev2-stage-fallback {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: block;
@@ -2885,7 +3454,7 @@ body.reader-active .gui2-content {
   transition: opacity 320ms ease, transform 320ms ease;
 }
 
-.gui2-homev2-hero-fallback {
+.gui2-homev2-stage-fallback {
   display: grid;
   place-items: center;
   color: var(--gui2-text);
@@ -2903,37 +3472,100 @@ body.reader-active .gui2-content {
   animation: gui2-homev2-loading-sheen 1.8s linear infinite;
 }
 
-.gui2-homev2-hero-overlay {
+.gui2-homev2-stage-overlay {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(8, 9, 11, 0.92) 0%, rgba(8, 9, 11, 0.46) 36%, rgba(8, 9, 11, 0.16) 66%, rgba(8, 9, 11, 0.28) 100%),
-    linear-gradient(180deg, rgba(8, 9, 11, 0.04) 0%, rgba(8, 9, 11, 0.14) 32%, rgba(8, 9, 11, 0.88) 100%);
+    linear-gradient(90deg, rgba(6, 7, 10, 0.92) 0%, rgba(8, 9, 11, 0.44) 24%, rgba(8, 9, 11, 0.12) 54%, rgba(8, 9, 11, 0.82) 78%, rgba(8, 9, 11, 0.98) 100%),
+    linear-gradient(180deg, rgba(5, 6, 9, 0.12) 0%, rgba(5, 6, 9, 0.06) 12%, rgba(8, 9, 11, 0.14) 30%, rgba(8, 9, 11, 0.68) 74%, rgba(8, 9, 11, 0.96) 100%);
   transition: opacity 320ms ease;
 }
 
-.gui2-homev2-hero-copy {
-  position: absolute;
-  left: 34px;
-  bottom: 28px;
+.gui2-homev2-stage-grid {
+  position: relative;
   z-index: 1;
-  max-width: 470px;
   display: grid;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 308px;
+  gap: 22px;
+  height: 100%;
+  padding: calc(var(--gui2-topbar-h) + 14px) 28px 16px 18px;
+}
+
+.gui2-homev2-stage-main {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  align-content: space-between;
+  padding-right: 12px;
+}
+
+.gui2-homev2-hero-copy {
+  position: relative;
+  max-width: 700px;
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr);
+  gap: 24px;
+  align-items: end;
   transition: opacity 320ms ease, transform 320ms ease;
+  align-self: end;
 }
 
 .gui2-homev2-hero-copy-loading {
-  max-width: 520px;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 560px;
+  align-self: end;
 }
 
-.gui2-homev2-hero-stage.transitioning .gui2-homev2-hero-image,
-.gui2-homev2-hero-stage.transitioning .gui2-homev2-hero-fallback,
-.gui2-homev2-hero-stage.transitioning .gui2-homev2-hero-overlay {
+.gui2-homev2-hero-body {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+  align-content: end;
+}
+
+.gui2-homev2-hero-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gui2-homev2-hero-meta-chip {
+  color: rgba(243, 239, 232, 0.78);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.gui2-homev2-hero-poster {
+  width: 124px;
+  aspect-ratio: 0.7;
+  overflow: hidden;
+  box-shadow: 0 24px 44px rgba(0, 0, 0, 0.32);
+}
+
+.gui2-homev2-hero-poster-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.gui2-homev2-hero-switch {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  z-index: 1;
+  transform: translateX(-50%);
+}
+
+.gui2-homev2-stage.transitioning .gui2-homev2-stage-image,
+.gui2-homev2-stage.transitioning .gui2-homev2-stage-fallback,
+.gui2-homev2-stage.transitioning .gui2-homev2-stage-overlay {
   opacity: 0.76;
 }
 
-.gui2-homev2-hero-stage.transitioning .gui2-homev2-hero-copy {
+.gui2-homev2-stage.transitioning .gui2-homev2-hero-copy,
+.gui2-homev2-stage.transitioning .gui2-homev2-hero-recent {
   opacity: 0.72;
   transform: translateY(4px);
 }
@@ -2941,23 +3573,27 @@ body.reader-active .gui2-content {
 .gui2-homev2-hero-title {
   margin: 0;
   color: var(--gui2-text);
-  font-size: clamp(24px, 2.95vw, 44px);
+  font-size: clamp(42px, 4.8vw, 72px);
   font-weight: 800;
   letter-spacing: -0.05em;
-  line-height: 0.95;
-  max-width: 15ch;
+  line-height: 0.92;
+  max-width: 10ch;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-.gui2-homev2-hero-meta {
-  color: var(--gui2-gold-strong);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+.gui2-homev2-hero-title.is-long {
+  font-size: clamp(38px, 4.2vw, 62px);
+  max-width: 12.5ch;
+  -webkit-line-clamp: 3;
+  line-height: 0.94;
+}
+
+.gui2-homev2-hero-title.is-longer {
+  font-size: clamp(34px, 3.8vw, 54px);
+  max-width: 14.5ch;
 }
 
 .gui2-homev2-primary {
@@ -2977,12 +3613,12 @@ body.reader-active .gui2-content {
 
 .gui2-homev2-hero-summary {
   margin: 0;
-  color: rgba(243, 239, 232, 0.9);
-  max-width: 54ch;
-  font-size: 14px;
-  line-height: 1.48;
+  color: rgba(243, 239, 232, 0.82);
+  max-width: 48ch;
+  font-size: 15px;
+  line-height: 1.52;
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -2991,14 +3627,15 @@ body.reader-active .gui2-content {
   position: absolute;
   top: 50%;
   z-index: 1;
-  width: 44px;
-  height: 44px;
-  margin-top: -22px;
+  width: 52px;
+  height: 52px;
+  margin-top: -26px;
   border: 0;
-  background: transparent;
+  background: rgba(8, 9, 11, 0.32);
   color: rgba(255, 255, 255, 0.92);
   font-size: 42px;
   line-height: 1;
+  backdrop-filter: blur(16px);
   cursor: pointer;
 }
 
@@ -3007,21 +3644,20 @@ body.reader-active .gui2-content {
 }
 
 .gui2-homev2-hero-arrow-right {
-  right: 16px;
+  right: 22px;
 }
 
 .gui2-homev2-hero-dots {
-  position: absolute;
-  left: 50%;
-  bottom: 18px;
-  z-index: 1;
+  position: relative;
   display: inline-flex;
-  gap: 8px;
-  transform: translateX(-50%);
+  gap: 10px;
+  align-self: start;
+  justify-self: start;
+  padding-left: 4px;
 }
 
 .gui2-homev2-hero-dot {
-  width: 34px;
+  width: 30px;
   height: 4px;
   background: rgba(255, 255, 255, 0.26);
 }
@@ -3030,11 +3666,163 @@ body.reader-active .gui2-content {
   background: var(--gui2-gold);
 }
 
-.gui2-homev2-recent {
+.gui2-homev2-hero-recent {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
+  gap: 16px;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: 8px 0 54px 18px;
+  background: none;
+}
+
+.gui2-homev2-recent-rail {
+  display: grid;
+  gap: 12px;
   align-content: start;
+  overflow: hidden;
+  transition:
+    transform 220ms var(--gui2-ease-premium),
+    opacity 220ms var(--gui2-ease-premium);
+}
+
+.gui2-homev2-recent-rail.is-sliding {
+  transform: translateY(-14px);
+  opacity: 0.78;
+}
+
+.gui2-homev2-hero-recent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gui2-homev2-hero-recent-label {
+  color: rgba(242, 140, 40, 0.96);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.gui2-homev2-lane-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(90deg, transparent 0%, #000 4%, #000 96%, transparent 100%);
+}
+
+.gui2-homev2-lane-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.gui2-homev2-lane-tab {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
+  color: rgba(243, 239, 232, 0.44);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 220ms var(--gui2-ease-premium),
+    transform 220ms var(--gui2-ease-premium),
+    background 220ms var(--gui2-ease-premium);
+}
+
+.gui2-homev2-lane-tab.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff8f0;
+  transform: translateY(-1px);
+}
+
+.gui2-homev2-lane-shell {
+  position: relative;
+}
+
+.gui2-homev2-lane-viewport {
+  overflow: hidden;
+  padding-block: 18px 18px;
+}
+
+.gui2-homev2-lane-track {
+  display: flex;
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.gui2-homev2-lane-page {
+  flex: 0 0 100%;
+  min-width: 0;
+}
+
+.gui2-homev2-lane-arrow {
+  position: absolute;
+  top: calc(50% + 8px);
+  z-index: 2;
+  width: 42px;
+  height: 42px;
+  margin-top: -21px;
+  border: 0;
+  background: rgba(8, 9, 11, 0.66);
+  color: rgba(255, 248, 240, 0.92);
+  font-size: 28px;
+  line-height: 1;
+  backdrop-filter: blur(14px);
+  cursor: pointer;
+  transition:
+    opacity 180ms var(--gui2-ease-premium),
+    transform 180ms var(--gui2-ease-premium),
+    background 180ms var(--gui2-ease-premium);
+}
+
+.gui2-homev2-lane-arrow:hover {
+  transform: scale(1.04);
+  background: rgba(8, 9, 11, 0.82);
+}
+
+.gui2-homev2-lane-arrow-left {
+  left: -12px;
+}
+
+.gui2-homev2-lane-arrow-right {
+  right: -12px;
+}
+
+.gui2-homev2-lane-arrow.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gui2-homev2-lane-pagination {
+  position: absolute;
+  top: -34px;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
-  padding: 6px 0 0 8px;
+}
+
+.gui2-homev2-lane-page-dot {
+  width: 16px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.16);
+  transition: background 180ms ease, transform 180ms ease;
+}
+
+.gui2-homev2-lane-page-dot.active {
+  background: rgba(242, 140, 40, 0.88);
+  transform: scaleX(1.08);
 }
 
 .gui2-homev2-band-head {
@@ -3080,6 +3868,7 @@ body.reader-active .gui2-content {
 }
 
 .gui2-homev2-recent-shell,
+.gui2-homev2-recent-feature-shell,
 .gui2-homev2-poster-shell,
 .gui2-homev2-continue-shell-item {
   display: grid;
@@ -3093,7 +3882,7 @@ body.reader-active .gui2-content {
 }
 
 .gui2-homev2-recent-shell:hover,
-.gui2-homev2-poster-shell:hover,
+.gui2-homev2-recent-feature-shell:hover,
 .gui2-homev2-continue-shell-item:hover {
   transform: translateY(-8px) scale(1.03);
   filter: saturate(1.08);
@@ -3141,11 +3930,142 @@ body.reader-active .gui2-content {
   width: 34%;
 }
 
+.gui2-homev2-recent-feature {
+  display: grid;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  gap: 0;
+  height: 100%;
+}
+
+.gui2-homev2-recent-feature-art {
+  position: relative;
+  overflow: hidden;
+  min-height: 164px;
+  height: 100%;
+  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.28);
+}
+
+.gui2-homev2-recent-feature-image,
+.gui2-homev2-recent-feature-fallback,
+.gui2-homev2-recent-mini-image,
+.gui2-homev2-recent-mini-fallback {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.gui2-homev2-recent-feature-fallback,
+.gui2-homev2-recent-mini-fallback {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  color: var(--gui2-text);
+  font-size: 34px;
+  font-weight: 800;
+}
+
+.gui2-homev2-recent-feature-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(8, 9, 11, 0.02), rgba(8, 9, 11, 0.92)),
+    linear-gradient(90deg, rgba(8, 9, 11, 0.05), rgba(8, 9, 11, 0.22));
+}
+
+.gui2-homev2-recent-feature-copy {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  display: grid;
+  gap: 6px;
+}
+
+.gui2-homev2-recent-feature-kicker {
+  color: rgba(242, 140, 40, 0.96);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.gui2-homev2-recent-feature-title {
+  color: var(--gui2-text);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.06;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gui2-homev2-recent-feature-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: rgba(243, 239, 232, 0.68);
+  font-size: 12px;
+}
+
+.gui2-homev2-recent-mini {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.gui2-homev2-recent-mini-art {
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
+}
+
+.gui2-homev2-recent-mini-copy {
+  display: grid;
+  gap: 3px;
+  align-content: center;
+}
+
+.gui2-homev2-recent-mini-title {
+  color: rgba(243, 239, 232, 0.72);
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.18;
+  transition: color 220ms var(--gui2-ease-premium), transform 220ms var(--gui2-ease-premium);
+}
+
+.gui2-homev2-recent-mini-meta {
+  display: grid;
+  gap: 2px;
+  color: rgba(243, 239, 232, 0.52);
+  font-size: 11px;
+}
+
+.gui2-homev2-recent-mini.active .gui2-homev2-recent-mini-title,
+.gui2-homev2-recent-mini:hover .gui2-homev2-recent-mini-title {
+  color: #fff8f0;
+  transform: translateX(2px);
+}
+
 .gui2-homev2-recent-row {
   display: grid;
-  grid-template-columns: 118px minmax(0, 1fr);
+  grid-template-columns: 88px minmax(0, 1fr);
   gap: 12px;
-  align-items: start;
+  align-items: center;
   padding: 0;
   border: 0;
   background: transparent;
@@ -3167,10 +4087,10 @@ body.reader-active .gui2-content {
 }
 
 .gui2-homev2-recent-thumb {
-  aspect-ratio: 1.55 / 1;
+  aspect-ratio: 1.12 / 1;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.02);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
   transition:
     box-shadow 220ms var(--gui2-ease-premium),
     filter 220ms var(--gui2-ease-premium);
@@ -3199,24 +4119,27 @@ body.reader-active .gui2-content {
 
 .gui2-homev2-recent-title {
   color: var(--gui2-text);
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 800;
-  line-height: 1.22;
-  text-transform: uppercase;
+  line-height: 1.1;
   transition:
     color 220ms var(--gui2-ease-premium),
     transform 220ms var(--gui2-ease-premium),
     text-shadow 220ms var(--gui2-ease-premium);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .gui2-homev2-recent-episode {
-  color: rgba(243, 239, 232, 0.78);
-  font-size: 13px;
+  color: rgba(243, 239, 232, 0.72);
+  font-size: 12px;
 }
 
 .gui2-homev2-recent-age {
   color: var(--gui2-gold);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .gui2-homev2-recent-shell:hover .gui2-homev2-recent-thumb {
@@ -3231,14 +4154,18 @@ body.reader-active .gui2-content {
 }
 
 .gui2-homev2-stack {
+  position: relative;
+  z-index: 2;
   display: grid;
-  gap: 12px;
+  gap: 8px;
+  margin-top: -20px;
+  padding: 0 18px 0 14px;
 }
 
 .gui2-homev2-band {
   display: grid;
   gap: 10px;
-  padding: 6px 0 12px;
+  padding: 4px 0 10px;
 }
 
 .gui2-homev2-band-loading {
@@ -3249,10 +4176,14 @@ body.reader-active .gui2-content {
   gap: 12px;
 }
 
+.gui2-homev2-band-continue-reading {
+  gap: 12px;
+}
+
 .gui2-homev2-loading-poster-rail {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 16px;
 }
 
 .gui2-homev2-loading-poster {
@@ -3264,9 +4195,10 @@ body.reader-active .gui2-content {
 
 .gui2-homev2-poster-rail {
   display: grid;
-  grid-template-columns: repeat(var(--gui2-homev2-poster-columns, 10), minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 18px;
   justify-content: start;
+  align-items: start;
 }
 
 @keyframes gui2-homev2-loading-sheen {
@@ -3280,7 +4212,6 @@ body.reader-active .gui2-content {
 
 .gui2-homev2-poster {
   display: grid;
-  grid-template-rows: auto auto;
   padding: 0;
   border: 0;
   background: transparent;
@@ -3288,17 +4219,68 @@ body.reader-active .gui2-content {
   text-align: left;
   font: inherit;
   cursor: pointer;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.gui2-homev2-poster-hitarea {
+  display: grid;
+  grid-template-rows: auto auto;
+  transition:
+    transform 240ms var(--gui2-ease-premium),
+    filter 240ms var(--gui2-ease-premium);
+  will-change: transform, filter;
 }
 
 .gui2-homev2-poster-art {
+  position: relative;
   aspect-ratio: 0.7;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.03);
-  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 20px 38px rgba(0, 0, 0, 0.26);
   transition:
-    box-shadow 220ms var(--gui2-ease-premium),
-    filter 220ms var(--gui2-ease-premium);
+    box-shadow 240ms var(--gui2-ease-premium),
+    filter 240ms var(--gui2-ease-premium),
+    transform 240ms var(--gui2-ease-premium);
+}
+
+.gui2-homev2-poster-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(8, 9, 11, 0.02) 0%, rgba(8, 9, 11, 0.16) 42%, rgba(8, 9, 11, 0.92) 100%);
+}
+
+.gui2-homev2-poster-chip {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  max-width: calc(100% - 20px);
+  padding: 5px 8px;
+  background: rgba(8, 9, 11, 0.6);
+  color: rgba(243, 239, 232, 0.82);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  backdrop-filter: blur(10px);
+}
+
+.gui2-homev2-poster-pop {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  color: rgba(255, 248, 240, 0.94);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 220ms var(--gui2-ease-premium),
+    transform 220ms var(--gui2-ease-premium);
 }
 
 .gui2-homev2-poster-image,
@@ -3318,41 +4300,68 @@ body.reader-active .gui2-content {
 
 .gui2-homev2-poster-copy {
   display: grid;
-  gap: 4px;
-  padding: 10px 2px 0;
+  gap: 5px;
+  padding: 12px 2px 0;
 }
 
 .gui2-homev2-poster-title {
   color: var(--gui2-text);
-  font-size: 14px;
-  font-weight: 760;
-  line-height: 1.24;
-  text-transform: uppercase;
+  font-size: 17px;
+  font-weight: 780;
+  line-height: 1.12;
   transition:
     color 220ms var(--gui2-ease-premium),
     transform 220ms var(--gui2-ease-premium),
     text-shadow 220ms var(--gui2-ease-premium);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .gui2-homev2-poster-meta {
-  color: rgba(243, 239, 232, 0.66);
+  color: rgba(243, 239, 232, 0.54);
   font-size: 12px;
   transition: color 220ms var(--gui2-ease-premium);
 }
 
-.gui2-homev2-poster-shell:hover .gui2-homev2-poster-art {
-  box-shadow: 0 26px 48px rgba(0, 0, 0, 0.34);
-  filter: saturate(1.05) brightness(1.02);
+.gui2-homev2-poster-shell:hover,
+.gui2-homev2-poster-shell:focus-within {
+  z-index: 14;
+  transition-delay: 0ms;
 }
 
-.gui2-homev2-poster-shell:hover .gui2-homev2-poster-title {
+.gui2-homev2-poster-shell:hover .gui2-homev2-poster-hitarea,
+.gui2-homev2-poster-shell:focus-within .gui2-homev2-poster-hitarea {
+  transform: translateY(-10px) scale(1.05);
+  filter: saturate(1.06);
+}
+
+.gui2-homev2-poster-shell:hover .gui2-homev2-poster-art,
+.gui2-homev2-poster-shell:focus-within .gui2-homev2-poster-art {
+  box-shadow:
+    0 34px 62px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(214, 190, 154, 0.12);
+  filter: saturate(1.08) brightness(1.04);
+}
+
+.gui2-homev2-poster-shell:hover .gui2-homev2-poster-title,
+.gui2-homev2-poster-shell:focus-within .gui2-homev2-poster-title {
   color: #fff8f0;
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   text-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
 }
 
-.gui2-homev2-poster-shell:hover .gui2-homev2-poster-meta {
+.gui2-homev2-poster-shell:hover .gui2-homev2-poster-meta,
+.gui2-homev2-poster-shell:focus-within .gui2-homev2-poster-meta {
   color: rgba(243, 239, 232, 0.8);
+}
+
+.gui2-homev2-poster-shell:hover .gui2-homev2-poster-pop,
+.gui2-homev2-poster-shell:focus-within .gui2-homev2-poster-pop {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .gui2-homev2-continue-rail {
@@ -3419,6 +4428,10 @@ body.reader-active .gui2-content {
   font: inherit;
   cursor: pointer;
   overflow: hidden;
+}
+
+.gui2-homev2-band-continue-reading .gui2-homev2-continue {
+  min-height: 336px;
 }
 
 .gui2-homev2-continue-art {
@@ -3526,8 +4539,26 @@ body.reader-active .gui2-content {
 }
 
 @media (max-width: 1280px) {
-  .gui2-homev2-hero-shell {
+  .gui2-homev2-stage {
+    height: auto;
+    min-height: 0;
+  }
+
+  .gui2-homev2-stage-grid {
     grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    padding-bottom: 90px;
+  }
+
+  .gui2-homev2-stage-main {
+    gap: 24px;
+  }
+
+  .gui2-homev2-hero-recent {
+    height: auto;
+    padding: 0;
+    background: none;
+    grid-template-rows: auto auto auto;
   }
 
   .gui2-homev2-poster-rail {
@@ -3558,17 +4589,39 @@ body.reader-active .gui2-content {
 }
 
 @media (max-width: 960px) {
-  .gui2-homev2-hero-stage {
-    height: clamp(340px, 40vh, 420px);
-    min-height: 340px;
-    max-height: 420px;
+  .gui2-homev2-stage {
+    height: auto;
+    min-height: 0;
+  }
+
+  .gui2-homev2-stage-grid {
+    padding: 18px 20px 88px;
+  }
+
+  .gui2-homev2-mode-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .gui2-homev2-mode-tab {
+    width: 100%;
   }
 
   .gui2-homev2-hero-copy {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
+  }
+
+  .gui2-homev2-hero-poster {
+    width: 108px;
+  }
+
+  .gui2-homev2-hero-switch {
     left: 20px;
     right: 20px;
-    bottom: 20px;
-    max-width: none;
+    bottom: 24px;
+    transform: none;
   }
 
   .gui2-homev2-poster-rail,
@@ -3577,8 +4630,8 @@ body.reader-active .gui2-content {
     justify-content: stretch;
   }
 
-  .gui2-homev2-recent-row {
-    grid-template-columns: 108px minmax(0, 1fr);
+  .gui2-homev2-recent-mini {
+    grid-template-columns: 68px minmax(0, 1fr);
   }
 
   .gui2-command-surface {
@@ -3610,12 +4663,27 @@ body.reader-active .gui2-content {
 
 .gui2-catalog-page {
   width: 100%;
+  position: relative;
+  --gui2-catalog-card-min: 214px;
+  --gui2-catalog-discovery-fill:
+    radial-gradient(circle at top right, rgba(242, 140, 40, 0.18), transparent 28%),
+    linear-gradient(180deg, rgba(12, 14, 18, 0.76), rgba(7, 8, 11, 0.12) 68%, rgba(7, 8, 11, 0) 100%);
+  --gui2-catalog-discovery-line: rgba(255, 255, 255, 0.08);
+  --gui2-catalog-discovery-tint: rgba(242, 140, 40, 0.14);
+}
+
+.gui2-catalog-page--anime {
+  --gui2-catalog-card-min: 214px;
+}
+
+.gui2-catalog-page--manga {
+  --gui2-catalog-card-min: 204px;
 }
 
 .gui2-catalog-shell {
   display: grid;
-  gap: 12px;
-  padding: 8px 6px 18px;
+  gap: 16px;
+  padding: 8px 6px 22px;
   border: 0;
   background: transparent;
   position: relative;
@@ -3625,13 +4693,32 @@ body.reader-active .gui2-content {
 
 .gui2-catalog-shell-premium {
   gap: 22px;
+  padding: 8px 2px 24px;
+}
+
+.gui2-catalog-header-minimal {
+  display: grid;
+  justify-items: start;
+  gap: 0;
+}
+
+.gui2-catalog-utilities {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  margin-top: -34px;
+}
+
+.gui2-catalog-utilities-search {
+  width: min(100%, 780px);
+  display: grid;
 }
 
 .gui2-catalog-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(420px, 0.7fr);
-  gap: 16px;
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.78fr);
+  gap: 22px;
+  align-items: start;
 }
 
 .gui2-catalog-header-copy,
@@ -3644,7 +4731,7 @@ body.reader-active .gui2-content {
 .gui2-catalog-title {
   margin: 0;
   color: #fbf8f2;
-  font-size: 28px;
+  font-size: clamp(30px, 3.1vw, 46px);
   font-weight: 700;
   letter-spacing: -0.04em;
 }
@@ -3652,8 +4739,9 @@ body.reader-active .gui2-content {
 .gui2-catalog-description {
   margin: 0;
   color: rgba(243, 239, 232, 0.76);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.55;
+  max-width: 62ch;
 }
 
 .gui2-catalog-description-accent {
@@ -3661,28 +4749,68 @@ body.reader-active .gui2-content {
   font-weight: 700;
 }
 
+.gui2-catalog-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.15fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+
 .gui2-catalog-query-row {
   display: grid;
+  gap: 10px;
 }
 
-.gui2-catalog-filterbar-quiet {
-  backdrop-filter: blur(10px);
+.gui2-catalog-toolbar-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
 }
 
-.gui2-catalog-status-strip,
-.gui2-catalog-query-row {
-  backdrop-filter: blur(10px);
+.gui2-catalog-toolbar-pill {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(243, 239, 232, 0.76);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gui2-catalog-toolbar-pill-label {
+  color: rgba(243, 239, 232, 0.46);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.gui2-catalog-toolbar-pill-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gui2-text);
+}
+
+.gui2-catalog-toolbar-pill--pagination {
+  padding-right: 8px;
 }
 
 .gui2-catalog-query {
-  min-height: 40px;
+  min-height: 48px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.015);
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .gui2-catalog-query-icon,
@@ -3724,12 +4852,14 @@ body.reader-active .gui2-content {
 }
 
 .gui2-catalog-status-strip {
-  min-height: 58px;
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) auto minmax(120px, auto) auto minmax(170px, auto);
-  align-items: center;
-  gap: 14px;
-  padding: 0 4px 0 0;
+  grid-template-columns: 1fr;
+  align-items: start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.012));
 }
 
 .gui2-catalog-status-block {
@@ -3755,9 +4885,19 @@ body.reader-active .gui2-content {
 }
 
 .gui2-catalog-status-divider {
-  width: 1px;
-  height: 20px;
-  background: rgba(255, 255, 255, 0.08);
+  display: none;
+}
+
+.gui2-catalog-room {
+  display: block;
+}
+
+.gui2-catalog-controls-rail {
+  display: block;
+}
+
+.gui2-catalog-poster-field {
+  display: block;
 }
 
 .gui2-catalog-top-pagination,
@@ -3779,41 +4919,60 @@ body.reader-active .gui2-content {
 
 .gui2-catalog-filterbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(140px, 0.7fr)) minmax(190px, 0.9fr);
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, max-content));
+  gap: 16px 24px;
   border: 0;
   background: transparent;
   overflow: visible;
   position: relative;
-  z-index: 6;
+  z-index: 2;
+  align-items: start;
+  justify-content: center;
+  width: min(100%, 1120px);
+  margin: 0 auto;
+}
+
+.gui2-catalog-filterbar-pills {
+  grid-template-columns: repeat(auto-fit, minmax(150px, max-content));
 }
 
 .gui2-catalog-filter-cell {
   min-width: 0;
   display: grid;
-  gap: 6px;
-  padding: 12px 16px 13px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  background: rgba(255, 255, 255, 0.015);
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   position: relative;
   overflow: visible;
 }
 
+.gui2-catalog-filter-cell.wide {
+  min-width: min(100%, 320px);
+}
+
 .gui2-catalog-filter-cell:last-child {
-  border-right: 1px solid rgba(255, 255, 255, 0.04);
+  border-right: 0;
 }
 
 .gui2-catalog-filter-labelrow {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  min-height: 12px;
+}
+
+.gui2-catalog-filter-icon {
+  display: none;
 }
 
 .gui2-catalog-filter-label {
-  color: rgba(243, 239, 232, 0.52);
-  font-size: 11px;
+  color: rgba(243, 239, 232, 0.38);
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .gui2-catalog-select .custom-select-trigger,
@@ -3829,16 +4988,41 @@ body.reader-active .gui2-content {
   justify-content: space-between;
 }
 
+.gui2-catalog-filterbar-pills .gui2-catalog-select .custom-select-trigger,
+.gui2-catalog-filterbar-pills .gui2-catalog-multi-trigger,
+.gui2-catalog-filterbar-pills .gui2-catalog-inline-controls .setting-select {
+  min-height: 28px;
+  padding: 0 2px 0 0 !important;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.gui2-catalog-filterbar-pills .gui2-catalog-inline-controls {
+  width: auto;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+}
+
 .gui2-catalog-inline-controls .setting-select {
-  min-height: 30px;
-  padding: 0 10px !important;
-  border: 1px solid rgba(255, 255, 255, 0.07) !important;
-  background: rgba(255, 255, 255, 0.02) !important;
+  min-height: 28px;
+  padding: 0 2px 0 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.gui2-catalog-inline-controls {
+  gap: 12px;
 }
 
 .gui2-catalog-select {
   position: relative;
-  width: 100%;
+  width: auto;
+}
+
+.gui2-catalog-inline-controls > .gui2-catalog-select {
+  flex: 0 0 auto;
 }
 
 .gui2-catalog-multi-select {
@@ -3849,11 +5033,27 @@ body.reader-active .gui2-content {
 }
 
 .gui2-catalog-select .custom-select-trigger {
-  width: 100%;
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start !important;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.gui2-catalog-select-value {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
 }
 
 .gui2-catalog-multi-trigger {
-  width: 100%;
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start !important;
+  gap: 3px;
+  white-space: nowrap;
 }
 
 .gui2-catalog-select .custom-select-dropdown {
@@ -3862,7 +5062,7 @@ body.reader-active .gui2-content {
   left: 0;
   z-index: 50;
   margin-top: 0;
-  min-width: max(100%, 112px);
+  min-width: max(100%, 160px);
   max-height: 280px;
   overflow-y: auto;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
@@ -3884,8 +5084,65 @@ body.reader-active .gui2-content {
   box-shadow: 0 18px 32px rgba(0, 0, 0, 0.38);
 }
 
+.gui2-catalog-source-option {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.gui2-catalog-source-option.compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+.gui2-catalog-source-option-copy {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.gui2-catalog-source-option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gui2-catalog-source-option-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.gui2-catalog-source-chip {
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border: 1px solid var(--gui2-source-chip-border, rgba(255, 255, 255, 0.08));
+  border-radius: 999px;
+  background: var(--gui2-source-chip-fill, rgba(255, 255, 255, 0.03));
+  color: var(--gui2-source-chip-text, rgba(243, 239, 232, 0.74));
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.gui2-catalog-source-chip.audio {
+  color: rgba(249, 225, 184, 0.88);
+  border-color: rgba(215, 163, 90, 0.24);
+  background: rgba(215, 163, 90, 0.1);
+}
+
 .gui2-catalog-select .custom-select-option {
+  width: 100%;
   padding: 10px 12px !important;
+  text-align: left;
 }
 
 .gui2-catalog-multi-option {
@@ -3962,15 +5219,14 @@ body.reader-active .gui2-content {
 }
 
 .gui2-catalog-activebar {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: 12px;
   flex-wrap: wrap;
-  padding: 6px 0 0;
-}
-
-.gui2-catalog-activebar-copy {
-  color: var(--gui2-gold-strong);
-  font-size: 12px;
-  font-weight: 700;
+  padding: 2px 0 0;
+  width: min(100%, 1120px);
+  margin: 0 auto;
 }
 
 .gui2-catalog-activebar-tags {
@@ -3985,6 +5241,7 @@ body.reader-active .gui2-content {
   gap: 4px;
   padding: 0 12px;
   border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.02);
   color: rgba(243, 239, 232, 0.76);
   font-size: 12px;
@@ -4002,13 +5259,14 @@ body.reader-active .gui2-content {
 
 .gui2-catalog-results-shell {
   display: grid;
-  gap: 14px;
+  gap: 18px;
   position: relative;
   z-index: 1;
 }
 
 .gui2-catalog-results-shell-premium {
-  padding: 10px 0 0;
+  padding: 6px 0 0;
+  border-top: 1px solid rgba(214, 190, 154, 0.12);
 }
 
 .gui2-catalog-results-shell-premium .online-poster-card,
@@ -4037,20 +5295,21 @@ body.reader-active .gui2-content {
 
 .gui2-catalog-results-title {
   color: var(--gui2-gold-strong);
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
 .gui2-catalog-results-subtitle {
-  color: rgba(243, 239, 232, 0.44);
+  color: rgba(243, 239, 232, 0.5);
   font-size: 13px;
+  max-width: 64ch;
 }
 
 .gui2-catalog-grid {
   display: grid !important;
-  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)) !important;
-  gap: 14px !important;
+  grid-template-columns: repeat(auto-fill, minmax(var(--gui2-catalog-card-min), 1fr)) !important;
+  gap: 22px 18px !important;
   align-items: stretch;
 }
 
@@ -4072,8 +5331,8 @@ body.reader-active .gui2-content {
 }
 
 .gui2-catalog-card-shell:hover {
-  transform: translateY(-9px) scale(1.028);
-  filter: saturate(1.09);
+  transform: translateY(-7px) scale(1.018);
+  filter: saturate(1.06);
   z-index: 8;
   transition-delay: 0ms;
 }
@@ -4101,7 +5360,7 @@ body.reader-active .gui2-content {
   display: block;
   object-fit: cover;
   background: rgba(255, 255, 255, 0.03);
-  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.2);
   transition:
     box-shadow 220ms var(--gui2-ease-premium),
     transform 220ms var(--gui2-ease-premium),
@@ -4131,10 +5390,10 @@ body.reader-active .gui2-content {
 .gui2-catalog-card-body {
   display: grid;
   align-content: start;
-  grid-template-rows: minmax(40px, auto) auto;
-  gap: 8px;
-  padding: 12px 8px 8px;
-  min-height: 82px;
+  grid-template-rows: minmax(44px, auto) auto;
+  gap: 10px;
+  padding: 15px 8px 8px;
+  min-height: 84px;
 }
 
 .gui2-catalog-card-title {
@@ -4180,8 +5439,8 @@ body.reader-active .gui2-content {
 
 .gui2-catalog-card-shell:hover .gui2-catalog-card-cover,
 .gui2-catalog-card-shell:hover .gui2-catalog-card-cover-placeholder {
-  box-shadow: 0 28px 54px rgba(0, 0, 0, 0.4);
-  filter: saturate(1.06) brightness(1.025);
+  box-shadow: 0 22px 42px rgba(0, 0, 0, 0.3);
+  filter: saturate(1.04) brightness(1.02);
 }
 
 .gui2-catalog-card-shell:hover .gui2-catalog-card-title {
@@ -4215,7 +5474,7 @@ body.reader-active .gui2-content {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding-top: 4px;
+  padding-top: 8px;
 }
 
 .gui2-catalog-footer-pagechip {
@@ -4274,6 +5533,7 @@ body.reader-active .gui2-content {
 
   .gui2-catalog-filterbar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
   }
 
   .gui2-catalog-filterbar > :first-child {
@@ -4305,53 +5565,80 @@ body.reader-active .gui2-content {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .gui2-catalog-query-btn {
-    grid-column: 1 / -1;
+  .gui2-catalog-inline-controls {
+    flex-wrap: wrap;
   }
 }
 
 .gui2-landing-page {
   display: grid;
-  gap: 18px;
+  gap: 8px;
 }
 
 .gui2-landing-hero {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    linear-gradient(180deg, rgba(17, 18, 22, 0.82), rgba(11, 13, 16, 0.96)),
-    radial-gradient(circle at top left, rgba(214, 164, 89, 0.12), transparent 34%);
-  background-size: cover;
-  background-position: center;
-  padding: 18px 18px 20px;
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  margin-top: calc(var(--gui2-topbar-h) * -1);
+  background-image:
+    linear-gradient(180deg, rgba(17, 18, 22, 0.12) 0%, rgba(11, 13, 16, 0.56) 44%, rgba(8, 9, 11, 0.92) 82%, rgba(8, 9, 11, 0.99) 100%),
+    radial-gradient(circle at top right, rgba(var(--gui2-landing-accent-rgb, 215, 163, 90), 0.18) 0%, rgba(var(--gui2-landing-accent-rgb, 215, 163, 90), 0) 34%),
+    var(--gui2-landing-backdrop-image, none);
+  background-repeat: no-repeat;
+  background-size: auto, auto, cover;
+  background-position: center top, top right, center top;
+  min-height: clamp(420px, 38vw, 560px);
+  padding: calc(var(--gui2-topbar-h) + 34px) 22px 42px;
+  transition:
+    min-height 260ms var(--gui2-ease-premium),
+    padding 260ms var(--gui2-ease-premium);
+}
+
+.gui2-landing-hero::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 152px;
+  background: linear-gradient(180deg, rgba(8, 9, 11, 0) 0%, rgba(8, 9, 11, 0.48) 36%, rgba(8, 9, 11, 0.84) 66%, rgba(8, 9, 11, 1) 100%);
+  pointer-events: none;
 }
 
 .gui2-landing-hero-premium {
-  background:
-    linear-gradient(180deg, rgba(255,145,56,0.1) 0%, rgba(7,7,10,0) 38%),
-    linear-gradient(180deg, rgba(7,7,10,0.08) 0%, rgba(7,7,10,0.92) 100%);
+  --gui2-landing-accent-rgb: 63, 116, 189;
 }
 
 .gui2-manga-landing-hero-premium {
-  background:
-    linear-gradient(180deg, rgba(255,145,56,0.1) 0%, rgba(7,7,10,0) 38%),
-    linear-gradient(180deg, rgba(7,7,10,0.08) 0%, rgba(7,7,10,0.92) 100%);
+  --gui2-landing-accent-rgb: 184, 78, 49;
 }
 
 .gui2-landing-toolbar {
   display: flex;
   justify-content: flex-start;
-  margin-bottom: 16px;
+  position: relative;
+  z-index: 2;
+  margin-bottom: 20px;
 }
 
 .gui2-landing-hero-grid {
   display: grid;
-  grid-template-columns: 244px minmax(0, 1fr) 220px;
+  grid-template-columns: 212px minmax(0, 1fr) 220px;
   gap: 26px;
-  align-items: start;
+  align-items: end;
+  position: relative;
+  z-index: 1;
+  transition:
+    grid-template-columns 260ms var(--gui2-ease-premium),
+    gap 260ms var(--gui2-ease-premium);
 }
 
 .gui2-landing-hero-grid--anime {
-  grid-template-columns: 244px minmax(0, 1fr);
+  grid-template-columns: 212px minmax(0, 1fr);
+}
+
+.gui2-landing-hero-grid--manga {
+  grid-template-columns: 212px minmax(0, 1fr);
 }
 
 .gui2-landing-hero-grid--coverless {
@@ -4360,7 +5647,8 @@ body.reader-active .gui2-content {
 
 .gui2-landing-cover-wrap {
   width: 100%;
-  max-width: 244px;
+  max-width: 216px;
+  align-self: end;
 }
 
 .gui2-landing-cover {
@@ -4370,7 +5658,7 @@ body.reader-active .gui2-content {
   object-fit: cover;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.04);
-  box-shadow: 0 20px 38px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 28px 56px rgba(0, 0, 0, 0.34);
 }
 
 .gui2-landing-cover--round {
@@ -4379,9 +5667,11 @@ body.reader-active .gui2-content {
 
 .gui2-landing-copy {
   display: grid;
-  gap: 12px;
-  align-content: start;
+  gap: 10px;
+  align-content: end;
   min-width: 0;
+  max-width: 980px;
+  padding-bottom: 4px;
 }
 
 .gui2-landing-kicker {
@@ -4403,7 +5693,7 @@ body.reader-active .gui2-content {
 
 .gui2-landing-subtitle {
   color: rgba(255, 255, 255, 0.82);
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 500;
 }
 
@@ -4427,17 +5717,17 @@ body.reader-active .gui2-content {
 
 .gui2-landing-story {
   margin: 0;
-  max-width: 760px;
-  color: rgba(255, 255, 255, 0.78);
+  max-width: 78ch;
+  color: rgba(255, 255, 255, 0.82);
   font-size: 14px;
-  line-height: 1.75;
+  line-height: 1.52;
 }
 
 .gui2-landing-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 12px;
 }
 
 .gui2-landing-primary-btn,
@@ -4465,9 +5755,255 @@ body.reader-active .gui2-content {
 
 .gui2-landing-sidecard,
 .gui2-landing-panel {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(14, 16, 19, 0.96), rgba(10, 11, 14, 0.98));
-  padding: 16px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+.gui2-landing-panel--progression {
+  position: relative;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.gui2-landing-panel--progression::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: none;
+  pointer-events: none;
+}
+
+.gui2-landing-panel--progression > * {
+  position: relative;
+  z-index: 1;
+}
+
+.gui2-landing-recommendations {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 16px;
+  margin: 12px 0 28px;
+  padding: 0;
+}
+
+.gui2-landing-section-head--stacked {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.gui2-landing-section-copy--recommendations {
+  max-width: 68ch;
+}
+
+.gui2-landing-recommendations-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+}
+
+.gui2-landing-recommendation-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  transition: transform 180ms var(--gui2-ease-premium), opacity 180ms var(--gui2-ease-premium);
+}
+
+.gui2-landing-recommendation-card--button {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.gui2-landing-recommendation-card--button:focus-visible {
+  outline: 2px solid rgba(214, 164, 89, 0.72);
+  outline-offset: 4px;
+}
+
+.gui2-landing-recommendation-card--placeholder {
+  opacity: 0.9;
+}
+
+.gui2-landing-recommendation-card:hover {
+  transform: translateY(-3px);
+}
+
+.gui2-landing-recommendation-artwrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top, rgba(214, 164, 89, 0.18), transparent 55%),
+    rgba(10, 10, 14, 0.78);
+  aspect-ratio: 5 / 7;
+  box-shadow: 0 24px 42px rgba(0, 0, 0, 0.22);
+}
+
+.gui2-landing-recommendation-art {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.gui2-landing-recommendation-art--placeholder {
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01)),
+    radial-gradient(circle at top, rgba(214, 164, 89, 0.18), transparent 58%);
+  color: rgba(255, 244, 227, 0.82);
+  font-size: clamp(26px, 3vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.gui2-landing-recommendation-copy {
+  display: grid;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.gui2-landing-recommendation-eyebrow {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.gui2-landing-recommendation-title {
+  margin: 0;
+  color: var(--gui2-text);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.14;
+}
+
+.gui2-landing-recommendation-subtitle {
+  margin: 0;
+  color: rgba(243, 239, 232, 0.64);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.gui2-landing-recommendation-card--placeholder .gui2-landing-recommendation-copy {
+  gap: 8px;
+}
+
+.gui2-landing-family-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.gui2-landing-tool-group {
+  display: grid;
+  gap: 6px;
+  justify-items: flex-end;
+  align-content: start;
+  min-width: max-content;
+}
+
+.gui2-landing-tool-label {
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gui2-landing-tool-group--stream,
+.gui2-landing-tool-group--playback {
+  padding-right: 6px;
+}
+
+.gui2-landing-family-btn {
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.56);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition:
+    border-color 160ms var(--gui2-ease-premium),
+    background 160ms var(--gui2-ease-premium),
+    color 160ms var(--gui2-ease-premium),
+    opacity 160ms var(--gui2-ease-premium);
+}
+
+.gui2-landing-playback-toggle {
+  flex-shrink: 0;
+}
+
+.gui2-landing-family-btn.active {
+  border-color: rgba(215, 163, 90, 0.62);
+  color: #fff4e3;
+}
+
+.gui2-landing-family-btn:disabled {
+  opacity: 0.58;
+  cursor: default;
+}
+
+.gui2-landing-queue-pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+}
+
+.gui2-landing-queue-pagination--editorial {
+  justify-content: flex-start;
+}
+
+.gui2-landing-pagechip {
+  min-width: auto;
+  min-height: 26px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  transition:
+    border-color 160ms var(--gui2-ease-premium),
+    color 160ms var(--gui2-ease-premium),
+    opacity 160ms var(--gui2-ease-premium);
+}
+
+.gui2-landing-pagechip.active {
+  border-color: rgba(215, 163, 90, 0.58);
+  color: #fff4e3;
+}
+
+.gui2-landing-pagechip:disabled {
+  opacity: 0.48;
+  cursor: default;
 }
 
 .gui2-landing-sidecard-title,
@@ -4523,15 +6059,18 @@ body.reader-active .gui2-content {
 }
 
 .gui2-landing-workspace {
+  position: relative;
+  z-index: 2;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 286px;
-  gap: 18px;
+  gap: 24px;
+  margin-top: -44px;
 }
 
 .gui2-landing-main,
 .gui2-landing-aside {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   align-content: start;
 }
 
@@ -4540,7 +6079,7 @@ body.reader-active .gui2-content {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 18px;
 }
 
 .gui2-landing-section-head--split {
@@ -4548,9 +6087,9 @@ body.reader-active .gui2-content {
 }
 
 .gui2-landing-section-copy {
-  margin: 6px 0 0;
-  color: rgba(255, 255, 255, 0.58);
-  font-size: 12px;
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -4562,26 +6101,28 @@ body.reader-active .gui2-content {
 .gui2-landing-section-tools {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 16px;
 }
 
 .gui2-landing-section-tools--wrap {
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: end;
+  gap: 12px 24px;
 }
 
-.gui2-landing-fact-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
+.gui2-landing-fact-band {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 26px;
+  align-items: flex-start;
 }
 
-.gui2-landing-fact-card {
+.gui2-landing-fact-item {
   display: grid;
-  gap: 6px;
-  padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  gap: 4px;
+  min-width: 0;
+  max-width: 280px;
 }
 
 .gui2-landing-fact-label {
@@ -4613,9 +6154,10 @@ body.reader-active .gui2-content {
 .gui2-landing-character-card {
   display: grid;
   gap: 0;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 0;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow: none;
 }
 
 .gui2-landing-character-art {
@@ -4656,6 +6198,13 @@ body.reader-active .gui2-content {
 .gui2-landing-chapter-list {
   display: grid;
   gap: 12px;
+}
+
+.gui2-landing-source-stack--inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 14px;
 }
 
 .gui2-landing-episodes-mediafirst {
@@ -4713,14 +6262,16 @@ body.reader-active .gui2-content {
   grid-template-columns: 220px minmax(0, 1fr) auto;
   gap: 16px;
   align-items: stretch;
-  padding: 12px;
+  padding: 14px;
   border: 0;
-  background: rgba(255, 255, 255, 0.01);
+  border-radius: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  box-shadow: none;
 }
 
 .gui2-landing-episodes-mediafirst .gui2-landing-episode-row {
-  background: rgba(255,255,255,0.025);
-  border-color: rgba(255,255,255,0.05);
+  background: transparent;
 }
 
 .gui2-landing-episode-media {
@@ -4818,19 +6369,21 @@ body.reader-active .gui2-content {
 }
 
 .gui2-landing-source-btn {
-  display: grid;
-  gap: 4px;
-  width: 100%;
-  padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  display: inline-grid;
+  gap: 1px;
+  width: auto;
+  min-width: 0;
+  padding: 0 0 4px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
   color: var(--gui2-text);
   text-align: left;
 }
 
 .gui2-landing-source-btn.active {
-  border-color: rgba(215, 163, 90, 0.4);
-  background: linear-gradient(180deg, rgba(215, 163, 90, 0.16), rgba(215, 163, 90, 0.05));
+  border-color: rgba(215, 163, 90, 0.58);
 }
 
 .gui2-landing-source-name {
@@ -4841,6 +6394,53 @@ body.reader-active .gui2-content {
 .gui2-landing-source-status {
   color: rgba(255, 255, 255, 0.54);
   font-size: 11px;
+}
+
+.gui2-landing-count {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.gui2-landing-page .manga-filter-toggle,
+.gui2-landing-page .episode-playback-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+.gui2-landing-page .manga-filter-toggle-btn,
+.gui2-landing-page .episode-playback-pill {
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.gui2-landing-page .manga-filter-toggle-btn.active,
+.gui2-landing-page .episode-playback-pill.active {
+  border-color: rgba(215, 163, 90, 0.58);
+  color: #fff4e3;
+}
+
+.gui2-landing-page .episode-audio-toolbar-label {
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .gui2-landing-chapter-table {
@@ -4870,14 +6470,16 @@ body.reader-active .gui2-content {
 }
 
 .gui2-landing-chapter-row {
-  padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  padding: 14px;
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  box-shadow: none;
 }
 
 .gui2-manga-landing-chapters-editorial .gui2-landing-chapter-row {
-  background: rgba(255,255,255,0.025);
-  border-color: rgba(255,255,255,0.05);
+  background: transparent;
 }
 
 .gui2-landing-chapter-index {
@@ -4915,11 +6517,11 @@ body.reader-active .gui2-content {
 }
 
 .gui2-landing-page--anime .gui2-landing-hero {
-  min-height: 360px;
+  min-height: clamp(560px, 48vw, 760px);
 }
 
 .gui2-landing-page--manga .gui2-landing-hero {
-  min-height: 320px;
+  min-height: clamp(500px, 43vw, 660px);
 }
 
 @media (max-width: 1320px) {
@@ -4955,9 +6557,13 @@ body.reader-active .gui2-content {
     max-width: 220px;
   }
 
-  .gui2-landing-character-strip,
-  .gui2-landing-fact-grid {
+  .gui2-landing-character-strip {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gui2-landing-fact-band {
+    flex-direction: column;
+    gap: 14px;
   }
 
   .gui2-landing-chapter-header {
@@ -5608,6 +7214,13 @@ body.reader-active .gui2-content {
 .gui2-lists-shell-premium {
   border-top: 1px solid rgba(214, 190, 154, 0.12);
   padding-top: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0));
+}
+
+.gui2-landing-page .empty-state {
+  border: 0;
+  background: transparent;
+  padding-inline: 0;
 }
 
 @media (max-width: 1200px) {
@@ -6383,6 +7996,7 @@ body.reader-active .gui2-content {
   overflow: visible;
   border-top: 0;
   padding-top: 0;
+  background: linear-gradient(180deg, rgba(15, 17, 20, 0.34), rgba(9, 11, 14, 0));
   z-index: 1;
 }
 
@@ -6498,6 +8112,7 @@ body.reader-active .gui2-content {
   position: relative;
   overflow: hidden;
   border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
   background: rgba(255, 255, 255, 0.03);
   box-shadow:
     0 24px 42px rgba(0, 0, 0, 0.34),
@@ -7452,11 +9067,6 @@ body.reader-active .reader-shell-v2 {
   overflow: hidden;
 }
 
-.reader-shell-v2.reader-ui-hidden .reader-page-canvas {
-  padding-top: 18px;
-  padding-bottom: 18px;
-}
-
 .reader-shell-v2.reader-ui-hidden .reader-scroll-canvas {
   padding-top: 18px;
   padding-bottom: 28px;
@@ -7509,7 +9119,7 @@ body.reader-active .reader-shell-v2 {
 }
 
 .reader-scroll-stack {
-  width: min(var(--reader-scroll-page-width, 100%), var(--reader-scroll-page-max-width, 1280px));
+  width: min(100%, var(--reader-scroll-stage-max-width, 1480px));
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -7526,19 +9136,21 @@ body.reader-active .reader-shell-v2 {
   margin: 0;
   padding: 0;
   line-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: visible;
 }
 
-.reader-fit--height .reader-scroll-stack {
+.reader-fit--contain .reader-scroll-stack {
   width: 100%;
 }
 
-.reader-fit--height .reader-scroll-slice {
-  display: grid;
-  place-items: center;
+.reader-fit--contain .reader-scroll-slice {
+  justify-items: center;
 }
 
 .reader-fit--original .reader-scroll-stack {
-  width: min(var(--reader-scroll-page-width, 74%), var(--reader-scroll-page-max-width, 1280px));
+  width: min(100%, var(--reader-scroll-stage-max-width, 1480px));
 }
 
 .reader-page-sheet {
@@ -7556,8 +9168,22 @@ body.reader-active .reader-shell-v2 {
   display: block;
 }
 
-.reader-scroll-image {
+.reader-page-media-crop {
+  position: relative;
   width: 100%;
+  height: 100%;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.reader-page-media--cropped {
+  position: absolute;
+  max-width: none;
+  max-height: none;
+}
+
+.reader-scroll-image {
+  width: auto;
   height: auto;
   display: block;
   background: transparent;
@@ -7567,10 +9193,8 @@ body.reader-active .reader-shell-v2 {
   contain-intrinsic-size: 1200px;
 }
 
-.reader-fit--height .reader-scroll-image {
-  width: auto;
+.reader-fit--contain .reader-scroll-image {
   max-width: 100%;
-  height: min(var(--reader-scroll-page-height, 78vh), 960px);
   object-fit: contain;
 }
 
@@ -7583,13 +9207,20 @@ body.reader-active .reader-shell-v2 {
   object-fit: contain;
 }
 
-.reader-page-canvas {
+.reader-stage-surface {
   position: relative;
+  width: 100%;
   height: 100%;
+  min-height: 0;
+}
+
+.reader-page-canvas {
+  position: absolute;
+  inset: 0;
   display: grid;
-  justify-items: center;
-  align-items: start;
-  padding: 102px 40px 38px;
+  justify-items: stretch;
+  align-items: stretch;
+  padding: 0;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-gutter: stable both-edges;
@@ -7640,16 +9271,16 @@ body.reader-active .reader-shell-v2 {
 .reader-spread {
   width: 100%;
   min-height: 100%;
-  height: fit-content;
-  max-width: min(1560px, 100%);
-  max-height: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
   display: grid;
   align-items: start;
   align-content: start;
   justify-content: center;
   justify-items: center;
   gap: 18px;
-  padding-bottom: 18px;
+  padding-bottom: 0;
 }
 
 .reader-spread--paged {
@@ -7662,14 +9293,14 @@ body.reader-active .reader-shell-v2 {
 
 .reader-page-sheet--paged,
 .reader-page-sheet--double {
-  width: var(--reader-canvas-sheet-width, 100%);
-  height: var(--reader-canvas-sheet-height, 100%);
-  max-width: var(--reader-canvas-sheet-max-width, 100%);
-  max-height: var(--reader-canvas-sheet-max-height, 100%);
+  width: var(--reader-canvas-sheet-width, auto);
+  height: var(--reader-canvas-sheet-height, auto);
+  max-width: var(--reader-canvas-sheet-max-width, none);
+  max-height: var(--reader-canvas-sheet-max-height, none);
   min-width: 0;
   min-height: 0;
   justify-self: center;
-  align-self: center;
+  align-self: start;
   padding: 0;
   background: transparent;
   box-shadow: none;
@@ -8059,10 +9690,6 @@ body.reader-active .reader-shell-v2 {
   .reader-toggle-group,
   .reader-chapter-jump-group {
     flex-wrap: wrap;
-  }
-
-  .reader-page-canvas {
-    padding: 112px 18px 30px;
   }
 
   .reader-page-arrow {
@@ -8520,21 +10147,23 @@ body.reader-active .reader-shell-v2 {
 }
 
 .gui2-online-player-page {
-  --gui2-online-player-backdrop: none;
   position: relative;
-  display: grid;
+  display: none;
   gap: 20px;
-  min-height: calc(100vh - var(--gui2-topbar-h) - 36px);
-  padding: 24px 18px 28px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    linear-gradient(180deg, rgba(10, 11, 15, 0.92), rgba(8, 9, 12, 0.98)),
-    radial-gradient(circle at top center, rgba(214, 164, 89, 0.14), transparent 34%),
-    var(--gui2-online-player-backdrop);
-  background-size: cover;
-  background-position: center;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   overflow: hidden;
   isolation: isolate;
+}
+
+.gui2-online-player-page--active {
+  display: grid;
+  min-height: auto;
+  margin-top: 4px;
+  padding: 18px 0 8px;
+  animation: gui2WatchSurfaceIn 240ms var(--gui2-ease-premium) both;
 }
 
 .gui2-online-player-page::before {
@@ -8542,9 +10171,68 @@ body.reader-active .reader-shell-v2 {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(7, 7, 10, 0.48) 0%, rgba(7, 7, 10, 0.82) 42%, rgba(7, 7, 10, 0.96) 100%),
-    radial-gradient(circle at top center, rgba(239, 191, 122, 0.10), transparent 30%);
+    linear-gradient(180deg, rgba(7, 7, 10, 0.16) 0%, rgba(7, 7, 10, 0.42) 42%, rgba(7, 7, 10, 0.18) 100%);
   pointer-events: none;
+}
+
+.gui2-landing-hero--watch {
+  min-height: clamp(220px, 22vw, 288px);
+}
+
+.gui2-landing-workspace--watch {
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: -18px;
+  gap: 20px;
+}
+
+.gui2-landing-workspace--watch .gui2-landing-main {
+  gap: 20px;
+}
+
+.gui2-landing-hero-grid--watch {
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 22px;
+  align-items: center;
+  padding-bottom: 6px;
+}
+
+.gui2-landing-cover-wrap--watch {
+  max-width: 128px;
+}
+
+.gui2-landing-hero--watch .gui2-landing-title {
+  font-size: clamp(28px, 3vw, 42px);
+}
+
+.gui2-landing-hero--watch .gui2-landing-copy {
+  gap: 8px;
+  max-width: 760px;
+}
+
+.gui2-landing-hero--watch .gui2-landing-story {
+  max-width: 70ch;
+}
+
+.gui2-landing-watch-cast {
+  margin-bottom: 4px;
+}
+
+.gui2-landing-story-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.gui2-landing-story-toggle {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(242, 191, 116, 0.92);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
 }
 
 .gui2-online-player-copy,
@@ -8556,28 +10244,30 @@ body.reader-active .reader-shell-v2 {
 
 .gui2-online-player-copy {
   display: grid;
-  justify-items: center;
-  gap: 8px;
-  padding-top: 8px;
-  text-align: center;
+  justify-items: start;
+  gap: 4px;
+  padding: 0 2px;
+  text-align: left;
 }
 
 .gui2-online-player-title {
   margin: 0;
-  color: #f2bf74;
+  color: var(--gui2-text);
   font-family: 'Plus Jakarta Sans', sans-serif;
-  font-size: clamp(28px, 3.6vw, 56px);
+  font-size: clamp(22px, 2.1vw, 30px);
   font-weight: 600;
-  letter-spacing: -0.04em;
-  line-height: 1.04;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
 }
 
 .gui2-online-player-episode {
   margin: 0;
-  color: rgba(243, 239, 232, 0.78);
-  font-size: clamp(18px, 1.9vw, 30px);
-  font-weight: 500;
+  color: rgba(243, 239, 232, 0.58);
+  font-size: 11px;
+  font-weight: 700;
   line-height: 1.12;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .integrated-player-overlay {
@@ -8615,14 +10305,13 @@ body.reader-active .reader-shell-v2 {
 }
 
 .integrated-player-shell--page {
-  width: min(1268px, 100%);
-  gap: 18px;
-  padding: 14px 14px 8px;
-  border-color: rgba(214, 164, 89, 0.18);
-  background:
-    linear-gradient(180deg, rgba(15, 16, 20, 0.96), rgba(8, 9, 12, 0.98)),
-    radial-gradient(circle at top center, rgba(214, 164, 89, 0.10), transparent 30%);
-  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.24);
+  width: min(1420px, calc(100% - 24px));
+  margin-inline: auto;
+  gap: 16px;
+  padding: 0 0 6px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .integrated-player-header,
@@ -8683,6 +10372,8 @@ body.reader-active .reader-shell-v2 {
   border: 1px solid rgba(214, 164, 89, 0.24);
   background: rgba(4, 5, 8, 0.96);
   aspect-ratio: 16 / 9;
+  box-shadow: 0 30px 72px rgba(0, 0, 0, 0.34);
+  max-height: min(78vh, 860px);
 }
 
 .integrated-player-video {
@@ -8723,25 +10414,21 @@ body.reader-active .reader-shell-v2 {
 .integrated-player-page-actions {
   justify-content: space-between;
   flex-wrap: wrap;
-  padding: 0 4px;
+  padding: 2px 4px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .integrated-player-page-nav {
   display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 1fr));
-  gap: 16px;
-  flex: 1 1 420px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, max-content));
+  gap: 14px;
+  flex: 1 1 auto;
+  justify-content: flex-start;
 }
 
 .integrated-player-page-nav .integrated-player-toolbar-group {
   width: 100%;
   justify-content: space-between;
-}
-
-.integrated-player-page-nav-spacer {
-  display: inline-block;
-  min-width: 132px;
-  min-height: 34px;
 }
 
 .integrated-player-audio-group--page {
@@ -8752,6 +10439,158 @@ body.reader-active .reader-shell-v2 {
   color: rgba(243, 239, 232, 0.58);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.gui2-landing-watchnav {
+  display: grid;
+  gap: 16px;
+  animation: gui2WatchSurfaceIn 260ms var(--gui2-ease-premium) both;
+}
+
+.gui2-landing-watchnav-head {
+  margin-bottom: 0;
+}
+
+.gui2-landing-watchnav-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.gui2-landing-watchcard {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--gui2-text);
+  text-align: left;
+  font: inherit;
+  box-shadow: none;
+  overflow: hidden;
+  transition:
+    transform 180ms var(--gui2-ease-premium),
+    border-color 180ms var(--gui2-ease-premium),
+    background 180ms var(--gui2-ease-premium),
+    box-shadow 180ms var(--gui2-ease-premium);
+}
+
+.gui2-landing-watchcard:hover,
+.gui2-landing-watchcard:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(214, 164, 89, 0.3);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.2);
+}
+
+.gui2-landing-watchcard.active {
+  border-color: rgba(214, 164, 89, 0.42);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  box-shadow: 0 24px 54px rgba(0, 0, 0, 0.22);
+}
+
+.gui2-landing-watchcard-media {
+  position: relative;
+}
+
+.gui2-landing-watchcard-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.gui2-landing-watchcard-thumb--placeholder {
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gui2-landing-watchcard-number {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  background: rgba(7, 7, 10, 0.76);
+  color: #fff4e3;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.gui2-landing-watchcard-copy {
+  display: grid;
+  gap: 8px;
+  padding: 14px 14px 16px;
+}
+
+.gui2-landing-watchcard-title {
+  color: var(--gui2-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.gui2-landing-watchcard-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.gui2-online-player-loading {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  min-height: min(56vw, 520px);
+  align-content: center;
+  border: 1px solid rgba(214, 164, 89, 0.18);
+  background: linear-gradient(180deg, rgba(7, 8, 11, 0.86), rgba(7, 8, 11, 0.96));
+  box-shadow: 0 26px 62px rgba(0, 0, 0, 0.24);
+}
+
+.gui2-online-player-loading-spinner {
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-top-color: rgba(239, 191, 122, 0.92);
+  animation: gui2WatchSpinner 900ms linear infinite;
+}
+
+.gui2-online-player-loading-copy {
+  color: rgba(243, 239, 232, 0.7);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+@keyframes gui2WatchSurfaceIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes gui2WatchSpinner {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .integrated-player-nav-btn,
@@ -8771,6 +10610,19 @@ body.reader-active .reader-shell-v2 {
   .integrated-player-shell--page {
     width: 100%;
     padding: 12px;
+  }
+
+  .gui2-landing-hero-grid--watch {
+    grid-template-columns: 100px minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .gui2-landing-cover-wrap--watch {
+    max-width: 100px;
+  }
+
+  .gui2-landing-watchnav-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .integrated-player-page-actions,

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const aniListCatalogPerPage = 48
+const aniListCatalogPerPage = 36
 
 type catalogFetchRequest struct {
 	Page   int
@@ -137,14 +137,12 @@ func buildCatalogFetchRequests(genre, season string, year int, sort, status, for
 		return []catalogFetchRequest{requestBase}
 	}
 
-	requests := make([]catalogFetchRequest, 0, len(genres)*safePage)
+	requests := make([]catalogFetchRequest, 0, len(genres))
 	for _, currentGenre := range genres {
-		for currentPage := 1; currentPage <= safePage; currentPage++ {
-			req := requestBase
-			req.Page = currentPage
-			req.Genre = currentGenre
-			requests = append(requests, req)
-		}
+		req := requestBase
+		req.Page = safePage
+		req.Genre = currentGenre
+		requests = append(requests, req)
 	}
 	return requests
 }
@@ -235,27 +233,23 @@ func sortMangaCatalogItems(items []aniListMangaNode, sortKey string) {
 
 func paginateAnimeCatalogUnion(items []aniListAnimeCatalogNode, page int, hasMore bool) *aniListAnimeCatalogEnvelope {
 	safePage := normalizeCatalogPage(page)
-	start := (safePage - 1) * aniListCatalogPerPage
-	end := start + aniListCatalogPerPage
-	if start > len(items) {
-		start = len(items)
-	}
-	if end > len(items) {
-		end = len(items)
+	pageItems := items
+	if len(pageItems) > aniListCatalogPerPage {
+		pageItems = pageItems[:aniListCatalogPerPage]
 	}
 
-	lastPage := catalogLastPage(len(items))
-	if hasMore && lastPage <= safePage {
+	lastPage := safePage
+	if hasMore || len(items) > len(pageItems) {
 		lastPage = safePage + 1
 	}
 
 	var payload aniListAnimeCatalogEnvelope
-	payload.Data.Page.Media = append(payload.Data.Page.Media, items[start:end]...)
+	payload.Data.Page.Media = append(payload.Data.Page.Media, pageItems...)
 	payload.Data.Page.PageInfo = aniListPageInfo{
-		Total:       len(items),
+		Total:       ((safePage - 1) * aniListCatalogPerPage) + len(pageItems),
 		CurrentPage: safePage,
 		LastPage:    lastPage,
-		HasNextPage: hasMore || end < len(items),
+		HasNextPage: hasMore || len(items) > len(pageItems),
 		PerPage:     aniListCatalogPerPage,
 	}
 	return &payload
@@ -263,17 +257,13 @@ func paginateAnimeCatalogUnion(items []aniListAnimeCatalogNode, page int, hasMor
 
 func paginateMangaCatalogUnion(items []aniListMangaNode, page int, hasMore bool) map[string]interface{} {
 	safePage := normalizeCatalogPage(page)
-	start := (safePage - 1) * aniListCatalogPerPage
-	end := start + aniListCatalogPerPage
-	if start > len(items) {
-		start = len(items)
-	}
-	if end > len(items) {
-		end = len(items)
+	pageItems := items
+	if len(pageItems) > aniListCatalogPerPage {
+		pageItems = pageItems[:aniListCatalogPerPage]
 	}
 
-	lastPage := catalogLastPage(len(items))
-	if hasMore && lastPage <= safePage {
+	lastPage := safePage
+	if hasMore || len(items) > len(pageItems) {
 		lastPage = safePage + 1
 	}
 
@@ -281,13 +271,13 @@ func paginateMangaCatalogUnion(items []aniListMangaNode, page int, hasMore bool)
 		"data": map[string]interface{}{
 			"Page": map[string]interface{}{
 				"pageInfo": aniListPageInfo{
-					Total:       len(items),
+					Total:       ((safePage - 1) * aniListCatalogPerPage) + len(pageItems),
 					CurrentPage: safePage,
 					LastPage:    lastPage,
-					HasNextPage: hasMore || end < len(items),
+					HasNextPage: hasMore || len(items) > len(pageItems),
 					PerPage:     aniListCatalogPerPage,
 				},
-				"media": items[start:end],
+				"media": pageItems,
 			},
 		},
 	}

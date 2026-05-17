@@ -60,33 +60,34 @@ func NewManager() *Manager {
 
 // AnimeMetadata is the enriched result we store in the DB after matching.
 type AnimeMetadata struct {
-	AniListID         int                `json:"anilist_id"`
-	MalID             int                `json:"mal_id"`
-	TitleRomaji       string             `json:"title_romaji"`
-	TitleEnglish      string             `json:"title_english"`
-	TitleNative       string             `json:"title_native"`
-	TitleSpanish      string             `json:"title_spanish"` // from synonyms or community translation
-	Synonyms          []string           `json:"synonyms"`
-	CoverLarge        string             `json:"cover_large"`
-	CoverMedium       string             `json:"cover_medium"`
-	BannerImage       string             `json:"banner_image"`
-	Description       string             `json:"description"` // English fallback
-	Year              int                `json:"year"`
-	Episodes          int                `json:"episodes"`
-	Status            string             `json:"status"`
-	Score             float64            `json:"score"`
-	AverageScore      float64            `json:"average_score"`
-	CountryOfOrigin   string             `json:"country_of_origin"`
-	Source            string             `json:"source"`
-	Season            string             `json:"season"`
-	SeasonYear        int                `json:"season_year"`
-	StartDate         AniListDate        `json:"start_date"`
-	EndDate           AniListDate        `json:"end_date"`
-	NextAiringEpisode *AniListAiringInfo `json:"next_airing_episode,omitempty"`
-	Studios           []AniListStudio    `json:"studios,omitempty"`
-	Genres            []string           `json:"genres"`
-	StreamingEpisodes []StreamingEpisode `json:"streamingEpisodes"`
-	Characters        []AnimeCharacter   `json:"characters,omitempty"`
+	AniListID         int                     `json:"anilist_id"`
+	MalID             int                     `json:"mal_id"`
+	TitleRomaji       string                  `json:"title_romaji"`
+	TitleEnglish      string                  `json:"title_english"`
+	TitleNative       string                  `json:"title_native"`
+	TitleSpanish      string                  `json:"title_spanish"` // from synonyms or community translation
+	Synonyms          []string                `json:"synonyms"`
+	CoverLarge        string                  `json:"cover_large"`
+	CoverMedium       string                  `json:"cover_medium"`
+	BannerImage       string                  `json:"banner_image"`
+	Description       string                  `json:"description"` // English fallback
+	Year              int                     `json:"year"`
+	Episodes          int                     `json:"episodes"`
+	Status            string                  `json:"status"`
+	Score             float64                 `json:"score"`
+	AverageScore      float64                 `json:"average_score"`
+	CountryOfOrigin   string                  `json:"country_of_origin"`
+	Source            string                  `json:"source"`
+	Season            string                  `json:"season"`
+	SeasonYear        int                     `json:"season_year"`
+	StartDate         AniListDate             `json:"start_date"`
+	EndDate           AniListDate             `json:"end_date"`
+	NextAiringEpisode *AniListAiringInfo      `json:"next_airing_episode,omitempty"`
+	Studios           []AniListStudio         `json:"studios,omitempty"`
+	Genres            []string                `json:"genres"`
+	StreamingEpisodes []StreamingEpisode      `json:"streamingEpisodes"`
+	Characters        []AnimeCharacter        `json:"characters,omitempty"`
+	Recommendations   []AniListRecommendation `json:"recommendations,omitempty"`
 }
 
 type AniListDate struct {
@@ -285,44 +286,7 @@ func (m *Manager) searchAnimeCandidates(search string, perPage int) ([]animeSear
 
 // GetAnimeByID fetches full anime details by AniList ID.
 func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
-	gql := `
-	query ($id: Int) {
-		Media(id: $id, type: ANIME) {
-			id
-			idMal
-			format
-			season
-			seasonYear
-			countryOfOrigin
-			source
-			title { romaji english native }
-			synonyms
-			coverImage { large medium }
-			bannerImage
-			description(asHtml: false)
-			averageScore
-			episodes
-			status
-			startDate { year month day }
-			endDate { year month day }
-			nextAiringEpisode { episode airingAt }
-			genres
-			streamingEpisodes { title thumbnail url site }
-			studios(isMain: true) {
-				nodes { name }
-			}
-			characters(perPage: 12, sort: [ROLE, RELEVANCE]) {
-				edges {
-					role
-					node {
-						id
-						name { full native }
-						image { large }
-					}
-				}
-			}
-		}
-	}`
+	gql := aniListAnimeDetailQuery()
 
 	payload := map[string]interface{}{
 		"query":     gql,
@@ -392,6 +356,9 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 						} `json:"node"`
 					} `json:"edges"`
 				} `json:"characters"`
+				Recommendations struct {
+					Edges []aniListRecommendationEdge `json:"edges"`
+				} `json:"recommendations"`
 			} `json:"Media"`
 		} `json:"data"`
 	}
@@ -466,6 +433,113 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 			}
 			return out
 		}(),
+		Recommendations: mapAniListRecommendations(med.Recommendations.Edges),
+	}, nil
+}
+
+// GetAnimeEnrichmentByID fetches a lighter AniList payload for backend enrichment flows.
+func (m *Manager) GetAnimeEnrichmentByID(id int) (*AnimeMetadata, error) {
+	gql := aniListAnimeEnrichmentQuery()
+
+	payload := map[string]interface{}{
+		"query":     gql,
+		"variables": map[string]interface{}{"id": id},
+	}
+
+	body, err := m.postJSON(anilistEndpoint, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Data struct {
+			Media struct {
+				ID              int    `json:"id"`
+				IDMal           int    `json:"idMal"`
+				Format          string `json:"format"`
+				Season          string `json:"season"`
+				SeasonYear      int    `json:"seasonYear"`
+				CountryOfOrigin string `json:"countryOfOrigin"`
+				Source          string `json:"source"`
+				Title           struct {
+					Romaji  string `json:"romaji"`
+					English string `json:"english"`
+					Native  string `json:"native"`
+				} `json:"title"`
+				Synonyms   []string `json:"synonyms"`
+				CoverImage struct {
+					Large  string `json:"large"`
+					Medium string `json:"medium"`
+				} `json:"coverImage"`
+				BannerImage       string      `json:"bannerImage"`
+				Description       string      `json:"description"`
+				AverageScore      float64     `json:"averageScore"`
+				Episodes          int         `json:"episodes"`
+				Status            string      `json:"status"`
+				StartDate         AniListDate `json:"startDate"`
+				EndDate           AniListDate `json:"endDate"`
+				NextAiringEpisode *struct {
+					Episode  int `json:"episode"`
+					AiringAt int `json:"airingAt"`
+				} `json:"nextAiringEpisode"`
+				Genres            []string `json:"genres"`
+				StreamingEpisodes []struct {
+					Title     string `json:"title"`
+					Thumbnail string `json:"thumbnail"`
+					URL       string `json:"url"`
+					Site      string `json:"site"`
+				} `json:"streamingEpisodes"`
+			} `json:"Media"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+
+	med := resp.Data.Media
+	var nextAiring *AniListAiringInfo
+	if med.NextAiringEpisode != nil {
+		nextAiring = &AniListAiringInfo{
+			Episode:  med.NextAiringEpisode.Episode,
+			AiringAt: med.NextAiringEpisode.AiringAt,
+		}
+	}
+
+	return &AnimeMetadata{
+		AniListID:         med.ID,
+		MalID:             med.IDMal,
+		TitleRomaji:       med.Title.Romaji,
+		TitleEnglish:      med.Title.English,
+		TitleNative:       med.Title.Native,
+		TitleSpanish:      extractSpanishTitle(med.Synonyms),
+		Synonyms:          med.Synonyms,
+		CoverLarge:        med.CoverImage.Large,
+		CoverMedium:       med.CoverImage.Medium,
+		BannerImage:       med.BannerImage,
+		Description:       med.Description,
+		Year:              med.StartDate.Year,
+		Episodes:          med.Episodes,
+		Status:            med.Status,
+		Score:             med.AverageScore,
+		AverageScore:      med.AverageScore,
+		CountryOfOrigin:   med.CountryOfOrigin,
+		Source:            med.Source,
+		Season:            med.Season,
+		SeasonYear:        med.SeasonYear,
+		StartDate:         med.StartDate,
+		EndDate:           med.EndDate,
+		NextAiringEpisode: nextAiring,
+		Genres:            med.Genres,
+		StreamingEpisodes: func() []StreamingEpisode {
+			out := make([]StreamingEpisode, 0, len(med.StreamingEpisodes))
+			for _, item := range med.StreamingEpisodes {
+				out = append(out, StreamingEpisode{
+					Title: item.Title, Thumbnail: item.Thumbnail, URL: item.URL, Site: item.Site,
+				})
+			}
+			return out
+		}(),
 	}, nil
 }
 
@@ -509,6 +583,8 @@ func (m *Manager) GetTrending(lang string) (interface{}, error) {
 }
 
 func (m *Manager) GetAniListAnimeCatalogHome(season string, year int) (map[string][]map[string]interface{}, error) {
+	nextSeason, nextYear := shiftAniListSeason(season, year, 1)
+	prevSeason, prevYear := shiftAniListSeason(season, year, -1)
 	gql := `
 	fragment HomeAnimeHeroCard on Media {
 		id
@@ -532,54 +608,89 @@ func (m *Manager) GetAniListAnimeCatalogHome(season string, year int) (map[strin
 		nextAiringEpisode { episode airingAt }
 	}
 
-	query ($season: MediaSeason, $seasonYear: Int) {
+	query ($season: MediaSeason, $seasonYear: Int, $nextSeason: MediaSeason, $nextSeasonYear: Int, $prevSeason: MediaSeason, $prevSeasonYear: Int) {
 		featured: Page(page: 1, perPage: 12) {
 			media(type: ANIME, sort: TRENDING_DESC, status: RELEASING, isAdult: false) {
 				...HomeAnimeHeroCard
 			}
 		}
-		popular: Page(page: 1, perPage: 10) {
-			media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) {
+		newlyTrending: Page(page: 1, perPage: 24) {
+			media(type: ANIME, sort: TRENDING_DESC, season: $season, seasonYear: $seasonYear, isAdult: false) {
 				...HomeAnimeShelfCard
 			}
 		}
-		seasonal: Page(page: 1, perPage: 10) {
-			media(type: ANIME, sort: TRENDING_DESC, status: RELEASING, season: $season, seasonYear: $seasonYear, isAdult: false) {
+		seasonalPopular: Page(page: 1, perPage: 24) {
+			media(type: ANIME, sort: POPULARITY_DESC, season: $season, seasonYear: $seasonYear, isAdult: false) {
 				...HomeAnimeShelfCard
 			}
 		}
-		topRated: Page(page: 1, perPage: 10) {
+		upcoming: Page(page: 1, perPage: 24) {
+			media(type: ANIME, sort: POPULARITY_DESC, status: NOT_YET_RELEASED, season: $nextSeason, seasonYear: $nextSeasonYear, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		topRated: Page(page: 1, perPage: 24) {
 			media(type: ANIME, sort: SCORE_DESC, isAdult: false) {
 				...HomeAnimeShelfCard
 			}
 		}
-		action: Page(page: 1, perPage: 10) {
+		lastSeason: Page(page: 1, perPage: 24) {
+			media(type: ANIME, sort: SCORE_DESC, season: $prevSeason, seasonYear: $prevSeasonYear, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		action: Page(page: 1, perPage: 24) {
 			media(type: ANIME, genre: "Action", sort: POPULARITY_DESC, isAdult: false) {
 				...HomeAnimeShelfCard
 			}
 		}
-		fantasy: Page(page: 1, perPage: 10) {
+		adventure: Page(page: 1, perPage: 24) {
+			media(type: ANIME, genre: "Adventure", sort: POPULARITY_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		comedy: Page(page: 1, perPage: 24) {
+			media(type: ANIME, genre: "Comedy", sort: POPULARITY_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		fantasy: Page(page: 1, perPage: 24) {
 			media(type: ANIME, genre: "Fantasy", sort: POPULARITY_DESC, isAdult: false) {
 				...HomeAnimeShelfCard
 			}
 		}
-		romance: Page(page: 1, perPage: 10) {
+		mystery: Page(page: 1, perPage: 24) {
+			media(type: ANIME, genre: "Mystery", sort: POPULARITY_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		romance: Page(page: 1, perPage: 24) {
 			media(type: ANIME, genre: "Romance", sort: POPULARITY_DESC, isAdult: false) {
 				...HomeAnimeShelfCard
 			}
 		}
-		scifi: Page(page: 1, perPage: 10) {
+		sports: Page(page: 1, perPage: 24) {
+			media(type: ANIME, genre: "Sports", sort: POPULARITY_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		scifi: Page(page: 1, perPage: 24) {
 			media(type: ANIME, genre: "Sci-Fi", sort: POPULARITY_DESC, isAdult: false) {
 				...HomeAnimeShelfCard
 			}
 		}
-		drama: Page(page: 1, perPage: 10) {
+		drama: Page(page: 1, perPage: 24) {
 			media(type: ANIME, genre: "Drama", sort: POPULARITY_DESC, isAdult: false) {
 				...HomeAnimeShelfCard
 			}
 		}
-		slice: Page(page: 1, perPage: 10) {
+		slice: Page(page: 1, perPage: 24) {
 			media(type: ANIME, genre: "Slice of Life", sort: POPULARITY_DESC, isAdult: false) {
+				...HomeAnimeShelfCard
+			}
+		}
+		supernatural: Page(page: 1, perPage: 24) {
+			media(type: ANIME, genre: "Supernatural", sort: POPULARITY_DESC, isAdult: false) {
 				...HomeAnimeShelfCard
 			}
 		}
@@ -590,24 +701,42 @@ func (m *Manager) GetAniListAnimeCatalogHome(season string, year int) (map[strin
 			Featured struct {
 				Media []map[string]interface{} `json:"media"`
 			} `json:"featured"`
-			Popular struct {
+			NewlyTrending struct {
 				Media []map[string]interface{} `json:"media"`
-			} `json:"popular"`
-			Seasonal struct {
+			} `json:"newlyTrending"`
+			SeasonalPopular struct {
 				Media []map[string]interface{} `json:"media"`
-			} `json:"seasonal"`
+			} `json:"seasonalPopular"`
+			Upcoming struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"upcoming"`
 			TopRated struct {
 				Media []map[string]interface{} `json:"media"`
 			} `json:"topRated"`
+			LastSeason struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"lastSeason"`
 			Action struct {
 				Media []map[string]interface{} `json:"media"`
 			} `json:"action"`
+			Adventure struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"adventure"`
+			Comedy struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"comedy"`
 			Fantasy struct {
 				Media []map[string]interface{} `json:"media"`
 			} `json:"fantasy"`
+			Mystery struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"mystery"`
 			Romance struct {
 				Media []map[string]interface{} `json:"media"`
 			} `json:"romance"`
+			Sports struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"sports"`
 			Scifi struct {
 				Media []map[string]interface{} `json:"media"`
 			} `json:"scifi"`
@@ -617,14 +746,21 @@ func (m *Manager) GetAniListAnimeCatalogHome(season string, year int) (map[strin
 			Slice struct {
 				Media []map[string]interface{} `json:"media"`
 			} `json:"slice"`
+			Supernatural struct {
+				Media []map[string]interface{} `json:"media"`
+			} `json:"supernatural"`
 		} `json:"data"`
 	}
 
 	body, err := m.postJSON(anilistEndpoint, map[string]interface{}{
 		"query": gql,
 		"variables": map[string]interface{}{
-			"season":     strings.TrimSpace(season),
-			"seasonYear": year,
+			"season":         strings.TrimSpace(season),
+			"seasonYear":     year,
+			"nextSeason":     nextSeason,
+			"nextSeasonYear": nextYear,
+			"prevSeason":     prevSeason,
+			"prevSeasonYear": prevYear,
 		},
 	})
 	if err != nil {
@@ -635,17 +771,44 @@ func (m *Manager) GetAniListAnimeCatalogHome(season string, year int) (map[strin
 	}
 
 	return map[string][]map[string]interface{}{
-		"featured": resp.Data.Featured.Media,
-		"popular":  resp.Data.Popular.Media,
-		"seasonal": resp.Data.Seasonal.Media,
-		"topRated": resp.Data.TopRated.Media,
-		"action":   resp.Data.Action.Media,
-		"fantasy":  resp.Data.Fantasy.Media,
-		"romance":  resp.Data.Romance.Media,
-		"scifi":    resp.Data.Scifi.Media,
-		"drama":    resp.Data.Drama.Media,
-		"slice":    resp.Data.Slice.Media,
+		"featured":        resp.Data.Featured.Media,
+		"newlyTrending":   resp.Data.NewlyTrending.Media,
+		"seasonalPopular": resp.Data.SeasonalPopular.Media,
+		"upcoming":        resp.Data.Upcoming.Media,
+		"topRated":        resp.Data.TopRated.Media,
+		"lastSeason":      resp.Data.LastSeason.Media,
+		"action":          resp.Data.Action.Media,
+		"adventure":       resp.Data.Adventure.Media,
+		"comedy":          resp.Data.Comedy.Media,
+		"fantasy":         resp.Data.Fantasy.Media,
+		"mystery":         resp.Data.Mystery.Media,
+		"romance":         resp.Data.Romance.Media,
+		"sports":          resp.Data.Sports.Media,
+		"scifi":           resp.Data.Scifi.Media,
+		"drama":           resp.Data.Drama.Media,
+		"slice":           resp.Data.Slice.Media,
+		"supernatural":    resp.Data.Supernatural.Media,
 	}, nil
+}
+
+func shiftAniListSeason(season string, year int, offset int) (string, int) {
+	seasons := []string{"WINTER", "SPRING", "SUMMER", "FALL"}
+	seasonIndex := 0
+	upperSeason := strings.ToUpper(strings.TrimSpace(season))
+	for index, candidate := range seasons {
+		if candidate == upperSeason {
+			seasonIndex = index
+			break
+		}
+	}
+
+	totalIndex := seasonIndex + offset
+	normalizedIndex := ((totalIndex % len(seasons)) + len(seasons)) % len(seasons)
+	yearShift := totalIndex / len(seasons)
+	if totalIndex < 0 && totalIndex%len(seasons) != 0 {
+		yearShift--
+	}
+	return seasons[normalizedIndex], year + yearShift
 }
 
 // DiscoverAnime fetches anime from AniList with genre/season/sort/status filters.

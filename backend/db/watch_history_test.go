@@ -170,3 +170,34 @@ func TestOnlineWatchProgressDrivesContinueWatchingAndCompletion(t *testing.T) {
 		t.Fatalf("expected reopened ep-1 to become resumable again, got %+v", continueWatching)
 	}
 }
+
+func TestOnlineWatchProgressReturnsEpisodeThumbnail(t *testing.T) {
+	database := newWatchHistoryTestDB(t)
+
+	entry := WatchHistoryEntry{
+		SourceID:     "animepahe-en",
+		SourceName:   "AnimePahe",
+		AnimeID:      "series-123",
+		AnimeTitle:   "Example Show",
+		EpisodeID:    "ep-7",
+		EpisodeNum:   7,
+		EpisodeTitle: "Episode 7",
+		EpisodeThumb: "file:///cached/thumbs/series-123-ep-7.webp",
+		ProgressSec:  12,
+		DurationSec:  1440,
+		Completed:    false,
+	}
+
+	if err := database.RecordOnlineWatch(entry); err != nil {
+		t.Fatalf("record online watch: %v", err)
+	}
+
+	got, err := database.GetOnlineWatchProgress("animepahe-en", "ep-7")
+	if err != nil {
+		t.Fatalf("get online watch progress: %v", err)
+	}
+
+	if got.EpisodeThumb != entry.EpisodeThumb {
+		t.Fatalf("expected thumbnail %q, got %q", entry.EpisodeThumb, got.EpisodeThumb)
+	}
+}

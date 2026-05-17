@@ -81,15 +81,11 @@ export function buildCatalogPageChips(currentPage, canNext) {
 }
 
 export default function Gui2OnlineCatalogSurface({
+  mode = 'anime',
   title,
   description,
   accentText = '',
   searchControl = null,
-  sourceSummaryLabel,
-  sourceSummaryValue,
-  resultsSummary,
-  pageSummary,
-  topPagination = null,
   filters = [],
   activeFilters = [],
   onClearFilters = null,
@@ -100,56 +96,41 @@ export default function Gui2OnlineCatalogSurface({
   bottomPagination = null,
 }) {
   return (
-    <div className="gui2-catalog-page">
-      <section className="gui2-catalog-shell">
-        <header className="gui2-catalog-header">
+    <div className={`gui2-catalog-page gui2-catalog-page--${mode}`}>
+      <section className="gui2-catalog-shell gui2-catalog-shell-premium">
+        <header className="gui2-catalog-header gui2-catalog-header-minimal">
           <div className="gui2-catalog-header-copy">
             <h1 className="gui2-catalog-title">{title}</h1>
-            <p className="gui2-catalog-description">
-              {description}
-              {accentText ? <span className="gui2-catalog-description-accent"> {accentText}</span> : null}
-            </p>
-          </div>
-
-          <div className="gui2-catalog-header-side">
-            {searchControl ? <div className="gui2-catalog-query-row">{searchControl}</div> : null}
-
-            <div className="gui2-catalog-status-strip">
-              <div className="gui2-catalog-status-block">
-                <span className="gui2-catalog-status-label">{sourceSummaryLabel}</span>
-                <div className="gui2-catalog-status-value">{sourceSummaryValue}</div>
-              </div>
-              <div className="gui2-catalog-status-divider" aria-hidden="true" />
-              <div className="gui2-catalog-status-block gui2-catalog-status-block-compact">
-                <div className="gui2-catalog-status-value">{resultsSummary}</div>
-              </div>
-              <div className="gui2-catalog-status-divider" aria-hidden="true" />
-              <div className="gui2-catalog-status-block gui2-catalog-status-block-inline">
-                <div className="gui2-catalog-status-value">{pageSummary}</div>
-                {topPagination}
-              </div>
-            </div>
+            {description ? (
+              <p className="gui2-catalog-description">
+                {description}
+                {accentText ? <span className="gui2-catalog-description-accent"> {accentText}</span> : null}
+              </p>
+            ) : null}
           </div>
         </header>
 
-        <section className="gui2-catalog-filterbar">
-          {filters.map((filter) => (
-            <div
-              key={filter.key}
-              className={`gui2-catalog-filter-cell${filter.alignEnd ? ' align-end' : ''}${filter.wide ? ' wide' : ''}`}
-            >
-              <div className="gui2-catalog-filter-labelrow">
-                <span className="gui2-catalog-filter-icon"><CatalogIcon kind={filter.icon} /></span>
-                <span className="gui2-catalog-filter-label">{filter.label}</span>
+        <section className="gui2-catalog-utilities">
+          {searchControl ? <div className="gui2-catalog-utilities-search">{searchControl}</div> : null}
+
+          <section className="gui2-catalog-filterbar gui2-catalog-filterbar-quiet gui2-catalog-filterbar-pills">
+            {filters.map((filter) => (
+              <div
+                key={filter.key}
+                className={`gui2-catalog-filter-cell${filter.alignEnd ? ' align-end' : ''}${filter.wide ? ' wide' : ''}`}
+              >
+                <div className="gui2-catalog-filter-labelrow">
+                  <span className="gui2-catalog-filter-icon"><CatalogIcon kind={filter.icon} /></span>
+                  <span className="gui2-catalog-filter-label">{filter.label}</span>
+                </div>
+                <div className="gui2-catalog-filter-control">{filter.control}</div>
               </div>
-              <div className="gui2-catalog-filter-control">{filter.control}</div>
-            </div>
-          ))}
+            ))}
+          </section>
         </section>
 
         {(activeFilters.length > 0 || onClearFilters) ? (
           <div className="gui2-catalog-activebar">
-            <div className="gui2-catalog-activebar-copy">Active Filters:</div>
             <div className="gui2-catalog-activebar-tags">
               {activeFilters.map((item) => (
                 <span key={`${item.label}-${item.value}`} className="gui2-catalog-active-tag">
@@ -165,7 +146,7 @@ export default function Gui2OnlineCatalogSurface({
           </div>
         ) : null}
 
-        <section className="gui2-catalog-results-shell">
+        <section className="gui2-catalog-results-shell gui2-catalog-results-shell-premium">
           <div className="gui2-catalog-results-head">
             <div className="gui2-catalog-results-copy">
               <div className="gui2-catalog-results-title">{bodyTitle}</div>

@@ -401,7 +401,7 @@ func (s *Server) handleMediaProxy(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "read error", http.StatusBadGateway)
 			return
 		}
-		manifest := rewriteM3U8Manifest(string(body), parsed, cookie)
+		manifest := rewriteM3U8Manifest(string(body), parsed, cookie, referer)
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -469,6 +469,8 @@ func browserMediaContentType(rawURL, contentType string) string {
 	switch {
 	case strings.Contains(lowerURL, ".m3u8"), strings.Contains(lowerCT, "application/vnd.apple.mpegurl"), strings.Contains(lowerCT, "application/x-mpegurl"):
 		return "application/vnd.apple.mpegurl"
+	case strings.Contains(lowerURL, "player.zilla-networks.com/segs/") && strings.HasSuffix(lowerURL, ".html"):
+		return "video/mp4"
 	case strings.Contains(lowerURL, ".mp4"), strings.Contains(lowerCT, "application/octet-stream"), lowerCT == "":
 		return "video/mp4"
 	case strings.Contains(lowerURL, ".webm"):
@@ -480,7 +482,10 @@ func browserMediaContentType(rawURL, contentType string) string {
 	}
 }
 
-func rewriteM3U8Manifest(manifest string, base *url.URL, cookie string) string {
+func rewriteM3U8Manifest(manifest string, base *url.URL, cookie string, originalReferer string) string {
+	if strings.TrimSpace(originalReferer) == "" {
+		originalReferer = base.String()
+	}
 	lines := strings.Split(manifest, "\n")
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -494,11 +499,11 @@ func rewriteM3U8Manifest(manifest string, base *url.URL, cookie string) string {
 					return match
 				}
 				resolved := resolveManifestRef(base, parts[1])
-				return fmt.Sprintf(`URI="%s"`, mediaProxyURL(resolved, base.String(), cookie))
+				return fmt.Sprintf(`URI="%s"`, mediaProxyURL(resolved, originalReferer, cookie))
 			})
 			continue
 		}
-		lines[i] = mediaProxyURL(resolveManifestRef(base, trimmed), base.String(), cookie)
+		lines[i] = mediaProxyURL(resolveManifestRef(base, trimmed), originalReferer, cookie)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -552,14 +557,14 @@ func ProbeMediaProxy(rawURL, referer, cookie string) (*MediaProxyProbeResult, er
 	}
 
 	if result.IsHLS {
-		manifest := rewriteM3U8Manifest(string(resp.body), parsed, cookieValue)
+		manifest := rewriteM3U8Manifest(string(resp.body), parsed, cookieValue, refererValue)
 		result.ManifestLineCount = len(strings.Split(manifest, "\n"))
 		result.ManifestRewritten = strings.Contains(manifest, "/proxy/media?")
 
 		firstSegmentRaw, firstSegmentProxy := firstPlayableManifestLine(manifest)
 		result.FirstSegmentURL = firstSegmentProxy
 		if firstSegmentRaw != "" {
-			segmentResp, segErr := fetchMediaProxyResponse(firstSegmentRaw, parsed.String(), cookieValue, "bytes=0-0", "video/*,*/*;q=0.8")
+			segmentResp, segErr := fetchMediaProxyResponse(firstSegmentRaw, refererValue, cookieValue, "bytes=0-0", "video/*,*/*;q=0.8")
 			if segErr == nil {
 				result.FirstSegmentStatus = segmentResp.status
 				result.FirstSegmentType = segmentResp.contentType

@@ -36,10 +36,26 @@ export default function IntegratedVideoPlayer({
   const lastReportedRef = useRef(0)
   const seekAppliedRef = useRef(false)
   const startupTimerRef = useRef(null)
+  const playbackCallbacksRef = useRef({
+    onPlaybackUpdate,
+    onPlaybackEnd,
+  })
+  const initialPositionRef = useRef(initialPositionSec)
   const [error, setError] = useState('')
   const [awaitingInteraction, setAwaitingInteraction] = useState(false)
   const [showFallbackActions, setShowFallbackActions] = useState(false)
   const isPagePresentation = presentation === 'gui2-page'
+
+  useEffect(() => {
+    playbackCallbacksRef.current = {
+      onPlaybackUpdate,
+      onPlaybackEnd,
+    }
+  }, [onPlaybackEnd, onPlaybackUpdate])
+
+  useEffect(() => {
+    initialPositionRef.current = initialPositionSec
+  }, [initialPositionSec])
 
   const emitDiagnostic = (event, extra = {}) => {
     const payload = {
@@ -110,7 +126,7 @@ export default function IntegratedVideoPlayer({
       const duration = Number.isFinite(video.duration) ? video.duration : 0
       if (!force && Math.abs(position - lastReportedRef.current) < 5) return
       lastReportedRef.current = position
-      onPlaybackUpdate?.(position, duration)
+      playbackCallbacksRef.current.onPlaybackUpdate?.(position, duration)
     }
 
     const clearStartupTimeout = () => {
@@ -143,8 +159,9 @@ export default function IntegratedVideoPlayer({
       if (seekAppliedRef.current) return
       seekAppliedRef.current = true
       const duration = Number.isFinite(video.duration) ? video.duration : 0
-      if (initialPositionSec > 1 && (!duration || initialPositionSec < duration - 1)) {
-        video.currentTime = initialPositionSec
+      const requestedPosition = Number(initialPositionRef.current || 0)
+      if (requestedPosition > 1 && (!duration || requestedPosition < duration - 1)) {
+        video.currentTime = requestedPosition
       }
     }
 
@@ -203,7 +220,7 @@ export default function IntegratedVideoPlayer({
         position_sec: position,
         duration_sec: duration,
       })
-      onPlaybackEnd?.(position, duration)
+      playbackCallbacksRef.current.onPlaybackEnd?.(position, duration)
     }
 
     const handleVideoError = () => {
@@ -289,7 +306,7 @@ export default function IntegratedVideoPlayer({
       video.removeAttribute('src')
       video.load()
     }
-  }, [initialPositionSec, onPlaybackEnd, onPlaybackUpdate, open, proxyURL, rawStreamURL, sourceLabel, streamHost, streamKind, streamURL, subtitle, title])
+  }, [open, proxyURL, rawStreamURL, sourceLabel, streamHost, streamKind, streamURL, subtitle, title])
 
   if (!open) return null
 
@@ -342,12 +359,12 @@ export default function IntegratedVideoPlayer({
         <button className="btn btn-ghost integrated-player-nav-btn" onClick={() => onPrev?.()} type="button">
           {prevLabel}
         </button>
-      ) : <span className="integrated-player-page-nav-spacer" aria-hidden="true" />}
+      ) : null}
       {onNext ? (
         <button className="btn btn-ghost integrated-player-nav-btn" onClick={() => onNext?.()} type="button">
           {nextLabel}
         </button>
-      ) : <span className="integrated-player-page-nav-spacer" aria-hidden="true" />}
+      ) : null}
     </div>
   ) : null
 

@@ -36,13 +36,11 @@ func TestBuildAnimeCatalogFetchRequestsIncludesFormatAndStatus(t *testing.T) {
 	}
 }
 
-func TestBuildAnimeCatalogFetchRequestsExpandsMultiGenreUnionAcrossPages(t *testing.T) {
+func TestBuildAnimeCatalogFetchRequestsUsesCurrentPagePerGenreForUnion(t *testing.T) {
 	requests := buildAnimeCatalogFetchRequests("Comedy, Ecchi", "", 0, "TRENDING_DESC", "", "", 2)
 
 	expected := []catalogFetchRequest{
-		{Page: 1, Genre: "Comedy", Sort: "TRENDING_DESC"},
 		{Page: 2, Genre: "Comedy", Sort: "TRENDING_DESC"},
-		{Page: 1, Genre: "Ecchi", Sort: "TRENDING_DESC"},
 		{Page: 2, Genre: "Ecchi", Sort: "TRENDING_DESC"},
 	}
 
@@ -54,6 +52,60 @@ func TestBuildAnimeCatalogFetchRequestsExpandsMultiGenreUnionAcrossPages(t *test
 		if requests[i] != expected[i] {
 			t.Fatalf("request %d mismatch: got %+v want %+v", i, requests[i], expected[i])
 		}
+	}
+}
+
+func TestPaginateAnimeCatalogUnionUsesCurrentPageSliceOnly(t *testing.T) {
+	items := make([]aniListAnimeCatalogNode, 0, aniListCatalogPerPage+6)
+	for index := 0; index < aniListCatalogPerPage+6; index++ {
+		items = append(items, aniListAnimeCatalogNode{ID: index + 1})
+	}
+
+	payload := paginateAnimeCatalogUnion(items, 2, true)
+	if payload.Data.Page.PageInfo.CurrentPage != 2 {
+		t.Fatalf("expected current page 2, got %d", payload.Data.Page.PageInfo.CurrentPage)
+	}
+	if !payload.Data.Page.PageInfo.HasNextPage {
+		t.Fatalf("expected hasNextPage to remain true")
+	}
+	if len(payload.Data.Page.Media) != aniListCatalogPerPage {
+		t.Fatalf("expected %d current-page union items, got %d", aniListCatalogPerPage, len(payload.Data.Page.Media))
+	}
+	if payload.Data.Page.Media[0].ID != 1 {
+		t.Fatalf("expected current-page union to start from current batch, got first id %d", payload.Data.Page.Media[0].ID)
+	}
+}
+
+func TestPaginateMangaCatalogUnionUsesCurrentPageSliceOnly(t *testing.T) {
+	items := make([]aniListMangaNode, 0, aniListCatalogPerPage+4)
+	for index := 0; index < aniListCatalogPerPage+4; index++ {
+		items = append(items, aniListMangaNode{ID: index + 1})
+	}
+
+	payload := paginateMangaCatalogUnion(items, 3, true)
+	page, ok := payload["data"].(map[string]interface{})["Page"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected page payload map, got %#v", payload)
+	}
+	pageInfo, ok := page["pageInfo"].(aniListPageInfo)
+	if !ok {
+		t.Fatalf("expected typed pageInfo, got %#v", page["pageInfo"])
+	}
+	if pageInfo.CurrentPage != 3 {
+		t.Fatalf("expected current page 3, got %d", pageInfo.CurrentPage)
+	}
+	if !pageInfo.HasNextPage {
+		t.Fatalf("expected hasNextPage to remain true")
+	}
+	media, ok := page["media"].([]aniListMangaNode)
+	if !ok {
+		t.Fatalf("expected manga media slice, got %#v", page["media"])
+	}
+	if len(media) != aniListCatalogPerPage {
+		t.Fatalf("expected %d current-page union items, got %d", aniListCatalogPerPage, len(media))
+	}
+	if media[0].ID != 1 {
+		t.Fatalf("expected current-page union to start from current batch, got first id %d", media[0].ID)
 	}
 }
 

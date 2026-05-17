@@ -18,6 +18,7 @@ import {
   cachePreferredSourcePreference,
   resolveSavedOnlineSourcePreference,
 } from '../lib/onlineSourcePreferences'
+import { enrichEpisodesWithAnimePaheArtwork, hasZeroThumbnailCoverage, mergeEpisodeArtworkByNumber } from '../lib/episodeArtwork'
 import { buildExpandedTitleVariants } from '../lib/titleMatching'
 import { isAniListUnavailableErrorMessage } from '../lib/anilistStatus'
 import { buildAnimeCatalogFetchArgs } from '../lib/catalogFilters'
@@ -26,17 +27,17 @@ import VirtualMediaGrid from '../components/ui/VirtualMediaGrid'
 import { useI18n } from '../lib/i18n'
 import { perfEnd, perfMark, perfStart } from '../lib/perfTrace'
 import { buildMotionVars, buildStaggerDelayMs } from '../gui-v2/motion/gui2Motion'
-import Gui2OnlineCatalogSurface, { CatalogIcon, Gui2CatalogPaginationControls, PageArrowButton } from '../gui-v2/routes/catalog/Gui2OnlineCatalogSurface'
+import Gui2OnlineCatalogSurface, { CatalogIcon, Gui2CatalogPaginationControls } from '../gui-v2/routes/catalog/Gui2OnlineCatalogSurface'
 
 // Spanish sources: purple family  |  English sources: blue family
 const SOURCE_META = {
-  'jkanime-es':     { label: 'JKAnime',     color: '#c084fc' }, // purple-400
-  'animeflv-es':    { label: 'AnimeFLV',    color: '#b7791f' }, // amber-700
-  'animeav1-es':    { label: 'AnimeAV1',    color: '#9333ea' }, // purple-600
-  'animepahe-en':   { label: 'AnimePahe',   color: '#38bdf8' }, // sky-400
-  'animeheaven-en': { label: 'AnimeHeaven', color: '#0ea5e9' }, // sky-500
-  'animegg-en':     { label: 'AnimeGG',     color: '#6366f1' }, // indigo-500
-  'animekai-en':    { label: 'AnimeKai',    color: '#22c55e' }, // hidden for now
+  'jkanime-es':     { label: 'JKAnime',     color: '#c084fc', language: 'Spanish' }, // purple-400
+  'animeflv-es':    { label: 'AnimeFLV',    color: '#b7791f', language: 'Spanish' }, // amber-700
+  'animeav1-es':    { label: 'AnimeAV1',    color: '#9333ea', language: 'Spanish', audio: 'Sub | Dub' }, // purple-600
+  'animepahe-en':   { label: 'AnimePahe',   color: '#38bdf8', language: 'English', audio: 'Sub | Dub' }, // sky-400
+  'animeheaven-en': { label: 'AnimeHeaven', color: '#0ea5e9', language: 'English' }, // sky-500
+  'animegg-en':     { label: 'AnimeGG',     color: '#6366f1', language: 'English' }, // indigo-500
+  'animekai-en':    { label: 'AnimeKai',    color: '#22c55e', language: 'English' }, // hidden for now
 }
 
 function getSortOptions(lang) {
@@ -96,6 +97,10 @@ const ANIME_STATUS_OPTIONS = [
   { value: 'NOT_YET_RELEASED', label: 'Upcoming' },
   { value: 'HIATUS', label: 'Hiatus' },
 ]
+const ANIME_SOURCE_LANGUAGE_OPTIONS = [
+  { value: 'es', label: 'Spanish' },
+  { value: 'en', label: 'English' },
+]
 
 function buildYearOptions(lang) {
   const currentYear = new Date().getFullYear()
@@ -107,14 +112,40 @@ function buildYearOptions(lang) {
 }
 
 const YEAR_OPTIONS = buildYearOptions()
-const ANIME_SOURCE_OPTIONS = [
-  { value: 'animeav1-es', label: 'AnimeAV1' },
-  { value: 'jkanime-es', label: 'JKAnime' },
-  { value: 'animeflv-es', label: 'AnimeFLV' },
-  { value: 'animepahe-en', label: 'AnimePahe' },
-  { value: 'animeheaven-en', label: 'AnimeHeaven' },
-  { value: 'animegg-en', label: 'AnimeGG' },
-]
+
+function getAnimeSourceTags(sourceID, isEnglish) {
+  const meta = SOURCE_META[sourceID] ?? {}
+  const tags = []
+  if (meta.language) {
+    tags.push(meta.language === 'Spanish'
+      ? (isEnglish ? 'Spanish' : 'Espanol')
+      : (isEnglish ? 'English' : 'Ingles'))
+  }
+  if (meta.audio) {
+    tags.push(meta.audio)
+  }
+  return tags
+}
+
+function buildAnimeSourceOptions(isEnglish) {
+  return [
+    { value: 'animeav1-es', label: 'AnimeAV1' },
+    { value: 'jkanime-es', label: 'JKAnime' },
+    { value: 'animeflv-es', label: 'AnimeFLV' },
+    { value: 'animepahe-en', label: 'AnimePahe' },
+    { value: 'animeheaven-en', label: 'AnimeHeaven' },
+    { value: 'animegg-en', label: 'AnimeGG' },
+  ].map((option) => ({
+    ...option,
+    tags: getAnimeSourceTags(option.value, isEnglish),
+  }))
+}
+
+function formatAnimeSourceFilterValue(sourceID, isEnglish) {
+  const meta = SOURCE_META[sourceID] ?? { label: sourceID }
+  const tags = getAnimeSourceTags(sourceID, isEnglish)
+  return [meta.label, ...tags].join(' · ')
+}
 
 function SourceBadge({ sourceID = 'jkanime-es' }) {
   const meta = SOURCE_META[sourceID] ?? { label: sourceID, color: '#9090a8' }
@@ -166,7 +197,7 @@ function ChevronDownIcon() {
   )
 }
 
-function CustomSelect({ value, onChange, options, placeholder }) {
+function CustomSelect({ value, onChange, options, placeholder, renderValue = null, renderOption = null }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -187,13 +218,16 @@ function CustomSelect({ value, onChange, options, placeholder }) {
   return (
     <div className={`custom-select gui2-catalog-select${open ? ' open' : ''}`} ref={ref}>
       <button className="custom-select-trigger" onClick={() => setOpen(prev => !prev)} type="button">
-        <span>{label}</span>
+        <span className="gui2-catalog-select-value">
+          {selected && typeof renderValue === 'function' ? renderValue(selected) : label}
+        </span>
         <span className="custom-select-arrow"><ChevronDownIcon /></span>
       </button>
       {open && (
         <div className="custom-select-dropdown">
           {options.map(option => (
-            <div
+            <button
+              type="button"
               key={`${option.value}-${option.label}`}
               className={`custom-select-option${option.value === value ? ' selected' : ''}`}
               onClick={() => {
@@ -201,12 +235,41 @@ function CustomSelect({ value, onChange, options, placeholder }) {
                 setOpen(false)
               }}
             >
-              {option.label}
-            </div>
+              {typeof renderOption === 'function' ? renderOption(option) : option.label}
+            </button>
           ))}
         </div>
       )}
     </div>
+  )
+}
+
+function SourceOptionDisplay({ option, compact = false }) {
+  const meta = SOURCE_META[option?.value] ?? { color: '#9090a8' }
+  const tags = Array.isArray(option?.tags) ? option.tags : []
+  return (
+    <span className={`gui2-catalog-source-option${compact ? ' compact' : ''}`}>
+      <span className="gui2-catalog-source-option-copy">
+        <span className="gui2-catalog-source-option-name">{option?.label}</span>
+      </span>
+      {!compact && tags.length > 0 ? (
+        <span className="gui2-catalog-source-option-tags">
+          {tags.map((tag) => (
+            <span
+              key={`${option?.value}-${tag}`}
+              className={`gui2-catalog-source-chip${tag.includes('Dub') ? ' audio' : ' language'}`}
+              style={{
+                '--gui2-source-chip-fill': `${meta.color}14`,
+                '--gui2-source-chip-border': `${meta.color}42`,
+                '--gui2-source-chip-text': meta.color,
+              }}
+            >
+              {tag}
+            </span>
+          ))}
+        </span>
+      ) : null}
+    </span>
   )
 }
 
@@ -324,51 +387,6 @@ async function fetchCatalogPage({ sort, page, genres, season, year, format, stat
     }
     throw lastError
   })()
-}
-
-function flattenAnimeFallbackCatalog(homeCatalog) {
-  const seen = new Set()
-  const out = []
-  for (const bucket of [
-    homeCatalog?.featured,
-    homeCatalog?.popular,
-    homeCatalog?.seasonal,
-    homeCatalog?.topRated,
-    homeCatalog?.action,
-    homeCatalog?.fantasy,
-    homeCatalog?.romance,
-    homeCatalog?.scifi,
-    homeCatalog?.drama,
-    homeCatalog?.slice,
-  ]) {
-    for (const item of bucket ?? []) {
-      const id = Number(item?.id || item?.anilist_id || 0)
-      if (!id || seen.has(id)) continue
-      seen.add(id)
-      out.push(item)
-    }
-  }
-  return out
-}
-
-async function fetchCatalogFallback(page, lang = 'es') {
-  const { season, year } = getCurrentAniListSeason()
-  const homeCatalog = await wails.getAniListAnimeCatalogHome(season, year)
-  const media = flattenAnimeFallbackCatalog(homeCatalog)
-  const safePage = Math.max(1, Number(page || 1))
-  const start = (safePage - 1) * CATALOG_PAGE_SIZE
-  const slice = media.slice(start, start + CATALOG_PAGE_SIZE)
-  return {
-    data: {
-      Page: {
-        media: slice,
-        pageInfo: {
-          hasNextPage: start + CATALOG_PAGE_SIZE < media.length,
-          currentPage: safePage,
-        },
-      },
-    },
-  }
 }
 
 function pushAnimeSearchCandidate(list, seen, value) {
@@ -521,6 +539,33 @@ export default function Search() {
     selectionTaskRef.current += 1
   }, [])
 
+  const maybeEnrichSelectedEpisodeArtwork = useCallback(async (selectedAnime, selectionToken, perfToken = '') => {
+    const prefetchedEpisodes = Array.isArray(selectedAnime?.prefetchedEpisodes) ? selectedAnime.prefetchedEpisodes : []
+    if (!hasZeroThumbnailCoverage(prefetchedEpisodes)) return
+
+    try {
+      const enrichedEpisodes = await enrichEpisodesWithAnimePaheArtwork(selectedAnime, prefetchedEpisodes, wails, appLang === 'en' ? 'en' : 'es')
+      if (!Array.isArray(enrichedEpisodes) || selectionToken !== selectionTaskRef.current) return
+
+      setSelected((current) => {
+        if (!current || current.selection_token !== selectionToken) return current
+        return {
+          ...current,
+          prefetchedEpisodes: mergeEpisodeArtworkByNumber(current.prefetchedEpisodes ?? prefetchedEpisodes, enrichedEpisodes),
+        }
+      })
+
+      if (perfToken) {
+        perfMark(perfToken, 'episode-art-enriched', {
+          source_id: selectedAnime?.source_id || activeSource,
+          anilist_id: Number(selectedAnime?.anilist_id || selectedAnime?.id || 0),
+        })
+      }
+    } catch {
+      // Detail view keeps a smaller fallback enrichment path if the early donor pass fails.
+    }
+  }, [activeSource, appLang])
+
   const persistAnimeSourcePreference = useCallback(async (nextSourceID) => {
     const normalizedSourceID = normalizeAnimeSourceID(nextSourceID)
     if (!normalizedSourceID) return
@@ -559,21 +604,23 @@ export default function Search() {
     try {
       const enriched = await enrichJKAnimeHit(hit, wails, appLang)
       if (selectionToken !== selectionTaskRef.current) return
+      const nextSelected = {
+        ...normalizeSelectedAnimePayload(hit, activeSource),
+        ...normalizeSelectedAnimePayload(enriched, activeSource),
+        selection_token: selectionToken,
+        perf_token: perfToken,
+        pending_resolve: false,
+        source_resolve_error: '',
+      }
       setSelected((current) => {
         if (!current || current.selection_token !== selectionToken) return current
-        return {
-          ...normalizeSelectedAnimePayload(current, activeSource),
-          ...normalizeSelectedAnimePayload(enriched, activeSource),
-          selection_token: selectionToken,
-          perf_token: perfToken,
-          pending_resolve: false,
-          source_resolve_error: '',
-        }
+        return nextSelected
       })
+      void maybeEnrichSelectedEpisodeArtwork(nextSelected, selectionToken, perfToken)
     } catch (e) {
       toastError(`${ui.enrichError}: ${e?.message ?? e}`)
     }
-  }, [activeSource, appLang, cancelPendingSearches, cancelPendingSelectionTasks, ui.enrichError])
+  }, [activeSource, appLang, cancelPendingSearches, cancelPendingSelectionTasks, maybeEnrichSelectedEpisodeArtwork, ui.enrichError])
 
   const resolveAniListMedia = useCallback(async (media, key, options = {}) => {
     cancelPendingSearches()
@@ -599,17 +646,19 @@ export default function Search() {
       const { hit, searchedTitle, error } = await resolveAniListToJKAnime(media, wails, activeSource, appLang)
       if (selectionToken !== selectionTaskRef.current) return
       if (hit) {
+        const nextSelected = {
+          ...normalizeSelectedAnimePayload(createCatalogSelectedAnime(media, activeSource, selectionToken, perfToken), activeSource),
+          ...normalizeSelectedAnimePayload(hit, activeSource),
+          selection_token: selectionToken,
+          perf_token: perfToken,
+          pending_resolve: false,
+          source_resolve_error: '',
+        }
         setSelected((current) => {
           if (!current || current.selection_token !== selectionToken) return current
-          return {
-            ...normalizeSelectedAnimePayload(current, activeSource),
-            ...normalizeSelectedAnimePayload(hit, activeSource),
-            selection_token: selectionToken,
-            perf_token: perfToken,
-            pending_resolve: false,
-            source_resolve_error: '',
-          }
+          return nextSelected
         })
+        void maybeEnrichSelectedEpisodeArtwork(nextSelected, selectionToken, perfToken)
       } else {
         const message = error || ui.sourceNotFound(searchedTitle, SOURCE_META[activeSource]?.label ?? activeSource)
         perfMark(perfToken, 'resolve-failed', {
@@ -633,7 +682,7 @@ export default function Search() {
         setResolvingKey('')
       }
     }
-  }, [activeSource, appLang, cancelPendingSearches, cancelPendingSelectionTasks, ui])
+  }, [activeSource, appLang, cancelPendingSearches, cancelPendingSelectionTasks, maybeEnrichSelectedEpisodeArtwork, ui])
 
   const performSearch = useCallback(async (rawQuery, opts = {}) => {
     const {
@@ -750,43 +799,20 @@ export default function Search() {
   const catalogQuery = useQuery({
     queryKey: ['anime-catalog', appLang, catalogSort, catalogGenres.join(','), catalogSeason, catalogYear, catalogPage, catalogFormat, catalogStatus],
     queryFn: async () => {
-      try {
-        const res = await fetchCatalogPage({
-          sort: catalogSort,
-          page: catalogPage,
-          genres: catalogGenres,
-          season: catalogSeason,
-          year: catalogYear,
-          format: catalogFormat,
-          status: catalogStatus,
-        })
-        const pageData = res?.data?.Page
-        const media = pageData?.media ?? []
-        if (catalogPage === 1 && catalogGenres.length === 0 && !catalogSeason && !catalogYear && !catalogFormat && !catalogStatus && media.length === 0) {
-          const fallback = await fetchCatalogFallback(catalogPage, appLang)
-          const fallbackPage = fallback?.data?.Page
-          return {
-            media: fallbackPage?.media ?? [],
-            hasNextPage: fallbackPage?.pageInfo?.hasNextPage ?? false,
-            page: catalogPage,
-          }
-        }
-        return {
-          media,
-          hasNextPage: pageData?.pageInfo?.hasNextPage ?? false,
-          page: catalogPage,
-        }
-      } catch (error) {
-        if (catalogPage !== 1 || catalogGenres.length || catalogSeason || catalogYear || catalogFormat || catalogStatus) {
-          throw error
-        }
-        const res = await fetchCatalogFallback(catalogPage, appLang)
-        const pageData = res?.data?.Page
-        return {
-          media: pageData?.media ?? [],
-          hasNextPage: pageData?.pageInfo?.hasNextPage ?? false,
-          page: catalogPage,
-        }
+      const res = await fetchCatalogPage({
+        sort: catalogSort,
+        page: catalogPage,
+        genres: catalogGenres,
+        season: catalogSeason,
+        year: catalogYear,
+        format: catalogFormat,
+        status: catalogStatus,
+      })
+      const pageData = res?.data?.Page
+      return {
+        media: pageData?.media ?? [],
+        hasNextPage: pageData?.pageInfo?.hasNextPage ?? false,
+        page: catalogPage,
       }
     },
     staleTime: 20 * 60_000,
@@ -859,6 +885,52 @@ export default function Search() {
     catalogPerfTokenRef.current = ''
   }, [catalogPage, displayedCatalog.length])
 
+  const hydrateSelectedAnimeDetail = useCallback(async (selectedAnime) => {
+    const preferredAniListID = Number(
+      selectedAnime?.anilist_id
+      || selectedAnime?.anilistID
+      || selectedAnime?.AniListID
+      || selectedAnime?.idAniList
+      || 0,
+    )
+    if (preferredAniListID <= 0) return
+
+    const detail = await wails.getAniListAnimeByID(preferredAniListID).catch(() => null)
+    if (!detail) return
+
+    let nextSelected = null
+    setSelected((current) => {
+      if (!current) return current
+      const nextSourceID = normalizeAnimeSourceID(current?.source_id || activeSource)
+      nextSelected = normalizeSelectedAnimePayload({
+        ...current,
+        anilist_id: preferredAniListID,
+        mal_id: Number(detail?.mal_id || detail?.idMal || current?.mal_id || 0),
+        title_english: detail?.title_english || current?.title_english || current?.anime_title || '',
+        title_romaji: detail?.title_romaji || current?.title_romaji || current?.anime_title || '',
+        title_native: detail?.title_native || current?.title_native || '',
+        anilistDescription: detail?.description || current?.anilistDescription || '',
+        anilistBannerImage: detail?.banner_image || detail?.bannerImage || current?.anilistBannerImage || '',
+        anilistCoverImage: detail?.cover_large || detail?.cover_medium || detail?.coverImage?.extraLarge || detail?.coverImage?.large || current?.anilistCoverImage || '',
+        anilistGenres: Array.isArray(detail?.genres) && detail.genres.length > 0 ? detail.genres : (current?.anilistGenres || []),
+        recommendations: Array.isArray(detail?.recommendations) ? detail.recommendations : (current?.recommendations || []),
+        related_recommendations: Array.isArray(detail?.related_recommendations) ? detail.related_recommendations : (current?.related_recommendations || []),
+        characters: Array.isArray(detail?.characters) ? detail.characters : (current?.characters || []),
+        studios: Array.isArray(detail?.studios) ? detail.studios : (current?.studios || []),
+        countryOfOrigin: detail?.countryOfOrigin || detail?.country_of_origin || current?.countryOfOrigin || '',
+        averageScore: Number(detail?.averageScore || detail?.average_score || current?.averageScore || 0),
+        status: detail?.status || current?.status || '',
+        format: detail?.format || current?.format || '',
+        season: detail?.season || current?.season || '',
+        seasonYear: Number(detail?.seasonYear || detail?.season_year || current?.seasonYear || 0),
+      }, nextSourceID)
+      return nextSelected
+    })
+    if (nextSelected) {
+      void maybeEnrichSelectedEpisodeArtwork(nextSelected, Number(nextSelected?.selection_token || selectionTaskRef.current || 0), String(nextSelected?.perf_token || ''))
+    }
+  }, [activeSource, maybeEnrichSelectedEpisodeArtwork])
+
   useEffect(() => {
     const navState = location.state
     if (!navState) return
@@ -869,6 +941,7 @@ export default function Search() {
     if (navState.selectedAnime) {
       setDetailReturnMode('catalog')
       setSelected(normalizeSelectedAnimePayload(navState.selectedAnime, activeSource))
+      void hydrateSelectedAnimeDetail(navState.selectedAnime)
       return
     }
 
@@ -906,13 +979,21 @@ export default function Search() {
         silent: true,
       })
     }
-  }, [activeSource, location.pathname, location.state, navigate, openResolvedHit, performSearch, resolveAniListMedia, sourceSettingsReady])
+  }, [activeSource, hydrateSelectedAnimeDetail, location.pathname, location.state, navigate, openResolvedHit, performSearch, resolveAniListMedia, sourceSettingsReady])
 
   const handleActiveSourceChange = useCallback((nextSourceID) => {
     const normalizedSourceID = normalizeAnimeSourceID(nextSourceID)
     if (!normalizedSourceID || normalizedSourceID === activeSource) return
     void persistAnimeSourcePreference(normalizedSourceID)
   }, [activeSource, persistAnimeSourcePreference])
+
+  const handleSourceLanguageChange = useCallback((nextLanguage) => {
+    const preferredSuffix = nextLanguage === 'en' ? '-en' : '-es'
+    if (activeSource.endsWith(preferredSuffix)) return
+    const nextSource = buildAnimeSourceOptions(isEnglish).find((option) => option.value.endsWith(preferredSuffix))
+    if (!nextSource) return
+    void persistAnimeSourcePreference(nextSource.value)
+  }, [activeSource, isEnglish, persistAnimeSourcePreference])
 
   const handleAnimeChange = useCallback((nextAnime) => {
     if (!nextAnime) return
@@ -922,6 +1003,18 @@ export default function Search() {
       void persistAnimeSourcePreference(nextSourceID)
     }
   }, [activeSource, persistAnimeSourcePreference])
+
+  const handleRecommendationOpen = useCallback((item) => {
+    const navigationEntry = item?.navigationEntry
+    if (!navigationEntry) return
+    document.querySelector('.gui2-content')?.scrollTo({ top: 0, left: 0, behavior: 'smooth' })
+    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' })
+    void resolveAniListMedia(
+      navigationEntry,
+      `recommendation-${navigationEntry?.id || navigationEntry?.anilist_id || item?.key || 'anime'}`,
+      { returnMode: 'catalog' },
+    )
+  }, [resolveAniListMedia])
 
   const handleBackFromDetail = useCallback(() => {
     cancelPendingSearches()
@@ -1007,24 +1100,24 @@ export default function Search() {
       setCatalogPage(nextPage)
     }, [catalogPage, catalogQuery.isFetching])
 
-  const catalogSummary = [
-    `${ui.pageLabel} ${catalogPage}`,
-    `${displayedCatalog.length}/${CATALOG_PAGE_SIZE}`,
-    hasCatalogFilters ? ui.filtersActive : ui.directExplore,
-  ].join(' / ')
-  const activeSourceLabel = SOURCE_META[activeSource]?.label ?? activeSource
-  const sourceSummaryValue = (
-    <div className="gui2-catalog-source-display">
-      <span className="gui2-catalog-source-display-icon"><CatalogIcon kind="language" /></span>
-      <span>{activeSourceLabel}</span>
-    </div>
+  const animeSourceOptions = useMemo(() => buildAnimeSourceOptions(isEnglish), [isEnglish])
+  const animeSourceLanguageOptions = useMemo(() => (
+    ANIME_SOURCE_LANGUAGE_OPTIONS.map((option) => ({
+      ...option,
+      label: option.value === 'es'
+        ? (isEnglish ? 'Spanish' : 'Espanol')
+        : (isEnglish ? 'English' : 'Ingles'),
+    }))
+  ), [isEnglish])
+  const activeSourceLanguage = activeSource.endsWith('-en') ? 'en' : 'es'
+  const filteredAnimeSourceOptions = useMemo(
+    () => animeSourceOptions.filter((option) => option.value.endsWith(`-${activeSourceLanguage}`)),
+    [activeSourceLanguage, animeSourceOptions],
   )
-  const resultsSummary = searched
-    ? `${results.length} ${isEnglish ? 'results' : 'resultados'}`
-    : `${displayedCatalog.length} ${isEnglish ? 'results' : 'resultados'}`
-  const pageSummary = `${ui.pageLabel} ${catalogPage}`
+  const browseSubtitle = hasCatalogFilters
+    ? (isEnglish ? 'Discovery refined by your current filters.' : 'Descubrimiento afinado por tus filtros actuales.')
+    : (isEnglish ? 'A wider poster field, ready to open in source.' : 'Un campo de posters mas amplio, listo para abrir en la fuente.')
   const activeFilterTags = [
-    { label: 'Source', value: activeSourceLabel },
     ...catalogGenres.map((genre) => ({ label: isEnglish ? 'Genre' : 'Genero', value: GENRE_LABELS[genre]?.[appLang] ?? genre })),
     ...(catalogSeason ? [{ label: isEnglish ? 'Season' : 'Temporada', value: seasonOptions.find((item) => item.value === catalogSeason)?.label ?? catalogSeason }] : []),
     ...(catalogYear ? [{ label: isEnglish ? 'Year' : 'Ano', value: String(catalogYear) }] : []),
@@ -1083,38 +1176,44 @@ export default function Search() {
       key: 'source',
       icon: 'language',
       label: isEnglish ? 'Language / Source' : 'Idioma / Fuente',
-      control: <CustomSelect value={activeSource} onChange={handleActiveSourceChange} options={ANIME_SOURCE_OPTIONS} placeholder={isEnglish ? 'All Sources' : 'Todas'} />,
+      control: (
+        <div className="gui2-catalog-inline-controls">
+          <CustomSelect
+            value={activeSourceLanguage}
+            onChange={handleSourceLanguageChange}
+            options={animeSourceLanguageOptions}
+            placeholder={isEnglish ? 'Language' : 'Idioma'}
+          />
+          <CustomSelect
+            value={activeSource}
+            onChange={handleActiveSourceChange}
+            options={filteredAnimeSourceOptions}
+            placeholder={isEnglish ? 'Source' : 'Fuente'}
+            renderValue={(option) => <SourceOptionDisplay option={option} compact />}
+            renderOption={(option) => <SourceOptionDisplay option={option} />}
+          />
+        </div>
+      ),
+      wide: true,
     },
   ]
-  const searchSummaryPills = searched
-    ? [
-        activeSourceLabel,
-        isEnglish ? `${results.length} AniList result${results.length !== 1 ? 's' : ''}` : `${results.length} resultado${results.length !== 1 ? 's' : ''} de AniList`,
-        isEnglish ? 'Metadata first, source on open' : 'Metadata primero, fuente al abrir',
-      ]
-    : [
-        activeSourceLabel,
-        isEnglish ? `${displayedCatalog.length} titles visible` : `${displayedCatalog.length} titulos visibles`,
-        hasCatalogFilters
-          ? (isEnglish ? 'Filters shaping the feed' : 'Filtros afinando el feed')
-          : (isEnglish ? 'Discover mode active' : 'Modo descubrir activo'),
-      ]
-
   if (selected) {
     return (
       <OnlineAnimeDetail
         anime={selected}
         onBack={handleBackFromDetail}
         onAnimeChange={handleAnimeChange}
+        onRecommendationSelect={handleRecommendationOpen}
       />
     )
   }
 
   return (
     <Gui2OnlineCatalogSurface
+      mode="anime"
       title={isEnglish ? 'Anime Online' : 'Anime Online'}
-      description={isEnglish ? 'Stream thousands of anime shows and movies in high quality.' : 'Ve miles de animes y peliculas en alta calidad.'}
-      accentText={isEnglish ? 'Updated daily.' : 'Actualizado cada dia.'}
+      description=""
+      accentText=""
       searchControl={(
         <div className="gui2-catalog-query">
           <span className="gui2-catalog-query-icon"><CatalogIcon kind="search" /></span>
@@ -1126,24 +1225,6 @@ export default function Search() {
             onChange={handleQueryChange}
             onKeyDown={handleKey}
           />
-          <button
-            type="button"
-            className="gui2-catalog-query-btn"
-            onClick={handleSearch}
-            disabled={loading || !query.trim()}
-          >
-            {loading ? ui.searching : ui.searchButton}
-          </button>
-        </div>
-      )}
-      sourceSummaryLabel={isEnglish ? 'Source' : 'Fuente'}
-      sourceSummaryValue={sourceSummaryValue}
-      resultsSummary={resultsSummary}
-      pageSummary={pageSummary}
-      topPagination={(
-        <div className="gui2-catalog-top-pagination">
-          <PageArrowButton direction="prev" onClick={handlePreviousPage} disabled={catalogPage === 1 || catalogQuery.isFetching || searched} label={ui.previousPage} />
-          <PageArrowButton direction="next" onClick={handleNextPage} disabled={!catalogHasNext || catalogQuery.isFetching || searched} label={ui.nextPage} />
         </div>
       )}
       filters={animeCatalogFilters}
@@ -1151,7 +1232,7 @@ export default function Search() {
       onClearFilters={hasCatalogFilters ? clearCatalogFilters : null}
       actionLabel={ui.clearFilters}
       bodyTitle={searched ? ui.foundResults : ui.exploreTitle}
-      bodySubtitle={searched ? ui.readyToOpen(results.length) : catalogSummary}
+      bodySubtitle={searched ? ui.readyToOpen(results.length) : browseSubtitle}
       body={(() => {
         if (showSearchSkeleton) {
           return <OnlinePosterSkeletonGrid count={8} />

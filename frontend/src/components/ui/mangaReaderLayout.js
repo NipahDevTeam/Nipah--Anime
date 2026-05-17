@@ -1,11 +1,9 @@
-import { getReaderStagePageLayout } from './reader/readerStageLayout.js'
-
 export const READER_SETTINGS_KEY = 'nipah:manga-reader-ui-settings-v2'
 export const READER_BOOKMARKS_KEY = 'nipah:manga-reader-bookmarks-v1'
 
 export const DEFAULT_READER_SETTINGS = {
   readingMode: 'double',
-  pageFit: 'width',
+  pageFit: 'contain',
   zoomPercent: 100,
   readingDirection: 'ltr',
   enhance: true,
@@ -20,15 +18,149 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value))
 }
 
+function lerp(start, end, amount) {
+  return start + ((end - start) * amount)
+}
+
 function interpolateZoomRange(value, minOutput, maxOutput) {
   const safeValue = clamp(Number(value) || DEFAULT_READER_SETTINGS.zoomPercent, 60, 180)
   const progress = (safeValue - 60) / 120
   return Math.round(minOutput + ((maxOutput - minOutput) * progress))
 }
 
-function getZoomProgress(value) {
+function getZoomScale(value) {
   const safeValue = clamp(Number(value) || DEFAULT_READER_SETTINGS.zoomPercent, 60, 180)
-  return (safeValue - 60) / 120
+  return 1 + ((safeValue - 100) / 200)
+}
+
+function normalizePageFit(value) {
+  if (value === 'width') return 'overflow'
+  if (value === 'height') return 'contain'
+  if (['contain', 'overflow', 'original', 'cover'].includes(value)) return value
+  return DEFAULT_READER_SETTINGS.pageFit
+}
+
+function getBasePageScale({
+  pageFit = DEFAULT_READER_SETTINGS.pageFit,
+  slotWidth = 0,
+  slotHeight = 0,
+  naturalWidth = 0,
+  naturalHeight = 0,
+} = {}) {
+  const safeSlotWidth = Math.max(0, Number(slotWidth) || 0)
+  const safeSlotHeight = Math.max(0, Number(slotHeight) || 0)
+  const safeNaturalWidth = Math.max(0, Number(naturalWidth) || 0)
+  const safeNaturalHeight = Math.max(0, Number(naturalHeight) || 0)
+
+  if (!safeNaturalWidth || !safeNaturalHeight) return 0
+
+  if (!safeSlotWidth || !safeSlotHeight) return 0
+
+  const containScale = Math.min(safeSlotWidth / safeNaturalWidth, safeSlotHeight / safeNaturalHeight)
+  const coverScale = Math.max(safeSlotWidth / safeNaturalWidth, safeSlotHeight / safeNaturalHeight)
+
+  if (pageFit === 'original') return Math.max(1, containScale)
+  if (pageFit === 'cover') return coverScale
+  if (pageFit === 'overflow') return lerp(containScale, coverScale, 0.45)
+  return containScale
+}
+
+function getPagedBasePageScale({
+  pageFit = DEFAULT_READER_SETTINGS.pageFit,
+  slotWidth = 0,
+  slotHeight = 0,
+  naturalWidth = 0,
+  naturalHeight = 0,
+} = {}) {
+  const safeSlotWidth = Math.max(0, Number(slotWidth) || 0)
+  const safeSlotHeight = Math.max(0, Number(slotHeight) || 0)
+  const safeNaturalWidth = Math.max(0, Number(naturalWidth) || 0)
+  const safeNaturalHeight = Math.max(0, Number(naturalHeight) || 0)
+
+  if (!safeNaturalWidth || !safeNaturalHeight || !safeSlotHeight) return 0
+
+  const heightScale = safeSlotHeight / safeNaturalHeight
+  const widthScale = safeSlotWidth > 0 ? (safeSlotWidth / safeNaturalWidth) : 0
+  const trueSizeScale = 1
+  const growthTargetScale = Math.max(widthScale, trueSizeScale)
+
+  if (pageFit === 'overflow') {
+    return Math.max(
+      heightScale * 1.14,
+      lerp(heightScale, growthTargetScale, 0.38),
+    )
+  }
+  if (pageFit === 'cover') {
+    return Math.max(
+      heightScale * 1.28,
+      lerp(heightScale, growthTargetScale, 0.74),
+    )
+  }
+  if (pageFit === 'original') {
+    return Math.max(trueSizeScale, heightScale)
+  }
+  return heightScale
+}
+
+function getSizedPageLayout({
+  pageFit = DEFAULT_READER_SETTINGS.pageFit,
+  zoomPercent = DEFAULT_READER_SETTINGS.zoomPercent,
+  slotWidth = 0,
+  slotHeight = 0,
+  naturalWidth = 0,
+  naturalHeight = 0,
+} = {}) {
+  const safeNaturalWidth = Math.max(0, Number(naturalWidth) || 0)
+  const safeNaturalHeight = Math.max(0, Number(naturalHeight) || 0)
+  if (!safeNaturalWidth || !safeNaturalHeight) return null
+
+  const baseScale = getBasePageScale({
+    pageFit,
+    slotWidth,
+    slotHeight,
+    naturalWidth: safeNaturalWidth,
+    naturalHeight: safeNaturalHeight,
+  })
+  if (!Number.isFinite(baseScale) || baseScale <= 0) return null
+
+  const scale = baseScale * getZoomScale(zoomPercent)
+  if (!Number.isFinite(scale) || scale <= 0) return null
+
+  return {
+    width: Math.max(1, Math.round(safeNaturalWidth * scale)),
+    height: Math.max(1, Math.round(safeNaturalHeight * scale)),
+  }
+}
+
+function getPagedSizedPageLayout({
+  pageFit = DEFAULT_READER_SETTINGS.pageFit,
+  zoomPercent = DEFAULT_READER_SETTINGS.zoomPercent,
+  slotWidth = 0,
+  slotHeight = 0,
+  naturalWidth = 0,
+  naturalHeight = 0,
+} = {}) {
+  const safeNaturalWidth = Math.max(0, Number(naturalWidth) || 0)
+  const safeNaturalHeight = Math.max(0, Number(naturalHeight) || 0)
+  if (!safeNaturalWidth || !safeNaturalHeight) return null
+
+  const baseScale = getPagedBasePageScale({
+    pageFit,
+    slotWidth,
+    slotHeight,
+    naturalWidth: safeNaturalWidth,
+    naturalHeight: safeNaturalHeight,
+  })
+  if (!Number.isFinite(baseScale) || baseScale <= 0) return null
+
+  const requestedScale = baseScale * getZoomScale(zoomPercent)
+  const scale = Math.max(baseScale, requestedScale)
+  if (!Number.isFinite(scale) || scale <= 0) return null
+
+  return {
+    width: Math.max(1, Math.round(safeNaturalWidth * scale)),
+    height: Math.max(1, Math.round(safeNaturalHeight * scale)),
+  }
 }
 
 function canUseStorage() {
@@ -49,7 +181,7 @@ export function isStripFormattedTitle(format = '', country = '') {
 export function normalizeReaderSettings(partial = {}) {
   const next = partial && typeof partial === 'object' ? partial : {}
   const readingMode = ['scroll', 'paged', 'double'].includes(next.readingMode) ? next.readingMode : DEFAULT_READER_SETTINGS.readingMode
-  const pageFit = ['width', 'height', 'original', 'cover'].includes(next.pageFit) ? next.pageFit : DEFAULT_READER_SETTINGS.pageFit
+  const pageFit = normalizePageFit(next.pageFit)
   const readingDirection = ['ltr', 'rtl'].includes(next.readingDirection) ? next.readingDirection : DEFAULT_READER_SETTINGS.readingDirection
 
   return {
@@ -102,48 +234,13 @@ export function getReaderViewMode({
 
 export function getReaderScrollSheetVariables({
   stripReadingMode = false,
-  stripPageFitPreset = 'width',
+  stripPageFitPreset = 'contain',
   effectivePageFit = DEFAULT_READER_SETTINGS.pageFit,
   zoomPercent = DEFAULT_READER_SETTINGS.zoomPercent,
 } = {}) {
   const safeZoom = clamp(Number(zoomPercent ?? DEFAULT_READER_SETTINGS.zoomPercent) || DEFAULT_READER_SETTINGS.zoomPercent, 60, 180)
-  const maxWidthPx = `${interpolateZoomRange(safeZoom, 1220, 2040)}px`
-
-  if (stripReadingMode) {
-    if (effectivePageFit === 'height' || stripPageFitPreset === 'height') {
-      return {
-        '--reader-scroll-page-width': `${clamp(safeZoom - 18, 62, 86)}%`,
-        '--reader-scroll-page-height': `${Math.max(58, safeZoom)}vh`,
-        '--reader-scroll-page-max-width': maxWidthPx,
-      }
-    }
-    if (effectivePageFit === 'original' || stripPageFitPreset === 'original') {
-      return {
-        '--reader-scroll-page-width': `${clamp(safeZoom - 6, 76, 96)}%`,
-        '--reader-scroll-page-max-width': maxWidthPx,
-      }
-    }
-    return {
-      '--reader-scroll-page-width': `${clamp(safeZoom + 4, 88, 100)}%`,
-      '--reader-scroll-page-max-width': maxWidthPx,
-    }
-  }
-
-  if (effectivePageFit === 'height') {
-    return {
-      '--reader-scroll-page-height': `${Math.max(58, safeZoom)}vh`,
-      '--reader-scroll-page-max-width': maxWidthPx,
-    }
-  }
-  if (effectivePageFit === 'original') {
-    return {
-      '--reader-scroll-page-width': `${Math.max(68, safeZoom)}%`,
-      '--reader-scroll-page-max-width': maxWidthPx,
-    }
-  }
   return {
-    '--reader-scroll-page-width': `${Math.max(72, safeZoom)}%`,
-    '--reader-scroll-page-max-width': maxWidthPx,
+    '--reader-scroll-stage-max-width': `${interpolateZoomRange(safeZoom, 1220, 2040)}px`,
   }
 }
 
@@ -151,40 +248,11 @@ export function getReaderCanvasVariables({
   effectivePageFit = DEFAULT_READER_SETTINGS.pageFit,
   zoomPercent = DEFAULT_READER_SETTINGS.zoomPercent,
 } = {}) {
-  if (effectivePageFit === 'cover') {
-    return {
-      '--reader-canvas-sheet-width': '100%',
-      '--reader-canvas-sheet-height': '100%',
-      '--reader-canvas-sheet-max-width': '100%',
-      '--reader-canvas-sheet-max-height': '100%',
-    }
-  }
-
-  const safeZoom = clamp(Number(zoomPercent ?? DEFAULT_READER_SETTINGS.zoomPercent) || DEFAULT_READER_SETTINGS.zoomPercent, 60, 180)
-
-  if (effectivePageFit === 'height') {
-    return {
-      '--reader-canvas-sheet-width': '100%',
-      '--reader-canvas-sheet-height': `${interpolateZoomRange(safeZoom, 58, 100)}%`,
-      '--reader-canvas-sheet-max-width': '100%',
-      '--reader-canvas-sheet-max-height': '100%',
-    }
-  }
-
-  if (effectivePageFit === 'original') {
-    return {
-      '--reader-canvas-sheet-width': 'auto',
-      '--reader-canvas-sheet-height': 'auto',
-      '--reader-canvas-sheet-max-width': `${interpolateZoomRange(safeZoom, 68, 100)}%`,
-      '--reader-canvas-sheet-max-height': `${interpolateZoomRange(safeZoom, 68, 100)}%`,
-    }
-  }
-
   return {
-    '--reader-canvas-sheet-width': `${interpolateZoomRange(safeZoom, 78, 100)}%`,
-    '--reader-canvas-sheet-height': '100%',
-    '--reader-canvas-sheet-max-width': '100%',
-    '--reader-canvas-sheet-max-height': '100%',
+    '--reader-canvas-sheet-width': 'auto',
+    '--reader-canvas-sheet-height': 'auto',
+    '--reader-canvas-sheet-max-width': 'none',
+    '--reader-canvas-sheet-max-height': 'none',
   }
 }
 
@@ -196,11 +264,45 @@ export function getReaderCanvasPageLayout({
   naturalWidth = 0,
   naturalHeight = 0,
 } = {}) {
-  return getReaderStagePageLayout({
+  return getPagedSizedPageLayout({
     pageFit: effectivePageFit,
     zoomPercent,
     slotWidth,
     slotHeight,
+    naturalWidth,
+    naturalHeight,
+  })
+}
+
+export function getReaderPagedSlotMetrics({
+  readingMode = DEFAULT_READER_SETTINGS.readingMode,
+  stageSurfaceMetrics = {},
+} = {}) {
+  const columnCount = readingMode === 'double' ? 2 : 1
+  const spreadGap = readingMode === 'double' ? 18 : 0
+  const stageWidth = Math.max(0, Number(stageSurfaceMetrics?.width) || 0)
+  const stageHeight = Math.max(0, Number(stageSurfaceMetrics?.height) || 0)
+  const safeSpreadWidth = Math.max(0, stageWidth - (spreadGap * (columnCount - 1)))
+
+  return {
+    width: columnCount > 0 ? safeSpreadWidth / columnCount : 0,
+    height: stageHeight,
+  }
+}
+
+export function getReaderScrollPageLayout({
+  effectivePageFit = DEFAULT_READER_SETTINGS.pageFit,
+  zoomPercent = DEFAULT_READER_SETTINGS.zoomPercent,
+  viewportWidth = 0,
+  viewportHeight = 0,
+  naturalWidth = 0,
+  naturalHeight = 0,
+} = {}) {
+  return getSizedPageLayout({
+    pageFit: effectivePageFit,
+    zoomPercent,
+    slotWidth: viewportWidth,
+    slotHeight: viewportHeight,
     naturalWidth,
     naturalHeight,
   })
@@ -224,7 +326,7 @@ export function normalizeReaderPages(loadedPages = [], chapterID = '') {
   })
 }
 
-export function getReaderViewport({ readingMode = 'paged', currentPage = 0, totalPages = 0 }) {
+export function getReaderViewport({ readingMode = 'paged', currentPage = 0, totalPages = 0, pageMetrics = [] }) {
   const safeTotal = Math.max(0, Number(totalPages) || 0)
   if (safeTotal === 0) {
     return { startIndex: 0, endIndex: 0, visiblePages: [], pageLabel: '0' }
@@ -232,12 +334,14 @@ export function getReaderViewport({ readingMode = 'paged', currentPage = 0, tota
 
   const safePage = clamp(Number(currentPage) || 0, 0, safeTotal - 1)
   if (readingMode === 'double') {
-    const endIndex = Math.min(safeTotal - 1, safePage + 1)
+    const startIndex = safePage - (safePage % 2)
+    const endIndex = Math.min(safeTotal - 1, startIndex + 1)
+    const visiblePages = endIndex === startIndex ? [startIndex] : [startIndex, endIndex]
     return {
-      startIndex: safePage,
+      startIndex,
       endIndex,
-      visiblePages: endIndex === safePage ? [safePage] : [safePage, endIndex],
-      pageLabel: endIndex === safePage ? `${safePage + 1}` : `${safePage + 1} - ${endIndex + 1}`,
+      visiblePages,
+      pageLabel: visiblePages.length === 1 ? `${startIndex + 1}` : `${startIndex + 1} - ${endIndex + 1}`,
     }
   }
 
@@ -249,10 +353,17 @@ export function getReaderViewport({ readingMode = 'paged', currentPage = 0, tota
   }
 }
 
-export function stepReaderIndex({ readingMode = 'paged', currentPage = 0, totalPages = 0, direction = 'next' }) {
+export function stepReaderIndex({ readingMode = 'paged', currentPage = 0, totalPages = 0, direction = 'next', pageMetrics = [] }) {
   const safeTotal = Math.max(0, Number(totalPages) || 0)
   if (safeTotal <= 1) return 0
-  const step = readingMode === 'double' ? 2 : 1
+
+  if (readingMode === 'double') {
+    const startIndex = clamp((Number(currentPage) || 0) - ((Number(currentPage) || 0) % 2), 0, safeTotal - 1)
+    const delta = direction === 'prev' ? -2 : 2
+    return clamp(startIndex + delta, 0, safeTotal - 1)
+  }
+
+  const step = 1
   const delta = direction === 'prev' ? -step : step
   return clamp((Number(currentPage) || 0) + delta, 0, safeTotal - 1)
 }

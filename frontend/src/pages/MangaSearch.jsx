@@ -23,7 +23,7 @@ import VirtualMediaGrid from '../components/ui/VirtualMediaGrid'
 import { useI18n } from '../lib/i18n'
 import { perfEnd, perfMark, perfStart } from '../lib/perfTrace'
 import { buildMotionVars, buildStaggerDelayMs } from '../gui-v2/motion/gui2Motion'
-import Gui2OnlineCatalogSurface, { CatalogIcon, Gui2CatalogPaginationControls, PageArrowButton } from '../gui-v2/routes/catalog/Gui2OnlineCatalogSurface'
+import Gui2OnlineCatalogSurface, { CatalogIcon, Gui2CatalogPaginationControls } from '../gui-v2/routes/catalog/Gui2OnlineCatalogSurface'
 
 const LANG_OPTIONS = [{ value: 'es', label: 'Espanol' }, { value: 'en', label: 'English' }]
 const GENRE_LABELS = {
@@ -112,6 +112,11 @@ function normalizeCanonicalItem(item, lang) {
     next_release_at: item.next_release_at || item.nextReleaseAt || '',
     genres: item.genres || [],
     characters: Array.isArray(item.characters) ? item.characters : [],
+    recommendations: Array.isArray(item.recommendations) ? item.recommendations : [],
+    related_recommendations: Array.isArray(item.related_recommendations)
+      ? item.related_recommendations
+      : (Array.isArray(item.relatedRecommendations) ? item.relatedRecommendations : []),
+    recommendedMedia: Array.isArray(item.recommendedMedia) ? item.recommendedMedia : [],
     average_score: averageScore,
     averageScore,
     popularity: Number(item.popularity || 0),
@@ -245,37 +250,9 @@ function getCatalogMeta(item, isEnglish) {
   return parts
 }
 
-function flattenFallbackCatalog(homeCatalog) {
-  const seen = new Set()
-  const out = []
-  for (const bucket of [homeCatalog?.featured, homeCatalog?.trending, homeCatalog?.popular, homeCatalog?.recent]) {
-    for (const item of bucket ?? []) {
-      const id = Number(item?.anilist_id || item?.id || 0)
-      if (!id || seen.has(id)) continue
-      seen.add(id)
-      out.push(item)
-    }
-  }
-  return out
-}
-
 async function fetchCatalogPage({ sort, page, genres, year, lang, format, status }) {
   const request = buildMangaCatalogFetchArgs({ sort, page, genres, year, format, status })
-  try {
-    return await wails.discoverManga(request.genres, request.year, request.sort, request.status, request.format, request.page)
-  } catch (error) {
-    const canFallback = page === 1 && genres.length === 0 && !year && !format && !status && sort === 'TRENDING_DESC'
-    if (!canFallback) throw error
-    const fallback = await wails.getAniListMangaCatalogHome(lang)
-    return {
-      data: {
-        Page: {
-          media: flattenFallbackCatalog(fallback),
-          pageInfo: { hasNextPage: false },
-        },
-      },
-    }
-  }
+  return wails.discoverManga(request.genres, request.year, request.sort, request.status, request.format, request.page)
 }
 
 function normalizeCatalogItems(items, lang) {
@@ -730,18 +707,8 @@ export default function MangaSearch() {
     queryFn: async () => {
       const res = await fetchCatalogPage({ sort: catalogSort, page: catalogPage, genres: catalogGenres, year: catalogYear, lang, format: catalogFormat, status: catalogStatus })
       const pageData = res?.data?.Page
-      const media = normalizeCatalogItems(pageData?.media ?? [], lang)
-      if (catalogPage === 1 && catalogGenres.length === 0 && !catalogYear && !catalogFormat && !catalogStatus && media.length === 0) {
-        const fallback = await wails.getAniListMangaCatalogHome(lang)
-        const fallbackMedia = normalizeCatalogItems(flattenFallbackCatalog(fallback), lang)
-        return {
-          media: fallbackMedia,
-          hasNextPage: fallbackMedia.length >= CATALOG_PAGE_SIZE,
-          page: catalogPage,
-        }
-      }
       return {
-        media,
+        media: normalizeCatalogItems(pageData?.media ?? [], lang),
         hasNextPage: pageData?.pageInfo?.hasNextPage ?? false,
         page: catalogPage,
       }
@@ -792,7 +759,7 @@ export default function MangaSearch() {
   })
 
   const selectedMangaDetailQuery = useQuery({
-    queryKey: ['manga-detail-anilist', selected?.anilist_id ?? 0, lang],
+    queryKey: ['manga-detail-anilist-v3', selected?.anilist_id ?? 0, lang],
     queryFn: async () => {
       if (!selected?.anilist_id) return null
       return normalizeCanonicalItem(await wails.getAniListMangaByID(selected.anilist_id), lang)
@@ -1156,6 +1123,122 @@ export default function MangaSearch() {
     if (!normalizedSourceID || normalizedSourceID === activeSourceID) return
     void persistMangaSourcePreference(normalizedSourceID)
   }, [activeSourceID, persistMangaSourcePreference])
+
+  const hydrateSelectedMangaDetail = useCallback(async (selectedManga) => {
+    const preferredAniListID = Number(
+      selectedManga?.anilist_id
+      || selectedManga?.anilistID
+      || selectedManga?.AniListID
+      || selectedManga?.id
+      || 0,
+    )
+    const selectedSessionKey = String(selectedManga?.sessionKey || '')
+    if (preferredAniListID <= 0 || !selectedSessionKey) return
+
+    const detail = await wails.getAniListMangaByID(preferredAniListID).catch(() => null)
+    if (!detail) return
+
+    const detailQueryKey = ['manga-detail-anilist-v3', preferredAniListID, lang]
+    const normalizedDetail = normalizeCanonicalItem(detail, lang)
+    if (normalizedDetail) {
+      queryClient.setQueryData(detailQueryKey, normalizedDetail)
+    }
+
+    setSelected((current) => {
+      if (!current || current.sessionKey !== selectedSessionKey) return current
+
+      const coverURL = detail?.cover_url
+        || detail?.resolved_cover_url
+        || detail?.cover_large
+        || detail?.cover_medium
+        || detail?.coverImage?.extraLarge
+        || detail?.coverImage?.large
+        || current?.resolved_cover_url
+        || current?.cover_url
+        || ''
+      const bannerURL = detail?.banner_url
+        || detail?.resolved_banner_url
+        || detail?.banner_image
+        || detail?.bannerImage
+        || current?.resolved_banner_url
+        || current?.banner_url
+        || ''
+      const resolvedTitle = detail?.canonical_title
+        || detail?.title_english
+        || detail?.title_romaji
+        || detail?.title_native
+        || current?.canonical_title
+        || current?.title
+        || ''
+      const resolvedYear = Number(
+        detail?.publication_year
+        || detail?.seasonYear
+        || detail?.season_year
+        || detail?.year
+        || current?.resolved_year
+        || current?.year
+        || 0,
+      )
+
+      const merged = normalizeCanonicalItem({
+        ...current,
+        ...detail,
+        anilist_id: preferredAniListID,
+        mal_id: Number(detail?.mal_id || detail?.idMal || current?.mal_id || 0),
+        title: resolvedTitle,
+        canonical_title: resolvedTitle,
+        canonical_title_english: detail?.title_english || current?.canonical_title_english || '',
+        title_english: detail?.title_english || current?.title_english || current?.canonical_title_english || '',
+        title_romaji: detail?.title_romaji || current?.title_romaji || '',
+        title_native: detail?.title_native || current?.title_native || '',
+        cover_url: coverURL,
+        resolved_cover_url: coverURL,
+        banner_url: bannerURL,
+        resolved_banner_url: bannerURL,
+        description: detail?.description || current?.resolved_description || current?.description || '',
+        resolved_description: detail?.description || current?.resolved_description || current?.description || '',
+        year: resolvedYear,
+        resolved_year: resolvedYear,
+        publication_year: resolvedYear,
+        seasonYear: resolvedYear,
+        startDate: detail?.startDate || detail?.start_date || current?.startDate || current?.start_date || {},
+        endDate: detail?.endDate || detail?.end_date || current?.endDate || current?.end_date || {},
+        status: detail?.status || current?.status || '',
+        resolved_status: detail?.status || current?.resolved_status || current?.status || '',
+        format: detail?.format || current?.format || '',
+        resolved_format: detail?.format || current?.resolved_format || current?.format || '',
+        country_of_origin: detail?.countryOfOrigin || detail?.country_of_origin || current?.country_of_origin || current?.countryOfOrigin || '',
+        countryOfOrigin: detail?.countryOfOrigin || detail?.country_of_origin || current?.countryOfOrigin || current?.country_of_origin || '',
+        source: detail?.source || current?.source || '',
+        serialization: detail?.serialization || current?.serialization || '',
+        publisher: detail?.publisher || current?.publisher || '',
+        demographic: detail?.demographic || current?.demographic || '',
+        next_release_at: detail?.next_release_at || detail?.nextReleaseAt || current?.next_release_at || '',
+        genres: Array.isArray(detail?.genres) && detail.genres.length > 0 ? detail.genres : (current?.genres || []),
+        characters: Array.isArray(detail?.characters) ? detail.characters : (current?.characters || []),
+        recommendations: Array.isArray(detail?.recommendations) ? detail.recommendations : (current?.recommendations || []),
+        related_recommendations: Array.isArray(detail?.related_recommendations)
+          ? detail.related_recommendations
+          : (Array.isArray(current?.related_recommendations) ? current.related_recommendations : []),
+        recommendedMedia: Array.isArray(detail?.recommendedMedia) ? detail.recommendedMedia : (current?.recommendedMedia || []),
+        average_score: Number(detail?.average_score || detail?.averageScore || current?.average_score || current?.averageScore || 0),
+        averageScore: Number(detail?.average_score || detail?.averageScore || current?.average_score || current?.averageScore || 0),
+        chapters_total: Number(detail?.chapters_total || detail?.chapters || current?.chapters_total || 0),
+        volumes_total: Number(detail?.volumes_total || detail?.volumes || current?.volumes_total || 0),
+        synonyms: Array.isArray(detail?.synonyms) ? detail.synonyms : (current?.synonyms || []),
+      }, lang)
+      if (!merged) return current
+
+      return {
+        ...current,
+        ...merged,
+        sessionKey: current.sessionKey,
+        sessionPreferredSourceID: current.sessionPreferredSourceID,
+        default_source_id: normalizeMangaSourceID(current.sessionPreferredSourceID || current.default_source_id || defaultSourceID),
+      }
+    })
+  }, [defaultSourceID, lang, queryClient])
+
   const openSelectedItem = useCallback((item, options = {}) => {
     if (!item) return null
     if (!options?.preserveNavigationLoad) {
@@ -1184,8 +1267,9 @@ export default function MangaSearch() {
     }
     setActiveSourceID(normalizeMangaSourceID(nextSession.sessionPreferredSourceID || defaultSourceID))
     setPendingAutoReadChapterID(options.pendingAutoReadChapterID || '')
+    void hydrateSelectedMangaDetail(nextSession)
     return nextSession
-  }, [cancelPendingMangaLoads, clearSelectedSession, defaultSourceID, lang])
+  }, [cancelPendingMangaLoads, clearSelectedSession, defaultSourceID, hydrateSelectedMangaDetail, lang])
 
   const openCanonicalItem = useCallback((item, options = {}) => {
     if (!item) return null
@@ -1258,17 +1342,24 @@ export default function MangaSearch() {
     setQuery(initialQuery); setResults([]); setSearched(false); setLoading(false)
     navigate(location.pathname, { replace: true, state: null })
     const loadPreferred = async () => {
-      if (preferredAniListID > 0 && seededCanonical && isCurrentRequest()) {
-        openCanonicalItem(seededCanonical, { preserveNavigationLoad: true, returnMode: 'catalog' })
-        return
-      }
-      if (preferredAniListID > 0) {
+      const hydratePreferredNavigationItem = async () => {
+        if (preferredAniListID <= 0) return seededCanonical
         try {
           const normalized = normalizeCanonicalItem(await wails.getAniListMangaByID(preferredAniListID), lang)
-          if (normalized && isCurrentRequest()) {
-            return openCanonicalItem(normalized, { preserveNavigationLoad: true, returnMode: 'catalog' })
+          if (normalized) {
+            return {
+              ...(seededCanonical || {}),
+              ...normalized,
+            }
           }
         } catch {}
+        return seededCanonical
+      }
+      if (preferredAniListID > 0) {
+        const hydratedPreferred = await hydratePreferredNavigationItem()
+        if (hydratedPreferred && isCurrentRequest()) {
+          return openCanonicalItem(hydratedPreferred, { preserveNavigationLoad: true, returnMode: 'catalog' })
+        }
       }
       if (initialCandidates.length > 0 && isCurrentRequest()) {
         const found = await runGlobalSearch(initialCandidates, { preferredAniListID, preserveNavigationLoad: true })
@@ -1313,6 +1404,14 @@ export default function MangaSearch() {
     }
   }, [addingToList, selected, ui.addError, ui.addSyncError, ui.unknownError])
 
+  const handleRecommendationOpen = useCallback((item) => {
+    const navigationEntry = item?.navigationEntry
+    if (!navigationEntry) return
+    document.querySelector('.gui2-content')?.scrollTo({ top: 0, left: 0, behavior: 'smooth' })
+    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' })
+    openCanonicalItem(normalizeCanonicalItem(navigationEntry, lang), { returnMode: 'catalog' })
+  }, [lang, openCanonicalItem])
+
   const handleCatalogSort = useCallback((value) => setCatalogSort(value), [])
   const handleYearChange = useCallback((value) => setCatalogYear(Number(value) || 0), [])
   const handleFormatChange = useCallback((value) => setCatalogFormat(value), [])
@@ -1331,20 +1430,10 @@ export default function MangaSearch() {
       if (catalogQuery.isFetching || nextPage < 1 || nextPage === catalogPage) return
       setCatalogPage(nextPage)
     }, [catalogPage, catalogQuery.isFetching])
-  const catalogSummary = [`${ui.pageLabel} ${catalogPage}`, `${displayedCatalog.length}/${CATALOG_PAGE_SIZE}`, hasCatalogFilters ? ui.filtersActive : ui.directExplore].join(' / ')
   const manualSourceOptions = languageSources.map((item) => ({ value: item.value, label: item.label }))
-  const sourceSummaryValue = (
-    <div className="gui2-catalog-source-display">
-      <span className="gui2-catalog-source-display-icon"><CatalogIcon kind="language" /></span>
-      <span>{getMangaSourceMeta(activeSourceID).label}</span>
-    </div>
-  )
-  const resultsSummary = selected
-    ? `${chapters.length} ${isEnglish ? 'chapters' : 'capitulos'}`
-    : searched
-      ? `${results.length} ${isEnglish ? 'results' : 'resultados'}`
-      : `${displayedCatalog.length} ${isEnglish ? 'results' : 'resultados'}`
-  const pageSummary = searched ? (isEnglish ? 'AniList search' : 'Busqueda AniList') : `${ui.pageLabel} ${catalogPage}`
+  const browseSubtitle = hasCatalogFilters
+    ? (isEnglish ? 'Reading discovery refined by your current filters.' : 'Descubrimiento de lectura afinado por tus filtros actuales.')
+    : (isEnglish ? 'A broader reading field, ready to open and keep reading.' : 'Un campo de lectura mas amplio, listo para abrir y seguir leyendo.')
   const activeFilterTags = [
     ...catalogGenres.map((genre) => ({ label: isEnglish ? 'Genre' : 'Genero', value: GENRE_LABELS[genre]?.[appLang] ?? genre })),
     ...(catalogYear ? [{ label: isEnglish ? 'Year' : 'Ano', value: String(catalogYear) }] : []),
@@ -1404,35 +1493,9 @@ export default function MangaSearch() {
           <CustomSelect value={activeSourceID} onChange={handleSearchSourceChange} options={manualSourceOptions} placeholder="Source" />
         </div>
       ),
+      wide: true,
     },
   ]
-  const mangaSummaryPills = selected
-    ? [
-        getMangaSourceMeta(activeSourceID).label,
-        selected.mode === 'direct'
-          ? (isEnglish ? 'Direct source open' : 'Apertura directa de fuente')
-          : (isEnglish ? 'Canonical session locked' : 'Sesion canonica estable'),
-        chapters.length > 0
-          ? (isEnglish ? `${chapters.length} chapters ready` : `${chapters.length} capitulos listos`)
-          : (sourceIsLoading
-              ? (isEnglish ? 'Loading source and chapters' : 'Cargando fuente y capitulos')
-              : (sourceIsHydrating
-                  ? (isEnglish ? 'Hydrating chapter list' : 'Hidratando lista de capitulos')
-                  : (isEnglish ? 'Waiting for a valid source' : 'Esperando una fuente valida'))),
-      ]
-    : searched
-      ? [
-          getMangaSourceMeta(activeSourceID).label,
-          isEnglish ? `${results.length} results ready` : `${results.length} resultados listos`,
-          isEnglish ? 'Metadata first, source on open' : 'Metadata primero, fuente al abrir',
-        ]
-      : [
-          `${lang.toUpperCase()} / ${getMangaSourceMeta(activeSourceID).label}`,
-          isEnglish ? `${displayedCatalog.length} titles loaded` : `${displayedCatalog.length} titulos cargados`,
-          catalogAniListUnavailable
-            ? (isEnglish ? 'AniList temporarily unavailable' : 'AniList temporalmente no disponible')
-            : (hasCatalogFilters ? (isEnglish ? 'Filters shaping the shelf' : 'Filtros afinando el estante') : (isEnglish ? 'Browse and open fast' : 'Explora y abre rapido')),
-        ]
   const resumeChapterID = (() => {
     const sourceContext = resolveReadingContext()
     if (!sourceContext?.sourceID || !sourceContext?.mangaID) return ''
@@ -1518,15 +1581,17 @@ export default function MangaSearch() {
         resumeChapterID={resumeChapterID}
         onOpenChapter={openReader}
         chapterSectionCopy={chapterSectionCopy}
+        onRecommendationSelect={handleRecommendationOpen}
       />
     )
   }
 
   return (
     <Gui2OnlineCatalogSurface
+      mode="manga"
       title={isEnglish ? 'Manga Online' : 'Manga Online'}
-      description={isEnglish ? 'Read thousands of manga chapters from the strongest online sources.' : 'Lee miles de capitulos desde las mejores fuentes online.'}
-      accentText={isEnglish ? 'Updated daily.' : 'Actualizado cada dia.'}
+      description=""
+      accentText=""
       searchControl={(
         <div className="gui2-catalog-query">
           <span className="gui2-catalog-query-icon"><CatalogIcon kind="search" /></span>
@@ -1538,19 +1603,6 @@ export default function MangaSearch() {
             onChange={handleQueryChange}
             onKeyDown={handleKey}
           />
-          <button className="gui2-catalog-query-btn" onClick={handleSearch} disabled={loading || !query.trim()} type="button">
-            {loading ? ui.searching : ui.searchButton}
-          </button>
-        </div>
-      )}
-      sourceSummaryLabel={isEnglish ? 'Source' : 'Fuente'}
-      sourceSummaryValue={sourceSummaryValue}
-      resultsSummary={resultsSummary}
-      pageSummary={pageSummary}
-      topPagination={(
-        <div className="gui2-catalog-top-pagination">
-          <PageArrowButton direction="prev" onClick={handlePreviousPage} disabled={catalogPage === 1 || catalogQuery.isFetching || searched} label={ui.previousPage} />
-          <PageArrowButton direction="next" onClick={handleNextPage} disabled={!catalogHasNext || catalogQuery.isFetching || searched} label={ui.nextPage} />
         </div>
       )}
         filters={mangaCatalogFilters}
@@ -1558,7 +1610,7 @@ export default function MangaSearch() {
         onClearFilters={hasCatalogFilters ? clearCatalogFilters : null}
         actionLabel={ui.clearFilters}
         bodyTitle={searched ? ui.results : ui.featured}
-      bodySubtitle={searched ? ui.resultsReady(results.length) : catalogSummary}
+      bodySubtitle={searched ? ui.resultsReady(results.length) : browseSubtitle}
       body={(() => {
         if (showSearchSkeleton) {
           return <OnlinePosterSkeletonGrid count={8} />

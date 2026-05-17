@@ -32,6 +32,8 @@ type AniListMangaMetadata struct {
 	Genres          []string                `json:"genres"`
 	Synonyms        []string                `json:"synonyms"`
 	Characters      []AniListMangaCharacter `json:"characters,omitempty"`
+	Recommendations []AniListRecommendation `json:"recommendations,omitempty"`
+	DetailHydrated  bool                    `json:"detail_hydrated,omitempty"`
 }
 
 type AniListMangaCharacter struct {
@@ -209,38 +211,7 @@ func (m *Manager) SearchAniListMangaEntries(query string) ([]AniListMangaMetadat
 }
 
 func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
-	gql := `
-	query ($id: Int) {
-		Media(id: $id, type: MANGA) {
-			id
-			idMal
-			format
-			countryOfOrigin
-			source
-			title { romaji english native }
-			synonyms
-			coverImage { large medium }
-			bannerImage
-			description(asHtml: false)
-			status
-			averageScore
-			chapters
-			volumes
-			genres
-			startDate { year month day }
-			endDate { year month day }
-			characters(perPage: 12, sort: [ROLE, RELEVANCE]) {
-				edges {
-					role
-					node {
-						id
-						name { full native }
-						image { large }
-					}
-				}
-			}
-		}
-	}`
+	gql := aniListMangaDetailQuery()
 
 	payload := map[string]interface{}{
 		"query":     gql,
@@ -294,6 +265,9 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 						} `json:"node"`
 					} `json:"edges"`
 				} `json:"characters"`
+				Recommendations struct {
+					Edges []aniListRecommendationEdge `json:"edges"`
+				} `json:"recommendations"`
 			} `json:"Media"`
 		} `json:"data"`
 	}
@@ -345,6 +319,87 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 		Genres:          media.Genres,
 		Synonyms:        media.Synonyms,
 		Characters:      characters,
+		Recommendations: mapAniListRecommendations(media.Recommendations.Edges),
+		DetailHydrated:  true,
+	}, nil
+}
+
+func (m *Manager) GetAniListMangaEnrichmentByID(id int) (*AniListMangaMetadata, error) {
+	gql := aniListMangaEnrichmentQuery()
+
+	payload := map[string]interface{}{
+		"query":     gql,
+		"variables": map[string]interface{}{"id": id},
+	}
+
+	body, err := m.postJSON(anilistEndpoint, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Data struct {
+			Media *struct {
+				ID              int    `json:"id"`
+				IDMal           int    `json:"idMal"`
+				Format          string `json:"format"`
+				CountryOfOrigin string `json:"countryOfOrigin"`
+				Source          string `json:"source"`
+				Title           struct {
+					Romaji  string `json:"romaji"`
+					English string `json:"english"`
+					Native  string `json:"native"`
+				} `json:"title"`
+				Synonyms   []string `json:"synonyms"`
+				CoverImage struct {
+					Large  string `json:"large"`
+					Medium string `json:"medium"`
+				} `json:"coverImage"`
+				BannerImage  string      `json:"bannerImage"`
+				Description  string      `json:"description"`
+				Status       string      `json:"status"`
+				AverageScore float64     `json:"averageScore"`
+				Chapters     int         `json:"chapters"`
+				Volumes      int         `json:"volumes"`
+				Genres       []string    `json:"genres"`
+				StartDate    AniListDate `json:"startDate"`
+				EndDate      AniListDate `json:"endDate"`
+			} `json:"Media"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Data.Media == nil {
+		return nil, fmt.Errorf("manga %d not found", id)
+	}
+
+	media := resp.Data.Media
+	return &AniListMangaMetadata{
+		AniListID:       media.ID,
+		MalID:           media.IDMal,
+		Format:          media.Format,
+		CountryOfOrigin: media.CountryOfOrigin,
+		Source:          media.Source,
+		TitleRomaji:     media.Title.Romaji,
+		TitleEnglish:    media.Title.English,
+		TitleNative:     media.Title.Native,
+		CoverLarge:      media.CoverImage.Large,
+		CoverMedium:     media.CoverImage.Medium,
+		BannerImage:     media.BannerImage,
+		Description:     media.Description,
+		Year:            media.StartDate.Year,
+		PublicationYear: media.StartDate.Year,
+		SeasonYear:      media.StartDate.Year,
+		StartDate:       media.StartDate,
+		EndDate:         media.EndDate,
+		Status:          media.Status,
+		AverageScore:    media.AverageScore,
+		Chapters:        media.Chapters,
+		Volumes:         media.Volumes,
+		Genres:          media.Genres,
+		Synonyms:        media.Synonyms,
 	}, nil
 }
 

@@ -106,6 +106,55 @@ func TestGetValidCookiesWithContextDeduplicatesConcurrentSolve(t *testing.T) {
 	}
 }
 
+func TestGetValidCookiesCachesHealthyStatePerBase(t *testing.T) {
+	cachedMu.Lock()
+	cachedCookiesByBase = map[string]animePaheCookieCacheEntry{}
+	inflightSolveByBase = map[string]*animePaheCookieSolveState{}
+	cachedMu.Unlock()
+
+	originalSolve := solveAnimePaheDDoSGuard
+	defer func() { solveAnimePaheDDoSGuard = originalSolve }()
+
+	var callsMu sync.Mutex
+	callsByBase := map[string]int{}
+	solveAnimePaheDDoSGuard = func(ctx context.Context, targetBase string) ([]*http.Cookie, error) {
+		callsMu.Lock()
+		callsByBase[targetBase]++
+		call := callsByBase[targetBase]
+		callsMu.Unlock()
+		return []*http.Cookie{{Name: "__ddg2_", Value: targetBase + "-" + string(rune('0'+call))}}, nil
+	}
+
+	firstPW, err := getValidCookiesWithContext(context.Background(), "https://animepahe.pw")
+	if err != nil {
+		t.Fatalf("first .pw solve failed: %v", err)
+	}
+	firstSI, err := getValidCookiesWithContext(context.Background(), "https://animepahe.si")
+	if err != nil {
+		t.Fatalf("first .si solve failed: %v", err)
+	}
+	secondPW, err := getValidCookiesWithContext(context.Background(), "https://animepahe.pw")
+	if err != nil {
+		t.Fatalf("second .pw lookup failed: %v", err)
+	}
+
+	if len(firstPW) != 1 || len(firstSI) != 1 || len(secondPW) != 1 {
+		t.Fatalf("expected cookies for all lookups, got pw=%d si=%d pw2=%d", len(firstPW), len(firstSI), len(secondPW))
+	}
+	if firstPW[0].Value != secondPW[0].Value {
+		t.Fatalf("expected .pw cookies to remain cached across mirror switch, got first=%q second=%q", firstPW[0].Value, secondPW[0].Value)
+	}
+
+	callsMu.Lock()
+	defer callsMu.Unlock()
+	if callsByBase["https://animepahe.pw"] != 1 {
+		t.Fatalf("expected exactly one solve for .pw, got %d", callsByBase["https://animepahe.pw"])
+	}
+	if callsByBase["https://animepahe.si"] != 1 {
+		t.Fatalf("expected exactly one solve for .si, got %d", callsByBase["https://animepahe.si"])
+	}
+}
+
 func TestGetValidCookiesWithContextHonorsCancellationWhileWaitingOnInflightSolve(t *testing.T) {
 	cachedMu.Lock()
 	cachedCookiesByBase = map[string]animePaheCookieCacheEntry{}
@@ -148,4 +197,27 @@ func TestGetValidCookiesWithContextHonorsCancellationWhileWaitingOnInflightSolve
 
 	close(release)
 	<-firstDone
+}
+
+func TestAnimePaheSelectBrowserFetchContentPrefersHTMLForDocumentPages(t *testing.T) {
+	html := `<div><a data-src="https://kwik.cx/e/test">ENG · 1080p</a></div>`
+
+	got := animePaheSelectBrowserFetchContent("ENG · 1080p", "", html, false)
+	if got != html {
+		t.Fatalf("expected document fetch to preserve HTML markup, got %q", got)
+	}
+}
+
+func TestAnimePaheSelectBrowserFetchContentPrefersTextForAjaxResponses(t *testing.T) {
+	got := animePaheSelectBrowserFetchContent(`{"ok":true}`, "", "<html><body>{\"ok\":true}</body></html>", true)
+	if got != `{"ok":true}` {
+		t.Fatalf("expected ajax fetch to prefer plain response text, got %q", got)
+	}
+}
+
+func TestAnimePaheSelectBrowserFetchContentFallsBackToPreTextForAjaxResponses(t *testing.T) {
+	got := animePaheSelectBrowserFetchContent("", `{"data":[1,2,3]}`, "<html><body><pre>{\"data\":[1,2,3]}</pre></body></html>", true)
+	if got != `{"data":[1,2,3]}` {
+		t.Fatalf("expected ajax fetch to prefer preformatted text when body text is empty, got %q", got)
+	}
 }

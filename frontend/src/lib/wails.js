@@ -32,6 +32,11 @@ export function __clearRuntimeWarmCache() {
   runtimeWarmCache.clear()
 }
 
+export function invalidateRuntimeCache(keyParts) {
+  const key = JSON.stringify(keyParts)
+  runtimeWarmCache.delete(key)
+}
+
 export function shouldCacheResolvedMangaSource(value) {
   return String(value?.status || '').toLowerCase() === 'ready'
 }
@@ -327,17 +332,32 @@ function getPreviewMangaCatalogHome() {
 }
 
 function getPreviewAnimeCatalogHome(season = '', year = 0) {
+  const seasons = ['WINTER', 'SPRING', 'SUMMER', 'FALL']
+  const seasonIndex = Math.max(0, seasons.indexOf(String(season || '').toUpperCase()))
+  const nextSeasonIndex = (seasonIndex + 1) % seasons.length
+  const previousSeasonIndex = (seasonIndex + seasons.length - 1) % seasons.length
+  const nextSeason = seasons[nextSeasonIndex]
+  const previousSeason = seasons[previousSeasonIndex]
+  const nextSeasonYear = seasonIndex === seasons.length - 1 ? year + 1 : year
+  const previousSeasonYear = seasonIndex === 0 ? year - 1 : year
   return {
     featured: getPreviewAnimeCatalog({ sort: 'TRENDING_DESC', status: 'RELEASING', page: 1 }).media.slice(0, 20),
-    popular: getPreviewAnimeCatalog({ sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
-    seasonal: getPreviewAnimeCatalog({ season, year, sort: 'TRENDING_DESC', status: 'RELEASING', page: 1 }).media.slice(0, 12),
-    topRated: getPreviewAnimeCatalog({ sort: 'SCORE_DESC', page: 1 }).media.slice(0, 12),
-    action: getPreviewAnimeCatalog({ genres: 'Action', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
-    fantasy: getPreviewAnimeCatalog({ genres: 'Fantasy', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
-    romance: getPreviewAnimeCatalog({ genres: 'Romance', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
-    scifi: getPreviewAnimeCatalog({ genres: 'Sci-Fi', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
-    drama: getPreviewAnimeCatalog({ genres: 'Drama', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
-    slice: getPreviewAnimeCatalog({ genres: 'Slice of Life', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 12),
+    newlyTrending: getPreviewAnimeCatalog({ season, year, sort: 'TRENDING_DESC', page: 1 }).media.slice(0, 24),
+    seasonalPopular: getPreviewAnimeCatalog({ season, year, sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 24),
+    upcoming: getPreviewAnimeCatalog({ season: nextSeason, year: nextSeasonYear, sort: 'POPULARITY_DESC', status: 'NOT_YET_RELEASED', page: 1 }).media.slice(0, 24),
+    topRated: getPreviewAnimeCatalog({ sort: 'SCORE_DESC', page: 1 }).media.slice(0, 24),
+    lastSeason: getPreviewAnimeCatalog({ season: previousSeason, year: previousSeasonYear, sort: 'SCORE_DESC', page: 1 }).media.slice(0, 24),
+    action: getPreviewAnimeCatalog({ genres: 'Action', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 24),
+    adventure: getPreviewAnimeCatalog({ genres: 'Adventure', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 24),
+    comedy: getPreviewAnimeCatalog({ genres: 'Comedy', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 24),
+    fantasy: getPreviewAnimeCatalog({ genres: 'Fantasy', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 24),
+    mystery: getPreviewAnimeCatalog({ genres: 'Mystery', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 24),
+    romance: getPreviewAnimeCatalog({ genres: 'Romance', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 24),
+    sports: getPreviewAnimeCatalog({ genres: 'Sports', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 24),
+    scifi: getPreviewAnimeCatalog({ genres: 'Sci-Fi', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 24),
+    drama: getPreviewAnimeCatalog({ genres: 'Drama', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 24),
+    slice: getPreviewAnimeCatalog({ genres: 'Slice of Life', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 24),
+    supernatural: getPreviewAnimeCatalog({ genres: 'Supernatural', sort: 'POPULARITY_DESC', page: 1 }).media.slice(0, 24),
   }
 }
 
@@ -817,7 +837,7 @@ export const wails = {
   },
   async getAniListAnimeByID(id) {
     if (isWailsRuntimeUnavailable()) return PREVIEW_ANIME_LIBRARY.find((item) => Number(item.id) === Number(id)) ?? null
-    return rememberRuntimeCache(['anilist-anime-detail', Number(id) || 0], SOURCE_METADATA_CACHE_TTL_MS, () => window.go.main.App.GetAniListAnimeByID(id))
+    return rememberRuntimeCache(['anilist-anime-detail-v2', Number(id) || 0], SOURCE_METADATA_CACHE_TTL_MS, () => window.go.main.App.GetAniListAnimeByID(id))
   },
   async getAniListAnimeCatalogHome(season = '', year = 0) {
     if (isWailsRuntimeUnavailable()) return getPreviewAnimeCatalogHome(season, year)
@@ -825,7 +845,7 @@ export const wails = {
   },
   async getAniListMangaByID(id) {
     if (isWailsRuntimeUnavailable()) return PREVIEW_MANGA_LIBRARY.find((item) => Number(item.anilist_id || item.id) === Number(id)) ?? null
-    return rememberRuntimeCache(['anilist-manga-detail', Number(id) || 0], SOURCE_METADATA_CACHE_TTL_MS, () => window.go.main.App.GetAniListMangaByID(id))
+    return rememberRuntimeCache(['anilist-manga-detail-v3', Number(id) || 0], SOURCE_METADATA_CACHE_TTL_MS, () => window.go.main.App.GetAniListMangaByID(id))
   },
   async getAniListMangaCatalogHome(lang = 'es') {
     if (isWailsRuntimeUnavailable()) return getPreviewMangaCatalogHome()
@@ -864,8 +884,14 @@ export const wails = {
     }
     return window.go.main.App.SearchOnline(query, sourceID)
   },
-  async getOnlineEpisodes(sourceID, animeID, timeoutMs = 0) {
+  async getOnlineEpisodes(sourceID, animeID, timeoutMs = 0, forceFresh = false) {
     if (isWailsRuntimeUnavailable()) return buildPreviewAnimeEpisodes(sourceID, animeID)
+    if (forceFresh) {
+      if (timeoutMs > 0 && typeof window?.go?.main?.App?.GetOnlineEpisodesWithTimeout === 'function') {
+        return window.go.main.App.GetOnlineEpisodesWithTimeout(sourceID, animeID, timeoutMs)
+      }
+      return window.go.main.App.GetOnlineEpisodes(sourceID, animeID)
+    }
     return rememberRuntimeCache(['online-episodes', sourceID, animeID], SOURCE_METADATA_CACHE_TTL_MS, () => {
       if (timeoutMs > 0 && typeof window?.go?.main?.App?.GetOnlineEpisodesWithTimeout === 'function') {
         return window.go.main.App.GetOnlineEpisodesWithTimeout(sourceID, animeID, timeoutMs)
@@ -873,6 +899,7 @@ export const wails = {
       return window.go.main.App.GetOnlineEpisodes(sourceID, animeID)
     })
   },
+  invalidateRuntimeCache,
   async getOnlineAudioVariants(sourceID, animeID, episodeID = '') {
     if (isWailsRuntimeUnavailable()) {
       return { sub: true, dub: sourceID === 'animegg-en' }
@@ -910,6 +937,27 @@ export const wails = {
   async recordIntegratedPlaybackDiagnostic(payload) {
     if (isWailsRuntimeUnavailable()) return null
     return window.go.main.App.RecordIntegratedPlaybackDiagnostic(payload)
+  },
+  async warmOnlineEpisodeThumbnail(payload) {
+    if (isWailsRuntimeUnavailable()) return { status: 'preview' }
+    if (typeof window?.go?.main?.App?.WarmOnlineEpisodeThumbnail !== 'function') {
+      return { status: 'unsupported' }
+    }
+    return window.go.main.App.WarmOnlineEpisodeThumbnail(payload)
+  },
+  async prepareOnlineEpisodeThumbnail(payload) {
+    if (isWailsRuntimeUnavailable()) return { status: 'preview' }
+    if (typeof window?.go?.main?.App?.PrepareOnlineEpisodeThumbnail !== 'function') {
+      return { status: 'unsupported' }
+    }
+    return window.go.main.App.PrepareOnlineEpisodeThumbnail(payload)
+  },
+  async persistOnlineEpisodeThumbnail(payload) {
+    if (isWailsRuntimeUnavailable()) return { status: 'preview', thumbnail_url: payload?.thumbnail_data_url || '' }
+    if (typeof window?.go?.main?.App?.PersistOnlineEpisodeThumbnail !== 'function') {
+      return { status: 'unsupported' }
+    }
+    return window.go.main.App.PersistOnlineEpisodeThumbnail(payload)
   },
   async getIntegratedPlaybackDiagnostics() {
     if (isWailsRuntimeUnavailable()) return []

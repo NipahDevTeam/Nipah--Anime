@@ -105,20 +105,40 @@ export function getGui2Navigation(preview = false, lang = 'en') {
   }
 }
 
+function withShellVariant(meta, shellVariant = 'standard') {
+  return {
+    ...meta,
+    shellVariant,
+  }
+}
+
 export function getGui2RouteMeta(pathname = '/', lang = 'en') {
   const normalized = normalizeGui2Path(pathname)
   const copy = getGui2Copy(lang)
 
   if (normalized.startsWith('/anime/')) {
-    return { key: 'anime-detail', title: copy.meta.animeDetail.title, subtitle: copy.meta.animeDetail.subtitle, canonicalPath: normalized }
+    return withShellVariant({
+      key: 'anime-detail',
+      title: copy.meta.animeDetail.title,
+      subtitle: copy.meta.animeDetail.subtitle,
+      canonicalPath: normalized,
+    }, 'immersive')
   }
 
   if (normalized.startsWith('/manga/')) {
-    return { key: 'manga-detail', title: copy.meta.mangaDetail.title, subtitle: copy.meta.mangaDetail.subtitle, canonicalPath: normalized }
+    return withShellVariant({
+      key: 'manga-detail',
+      title: copy.meta.mangaDetail.title,
+      subtitle: copy.meta.mangaDetail.subtitle,
+      canonicalPath: normalized,
+    }, 'immersive')
   }
 
-  return {
+  const baseMeta = {
     ...(copy.meta.map[normalized] || copy.meta.map['/home']),
     canonicalPath: normalized,
   }
+
+  const shellVariant = normalized === '/home' ? 'immersive' : 'standard'
+  return withShellVariant(baseMeta, shellVariant)
 }

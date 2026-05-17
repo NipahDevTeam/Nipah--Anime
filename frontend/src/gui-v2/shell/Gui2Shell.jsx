@@ -5,6 +5,8 @@ import NipahLogo from './NipahLogo'
 import { getGui2Navigation } from '../routeRegistry'
 import { useI18n } from '../../lib/i18n'
 import { wails } from '../../lib/wails'
+import { toggleGui2WindowMaximise } from '../../lib/gui2Window'
+import Gui2WindowControls from './Gui2WindowControls'
 
 function getActiveNavKey(routeMeta) {
   const canonical = routeMeta?.canonicalPath || ''
@@ -64,6 +66,11 @@ export default function Gui2Shell({ routeMeta, preview, children }) {
     void setLang(nextLang)
   }
 
+  const handleShellChromeDoubleClick = (event) => {
+    if (event.target !== event.currentTarget) return
+    toggleGui2WindowMaximise()
+  }
+
   const authQuery = useQuery({
     queryKey: ['gui2-shell-auth-status'],
     queryFn: async () => wails.getAuthStatus(),
@@ -84,40 +91,45 @@ export default function Gui2Shell({ routeMeta, preview, children }) {
   }, [profileAvatar])
 
   return (
-    <div className={`gui2-shell${preview ? ' gui2-shell-preview' : ''}`} data-route={routeMeta.key}>
-      <aside className="gui2-sidebar">
-        <div className="gui2-brand">
-          <div className="gui2-brand-lockup">
-            <div className="gui2-brand-mark" aria-hidden="true">
-              <NipahLogo className="gui2-brand-logo" />
-            </div>
-            <div className="gui2-brand-copy">
-              <div className="gui2-brand-word">
-                <span className="gui2-brand-word-accent">Nipah!</span>
-                <span className="gui2-brand-word-main">Anime</span>
-              </div>
-              <div className="gui2-brand-subword">ANIME</div>
-            </div>
+    <div
+      className={`gui2-shell${preview ? ' gui2-shell-preview' : ''}`}
+      data-route={routeMeta.key}
+      data-shell-variant={routeMeta.shellVariant || 'standard'}
+    >
+      <aside className="gui2-sidebar gui2-smart-rail">
+        <div className="gui2-rail-brand">
+          <div className="gui2-rail-brand-mark" aria-hidden="true">
+            <NipahLogo className="gui2-rail-logo" />
           </div>
-          <div className="gui2-brand-version">v1.5.0</div>
         </div>
 
-        <nav className="gui2-nav">
-          <div className="gui2-nav-group">
-            <div className="gui2-nav-heading">{navigation.headings.library}</div>
+        <nav className="gui2-nav gui2-rail-nav" aria-label={navigation.headings.library}>
+          <div className="gui2-nav-group gui2-rail-group">
             {navigation.primary.map((item) => (
-              <NavLink key={item.key} to={item.to} end={item.key === 'home'} className={() => `gui2-nav-link${activeKey === item.key ? ' active' : ''}`} title={item.label}>
-                <span className="gui2-nav-icon"><ShellIcon kind={item.icon} /></span>
-                <span className="gui2-nav-label">{item.label}</span>
+              <NavLink
+                key={item.key}
+                to={item.to}
+                end={item.key === 'home'}
+                className={() => `gui2-rail-link${activeKey === item.key ? ' active' : ''}`}
+                title={item.label}
+                aria-label={item.label}
+              >
+                <span className="gui2-rail-icon"><ShellIcon kind={item.icon} /></span>
+                <span className="gui2-rail-flyout">{item.label}</span>
               </NavLink>
             ))}
           </div>
-          <div className="gui2-nav-footer">
-            <div className="gui2-nav-heading">{navigation.headings.system}</div>
+          <div className="gui2-nav-footer gui2-rail-footer" aria-label={navigation.headings.system}>
             {navigation.secondary.map((item) => (
-              <NavLink key={item.key} to={item.to} className={() => `gui2-nav-link${activeKey === item.key ? ' active' : ''}`} title={item.label}>
-                <span className="gui2-nav-icon"><ShellIcon kind={item.icon} /></span>
-                <span className="gui2-nav-label">{item.label}</span>
+              <NavLink
+                key={item.key}
+                to={item.to}
+                className={() => `gui2-rail-link gui2-rail-link-secondary${activeKey === item.key ? ' active' : ''}`}
+                title={item.label}
+                aria-label={item.label}
+              >
+                <span className="gui2-rail-icon"><ShellIcon kind={item.icon} /></span>
+                <span className="gui2-rail-flyout">{item.label}</span>
               </NavLink>
             ))}
           </div>
@@ -125,7 +137,7 @@ export default function Gui2Shell({ routeMeta, preview, children }) {
       </aside>
 
       <div className="gui2-main">
-        <header className="gui2-topbar">
+        <header className="gui2-topbar gui2-shell-chrome" onDoubleClick={handleShellChromeDoubleClick}>
           <div className="gui2-topbar-actions">
             <button type="button" className="gui2-icon-button" aria-label={isEnglish ? 'Notifications' : 'Notificaciones'}><ShellIcon kind="history" /></button>
             <button type="button" className="gui2-icon-button" aria-label={isEnglish ? 'Settings' : 'Ajustes'}><ShellIcon kind="settings" /></button>
@@ -158,6 +170,7 @@ export default function Gui2Shell({ routeMeta, preview, children }) {
               </span>
             </button>
           </div>
+          <Gui2WindowControls isEnglish={isEnglish} />
         </header>
 
         <main className="gui2-content">

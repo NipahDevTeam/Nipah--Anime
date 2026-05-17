@@ -13,6 +13,7 @@ package animepahe
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -331,21 +332,51 @@ func browserFetch(rawURL string, accept string, ajax bool) (string, error) {
 	_ = page.WaitLoad()
 	time.Sleep(1200 * time.Millisecond)
 
-	result, err := page.Eval(`() => {
-		const bodyText = (document.body?.innerText || document.documentElement?.innerText || '').trim()
-		if (bodyText) return bodyText
-		const pre = document.querySelector('pre')
-		if (pre?.textContent) return pre.textContent.trim()
-		return document.documentElement?.outerHTML || ''
-	}`)
+	result, err := page.Eval(`() => JSON.stringify({
+		bodyText: (document.body?.innerText || document.documentElement?.innerText || '').trim(),
+		preText: (document.querySelector('pre')?.textContent || '').trim(),
+		outerHTML: document.documentElement?.outerHTML || '',
+	})`)
 	if err != nil {
 		return "", fmt.Errorf("animepahe: browser content read failed: %w", err)
 	}
-	body := strings.TrimSpace(result.Value.Str())
+
+	var payload struct {
+		BodyText  string `json:"bodyText"`
+		PreText   string `json:"preText"`
+		OuterHTML string `json:"outerHTML"`
+	}
+	if err := json.Unmarshal([]byte(result.Value.Str()), &payload); err != nil {
+		return "", fmt.Errorf("animepahe: browser content parse failed: %w", err)
+	}
+	body := animePaheSelectBrowserFetchContent(payload.BodyText, payload.PreText, payload.OuterHTML, ajax)
 	if body == "" {
 		return "", fmt.Errorf("animepahe: browser fetch returned empty response")
 	}
 	_ = accept
-	_ = ajax
 	return body, nil
+}
+
+func animePaheSelectBrowserFetchContent(bodyText, preText, outerHTML string, ajax bool) string {
+	bodyText = strings.TrimSpace(bodyText)
+	preText = strings.TrimSpace(preText)
+	outerHTML = strings.TrimSpace(outerHTML)
+
+	if ajax {
+		if bodyText != "" {
+			return bodyText
+		}
+		if preText != "" {
+			return preText
+		}
+		return outerHTML
+	}
+
+	if outerHTML != "" {
+		return outerHTML
+	}
+	if bodyText != "" {
+		return bodyText
+	}
+	return preText
 }

@@ -65,6 +65,8 @@ type ResolvedStream struct {
 // It detects the provider from the URL and dispatches to the right resolver.
 func Resolve(embedURL string) (*ResolvedStream, error) {
 	switch {
+	case strings.Contains(embedURL, "player.zilla-networks.com/play/"):
+		return resolveZillaPlay(embedURL)
 	case strings.Contains(embedURL, "streamtape"):
 		return resolveStreamtape(embedURL)
 	case strings.Contains(embedURL, "ok.ru"), strings.Contains(embedURL, "odnoklassniki"):
@@ -100,6 +102,39 @@ func Resolve(embedURL string) (*ResolvedStream, error) {
 		}
 		return nil, fmt.Errorf("unsupported embed provider: %s", embedURL)
 	}
+}
+
+func resolveZillaManifestURL(raw string) (string, bool) {
+	parsed, err := neturl.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", false
+	}
+	if !strings.EqualFold(parsed.Host, "player.zilla-networks.com") {
+		return "", false
+	}
+
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(segments) != 2 || !strings.EqualFold(segments[0], "play") || strings.TrimSpace(segments[1]) == "" {
+		return "", false
+	}
+
+	parsed.Path = "/m3u8/" + segments[1]
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), true
+}
+
+func resolveZillaPlay(embedURL string) (*ResolvedStream, error) {
+	manifestURL, ok := resolveZillaManifestURL(embedURL)
+	if !ok {
+		return nil, fmt.Errorf("zilla: unsupported play url")
+	}
+	return &ResolvedStream{
+		URL:     manifestURL,
+		Quality: "unknown",
+		Type:    "hls",
+	}, nil
 }
 
 func inferResolvedType(raw string) string {
@@ -871,6 +906,7 @@ func browserResolveMedia(embedURL string) (*ResolvedStream, error) {
 func IsEmbedPageURL(u string) bool {
 	return strings.Contains(u, "streamtape.com/e/") ||
 		strings.Contains(u, "mp4upload.com/embed") ||
+		strings.Contains(u, "player.zilla-networks.com/play/") ||
 		strings.Contains(u, "anikai.to/iframe/") ||
 		strings.Contains(u, "filemoon.") && strings.Contains(u, "/e/") ||
 		strings.Contains(u, "streamwish.") && strings.Contains(u, "/e/") ||

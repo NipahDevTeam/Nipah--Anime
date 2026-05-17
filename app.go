@@ -70,6 +70,7 @@ type App struct {
 	downloadDir           string
 	animeImportDir        string
 	torrentDir            string
+	thumbnailDir          string
 	downloaderOnce        sync.Once
 	downloaderInitErr     error
 	torrentStreamOnce     sync.Once
@@ -83,6 +84,8 @@ type App struct {
 	onlineHistoryEventAt  time.Time
 	integratedDiagMu      sync.Mutex
 	integratedDiagnostics []map[string]interface{}
+	thumbnailWarmMu       sync.Mutex
+	thumbnailWarmInFlight map[string]struct{}
 	residentWindowMu      sync.Mutex
 	residentWindowState   residentWindowState
 	quitRequested         bool
@@ -419,16 +422,20 @@ func (a *App) CompleteStartupLaunch() error {
 	if a.ctx == nil {
 		return fmt.Errorf("window context not ready")
 	}
-	runtime.WindowSetDarkTheme(a.ctx)
-	runtime.WindowSetMinSize(a.ctx, 1100, 700)
-	runtime.WindowShow(a.ctx)
-	runtime.WindowUnminimise(a.ctx)
-	runtime.WindowSetSize(a.ctx, 1400, 900)
-	runtime.WindowCenter(a.ctx)
-	time.Sleep(160 * time.Millisecond)
-	runtime.WindowShow(a.ctx)
-	runtime.WindowUnminimise(a.ctx)
-	runtime.WindowMaximise(a.ctx)
+	runtimeWindowSetDarkTheme(a.ctx)
+	runtimeWindowSetMinSize(a.ctx, 1100, 700)
+	runtimeWindowShow(a.ctx)
+	runtimeWindowUnminimise(a.ctx)
+	width, height := runtimeWindowGetSize(a.ctx)
+	if residentWindowLooksResetToBootstrapBounds(width, height) {
+		runtimeWindowSetSize(a.ctx, startupRestoreWidth, startupRestoreHeight)
+		runtimeWindowCenter(a.ctx)
+	}
+	if !runtimeWindowIsFullscreen(a.ctx) && !runtimeWindowIsMaximised(a.ctx) {
+		scheduleResidentWindowRestore(residentWindowRestoreDelay, func() {
+			runtimeWindowMaximise(a.ctx)
+		})
+	}
 	return nil
 }
 
@@ -538,6 +545,14 @@ func (a *App) configureStoragePaths() {
 	}
 	a.animeImportDir = animeImportDir
 
+	thumbnailDir := filepath.Join(filepath.Dir(a.db.GetSetting("_internal_db_path", "")), "episode-thumbnails")
+	if thumbnailDir == "" || thumbnailDir == "episode-thumbnails" {
+		if appData, err := os.UserConfigDir(); err == nil {
+			thumbnailDir = filepath.Join(appData, "Nipah", "episode-thumbnails")
+		}
+	}
+	a.thumbnailDir = thumbnailDir
+
 	torrentDir := filepath.Join(filepath.Dir(a.db.GetSetting("_internal_db_path", "")), "torrent-streams")
 	if torrentDir == "" || torrentDir == "torrent-streams" {
 		if appData, err := os.UserConfigDir(); err == nil {
@@ -552,6 +567,9 @@ func (a *App) configureStoragePaths() {
 	if a.animeImportDir != "" {
 		_ = os.MkdirAll(a.animeImportDir, 0755)
 		a.registerLibraryPath(a.animeImportDir, "anime")
+	}
+	if a.thumbnailDir != "" {
+		_ = os.MkdirAll(a.thumbnailDir, 0755)
 	}
 }
 
@@ -916,9 +934,20 @@ func (a *App) DiscoverAnime(genre, season string, year int, sort, status, format
 		return nil, fmt.Errorf("metadata not initialized")
 	}
 	cacheKey := fmt.Sprintf("anilist:discover:anime:v3:%s|%s|%d|%s|%s|%s|%d", strings.TrimSpace(genre), strings.TrimSpace(season), year, strings.TrimSpace(sort), strings.TrimSpace(status), strings.TrimSpace(format), page)
-	result, origin, err := rememberJSONWithStale[interface{}](cacheKey, 20*time.Minute, 4*time.Hour, func() (interface{}, error) {
+	loader := func() (interface{}, error) {
 		return a.metadata.DiscoverAnime(genre, season, year, sort, status, format, page)
-	})
+	}
+
+	var (
+		result interface{}
+		origin string
+		err    error
+	)
+	if shouldUsePersistentAnimeDiscoverSnapshot(genre, season, year, sort, status, format, page) {
+		result, origin, err = rememberPersistentSnapshotWithStale[interface{}](a.db, cacheKey, 20*time.Minute, 4*time.Hour, loader)
+	} else {
+		result, origin, err = rememberJSONWithStale[interface{}](cacheKey, 20*time.Minute, 4*time.Hour, loader)
+	}
 	log.Debug().Str("genre", genre).Str("season", season).Int("year", year).Str("sort", sort).Str("status", status).Str("format", format).Int("page", page).Str("cache", origin).Dur("took", time.Since(started)).Msg("DiscoverAnime")
 	return result, err
 }
@@ -929,11 +958,22 @@ func (a *App) SearchAniList(query string, lang string) (interface{}, error) {
 		return nil, fmt.Errorf("metadata not initialized")
 	}
 	cacheKey := fmt.Sprintf("anilist:search:anime:%s|%s", strings.ToLower(strings.TrimSpace(query)), strings.TrimSpace(lang))
-	result, origin, err := rememberJSONWithStale[interface{}](cacheKey, 20*time.Minute, 3*time.Hour, func() (interface{}, error) {
+	result, origin, err := rememberPersistentAniListAnimeSearch(a.db, cacheKey, func() (interface{}, error) {
 		return a.metadata.SearchAniList(query, lang)
 	})
 	log.Debug().Str("query", query).Str("lang", lang).Str("cache", origin).Dur("took", time.Since(started)).Msg("SearchAniList")
 	return result, err
+}
+
+func (a *App) searchAniListMangaEntriesCached(query string) ([]metadata.AniListMangaMetadata, string, error) {
+	if a.metadata == nil {
+		return nil, "", fmt.Errorf("metadata not initialized")
+	}
+	normalizedQuery := strings.TrimSpace(query)
+	cacheKey := fmt.Sprintf("anilist:search:manga:%s", strings.ToLower(normalizedQuery))
+	return rememberPersistentAniListMangaSearch(a.db, cacheKey, func() ([]metadata.AniListMangaMetadata, error) {
+		return a.metadata.SearchAniListMangaEntries(normalizedQuery)
+	})
 }
 
 func (a *App) GetAniListAnimeByID(id int) (interface{}, error) {
@@ -941,8 +981,8 @@ func (a *App) GetAniListAnimeByID(id int) (interface{}, error) {
 	if a.metadata == nil {
 		return nil, fmt.Errorf("metadata not initialized")
 	}
-	cacheKey := fmt.Sprintf("anilist:anime:id:%d", id)
-	result, origin, err := rememberJSONWithStale[*metadata.AnimeMetadata](cacheKey, 2*time.Hour, 12*time.Hour, func() (*metadata.AnimeMetadata, error) {
+	cacheKey := fmt.Sprintf("anilist:anime:id:v2:%d", id)
+	result, origin, err := rememberPersistentSnapshotWithStale[*metadata.AnimeMetadata](a.db, cacheKey, 2*time.Hour, 12*time.Hour, func() (*metadata.AnimeMetadata, error) {
 		return a.metadata.GetAnimeByID(id)
 	})
 	log.Debug().Int("id", id).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAniListAnimeByID")
@@ -1007,8 +1047,7 @@ func (a *App) GetAniListMangaByID(id int) (interface{}, error) {
 	if a.metadata == nil {
 		return nil, fmt.Errorf("metadata not initialized")
 	}
-	cacheKey := fmt.Sprintf("anilist:manga:id:%d", id)
-	result, origin, err := rememberJSONWithStale[*metadata.AniListMangaMetadata](cacheKey, 2*time.Hour, 12*time.Hour, func() (*metadata.AniListMangaMetadata, error) {
+	result, origin, err := rememberAniListMangaDetailSnapshot(a.db, id, func() (*metadata.AniListMangaMetadata, error) {
 		return a.metadata.GetAniListMangaByID(id)
 	})
 	log.Debug().Int("id", id).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAniListMangaByID")
@@ -1020,11 +1059,51 @@ func (a *App) GetAniListMangaCatalogHome(lang string) (map[string][]metadata.Ani
 	if a.metadata == nil {
 		return nil, fmt.Errorf("metadata not initialized")
 	}
-	cacheKey := fmt.Sprintf("anilist:manga:catalog-home:%s", strings.TrimSpace(lang))
-	result, origin, err := rememberJSONWithStale[map[string][]metadata.AniListMangaMetadata](cacheKey, 20*time.Minute, 4*time.Hour, func() (map[string][]metadata.AniListMangaMetadata, error) {
+	const (
+		freshTTL = 20 * time.Minute
+		staleTTL = 4 * time.Hour
+	)
+
+	trimmedLang := strings.TrimSpace(lang)
+	cacheKey := fmt.Sprintf("anilist:manga:catalog-home:%s", trimmedLang)
+	persistentKey := "cache:" + cacheKey
+
+	if cached, ok := readAppCachedJSON[map[string][]metadata.AniListMangaMetadata](cacheKey); ok {
+		log.Debug().Str("lang", trimmedLang).Str("cache", "fresh_cache").Dur("took", time.Since(started)).Msg("GetAniListMangaCatalogHome")
+		return cached, nil
+	}
+
+	persistentNow := time.Now()
+	if persisted, origin, ok := readPersistentJSONSnapshot[map[string][]metadata.AniListMangaMetadata](a.db, persistentKey, persistentNow); ok {
+		writeAppCachedJSON(staleAppCacheKey(cacheKey), staleTTL, persisted)
+		if origin == "persistent_fresh_cache" {
+			writeAppCachedJSON(cacheKey, freshTTL, persisted)
+			log.Debug().Str("lang", trimmedLang).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAniListMangaCatalogHome")
+			return persisted, nil
+		}
+
+		go func(cacheKey, persistentKey string) {
+			refreshed, err := a.metadata.GetAniListMangaCatalogHome()
+			if err != nil {
+				log.Debug().Err(err).Str("lang", trimmedLang).Msg("GetAniListMangaCatalogHome background refresh skipped")
+				return
+			}
+			writeAppCachedJSON(cacheKey, freshTTL, refreshed)
+			writeAppCachedJSON(staleAppCacheKey(cacheKey), staleTTL, refreshed)
+			writePersistentJSONSnapshot(a.db, persistentKey, freshTTL, staleTTL, refreshed)
+		}(cacheKey, persistentKey)
+
+		log.Debug().Str("lang", trimmedLang).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAniListMangaCatalogHome")
+		return persisted, nil
+	}
+
+	result, origin, err := rememberJSONWithStale[map[string][]metadata.AniListMangaMetadata](cacheKey, freshTTL, staleTTL, func() (map[string][]metadata.AniListMangaMetadata, error) {
 		return a.metadata.GetAniListMangaCatalogHome()
 	})
-	log.Debug().Str("lang", strings.TrimSpace(lang)).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAniListMangaCatalogHome")
+	if err == nil {
+		writePersistentJSONSnapshot(a.db, persistentKey, freshTTL, staleTTL, result)
+	}
+	log.Debug().Str("lang", trimmedLang).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAniListMangaCatalogHome")
 	return result, err
 }
 
@@ -1034,11 +1113,41 @@ func (a *App) DiscoverManga(genre string, year int, sort, status, format string,
 		return nil, fmt.Errorf("metadata not initialized")
 	}
 	cacheKey := fmt.Sprintf("anilist:discover:manga:v2:%s|%d|%s|%s|%s|%d", strings.TrimSpace(genre), year, strings.TrimSpace(sort), strings.TrimSpace(status), strings.TrimSpace(format), page)
-	result, origin, err := rememberJSONWithStale[interface{}](cacheKey, 20*time.Minute, 4*time.Hour, func() (interface{}, error) {
+	loader := func() (interface{}, error) {
 		return a.metadata.DiscoverManga(genre, year, sort, status, format, page)
-	})
+	}
+
+	var (
+		result interface{}
+		origin string
+		err    error
+	)
+	if shouldUsePersistentMangaDiscoverSnapshot(genre, year, sort, status, format, page) {
+		result, origin, err = rememberPersistentSnapshotWithStale[interface{}](a.db, cacheKey, 20*time.Minute, 4*time.Hour, loader)
+	} else {
+		result, origin, err = rememberJSONWithStale[interface{}](cacheKey, 20*time.Minute, 4*time.Hour, loader)
+	}
 	log.Debug().Str("genre", genre).Int("year", year).Str("sort", sort).Str("status", status).Str("format", format).Int("page", page).Str("cache", origin).Dur("took", time.Since(started)).Msg("DiscoverManga")
 	return result, err
+}
+
+func shouldUsePersistentAnimeDiscoverSnapshot(genre, season string, year int, sort, status, format string, page int) bool {
+	return strings.TrimSpace(genre) == "" &&
+		strings.TrimSpace(season) == "" &&
+		year == 0 &&
+		strings.TrimSpace(sort) == "TRENDING_DESC" &&
+		strings.TrimSpace(status) == "" &&
+		strings.TrimSpace(format) == "" &&
+		page == 1
+}
+
+func shouldUsePersistentMangaDiscoverSnapshot(genre string, year int, sort, status, format string, page int) bool {
+	return strings.TrimSpace(genre) == "" &&
+		year == 0 &&
+		strings.TrimSpace(sort) == "TRENDING_DESC" &&
+		strings.TrimSpace(status) == "" &&
+		strings.TrimSpace(format) == "" &&
+		page == 1
 }
 
 func (a *App) SearchMangaDex(query string, lang string) (interface{}, error) {
@@ -1421,7 +1530,6 @@ func (a *App) GetOnlineEpisodes(sourceID string, animeID string) ([]map[string]i
 	if err != nil {
 		watchedIDs = map[string]bool{}
 	}
-
 	// Mark which episodes have already been watched
 	out := make([]map[string]interface{}, 0, len(episodes))
 	for _, ep := range episodes {
@@ -1755,21 +1863,24 @@ func mediaProxyURL(rawURL, referer, cookie string) string {
 	return internalServerBaseURL + "/proxy/media?" + params.Encode()
 }
 
-func integratedPlaybackPayload(streamURL, referer, cookie, streamKind, title string) map[string]interface{} {
+func integratedPlaybackPayload(streamURL, referer, cookie, streamKind, title, sourceLabel string) map[string]interface{} {
 	proxyURL := mediaProxyURL(streamURL, referer, cookie)
 	return map[string]interface{}{
-		"launched":      false,
-		"fallback_type": "integrated",
-		"player_type":   "integrated",
-		"fallback_url":  proxyURL,
-		"proxy_url":     proxyURL,
-		"stream_url":    streamURL,
-		"stream_host":   hostFromURL(streamURL),
-		"referer":       referer,
-		"referer_host":  hostFromURL(referer),
-		"has_cookie":    strings.TrimSpace(cookie) != "",
-		"stream_kind":   firstNonEmptyString(streamKind, inferStreamKind(streamURL)),
-		"title":         title,
+		"launched":          false,
+		"fallback_type":     "integrated",
+		"player_type":       "integrated",
+		"fallback_url":      proxyURL,
+		"proxy_url":         proxyURL,
+		"stream_url":        streamURL,
+		"raw_stream_url":    streamURL,
+		"stream_host":       hostFromURL(streamURL),
+		"referer":           referer,
+		"referer_host":      hostFromURL(referer),
+		"has_cookie":        strings.TrimSpace(cookie) != "",
+		"stream_kind":       firstNonEmptyString(streamKind, inferStreamKind(streamURL)),
+		"source_label":      sourceLabel,
+		"episode_thumbnail": "",
+		"title":             title,
 	}
 }
 
@@ -1900,9 +2011,8 @@ func (a *App) loadAniListAnimeMetadata(anilistID int) (*metadata.AnimeMetadata, 
 	if a.metadata == nil || anilistID <= 0 {
 		return nil, nil
 	}
-	cacheKey := fmt.Sprintf("anilist:anime:id:%d", anilistID)
-	result, _, err := rememberJSONWithStale[*metadata.AnimeMetadata](cacheKey, 2*time.Hour, 12*time.Hour, func() (*metadata.AnimeMetadata, error) {
-		return a.metadata.GetAnimeByID(anilistID)
+	result, _, err := rememberAniListAnimeEnrichmentSnapshot(a.db, anilistID, func() (*metadata.AnimeMetadata, error) {
+		return a.metadata.GetAnimeEnrichmentByID(anilistID)
 	})
 	return result, err
 }
@@ -1911,12 +2021,16 @@ func loadCachedAniListAnimeMetadata(anilistID int) (*metadata.AnimeMetadata, boo
 	if anilistID <= 0 {
 		return nil, false
 	}
-	cacheKey := fmt.Sprintf("anilist:anime:id:%d", anilistID)
-	if cached, ok := readAppCachedJSON[*metadata.AnimeMetadata](cacheKey); ok && cached != nil {
-		return cached, true
-	}
-	if stale, ok := readAppCachedJSON[*metadata.AnimeMetadata](staleAppCacheKey(cacheKey)); ok && stale != nil {
-		return stale, true
+	for _, cacheKey := range []string{
+		fmt.Sprintf("anilist:anime:id:%d", anilistID),
+		fmt.Sprintf("anilist:anime:enrichment:id:%d", anilistID),
+	} {
+		if cached, ok := readAppCachedJSON[*metadata.AnimeMetadata](cacheKey); ok && cached != nil {
+			return cached, true
+		}
+		if stale, ok := readAppCachedJSON[*metadata.AnimeMetadata](staleAppCacheKey(cacheKey)); ok && stale != nil {
+			return stale, true
+		}
 	}
 	return nil, false
 }
@@ -1925,9 +2039,8 @@ func (a *App) loadAniListMangaMetadata(anilistID int) (*metadata.AniListMangaMet
 	if a.metadata == nil || anilistID <= 0 {
 		return nil, nil
 	}
-	cacheKey := fmt.Sprintf("anilist:manga:id:%d", anilistID)
-	result, _, err := rememberJSONWithStale[*metadata.AniListMangaMetadata](cacheKey, 2*time.Hour, 12*time.Hour, func() (*metadata.AniListMangaMetadata, error) {
-		return a.metadata.GetAniListMangaByID(anilistID)
+	result, _, err := rememberAniListMangaEnrichmentSnapshot(a.db, anilistID, func() (*metadata.AniListMangaMetadata, error) {
+		return a.metadata.GetAniListMangaEnrichmentByID(anilistID)
 	})
 	return result, err
 }
@@ -1936,12 +2049,16 @@ func loadCachedAniListMangaMetadata(anilistID int) (*metadata.AniListMangaMetada
 	if anilistID <= 0 {
 		return nil, false
 	}
-	cacheKey := fmt.Sprintf("anilist:manga:id:%d", anilistID)
-	if cached, ok := readAppCachedJSON[*metadata.AniListMangaMetadata](cacheKey); ok && cached != nil {
-		return cached, true
-	}
-	if stale, ok := readAppCachedJSON[*metadata.AniListMangaMetadata](staleAppCacheKey(cacheKey)); ok && stale != nil {
-		return stale, true
+	for _, cacheKey := range []string{
+		fmt.Sprintf("anilist:manga:id:%d", anilistID),
+		fmt.Sprintf("anilist:manga:enrichment:id:%d", anilistID),
+	} {
+		if cached, ok := readAppCachedJSON[*metadata.AniListMangaMetadata](cacheKey); ok && cached != nil {
+			return cached, true
+		}
+		if stale, ok := readAppCachedJSON[*metadata.AniListMangaMetadata](staleAppCacheKey(cacheKey)); ok && stale != nil {
+			return stale, true
+		}
 	}
 	return nil, false
 }
@@ -2141,7 +2258,6 @@ func (a *App) OpenOnlineEpisode(sourceID, episodeID, animeID, animeTitle, coverU
 	if !ok {
 		return nil, fmt.Errorf("%s returned no preferred playable stream for this episode", a.onlineSourceName(sourceID))
 	}
-	streamKind := inferStreamKind(best.URL)
 	candidates := playbackCandidateAnimeStreams(streams, preferredAudio, preferredQuality, 4)
 	saved, _ := a.db.GetOnlineWatchProgress(sourceID, episodeID)
 	startSec := 0.0
@@ -2187,7 +2303,24 @@ func (a *App) OpenOnlineEpisode(sourceID, episodeID, animeID, animeTitle, coverU
 	a.ensurePassiveAnimeTracked(anilistID, malID, animeTitle, "", resolvedCover, 0, 0, "")
 
 	if playbackCtx.PlayerMode == "integrated" {
-		payload := integratedPlaybackPayload(best.URL, best.Referer, best.Cookie, streamKind, playbackCtx.EpisodeTitle)
+		chosenStream := best
+		if integratedChoice, integratedOK := chooseIntegratedPlaybackStreamSource(sourceID, candidates, server.ProbeMediaProxy); integratedOK {
+			chosenStream = integratedChoice
+		}
+		if strings.TrimSpace(chosenStream.URL) == "" {
+			chosenStream = best
+		}
+		if chosenStream.URL != best.URL || chosenStream.Referer != best.Referer {
+			log.Info().
+				Str("source", sourceID).
+				Str("episode", episodeID).
+				Str("initial_stream_host", hostFromURL(best.URL)).
+				Str("chosen_stream_host", hostFromURL(chosenStream.URL)).
+				Str("initial_referer_host", hostFromURL(best.Referer)).
+				Str("chosen_referer_host", hostFromURL(chosenStream.Referer)).
+				Msg("integrated playback selected fallback candidate")
+		}
+		payload := integratedPlaybackPayload(chosenStream.URL, chosenStream.Referer, chosenStream.Cookie, inferStreamKind(chosenStream.URL), playbackCtx.EpisodeTitle, srcName)
 		payload["resume_sec"] = playbackCtx.ProgressSec
 		payload["duration_sec"] = playbackCtx.DurationSec
 		payload["episode_thumbnail"] = playbackCtx.EpisodeThumb
@@ -2223,10 +2356,13 @@ func (a *App) OpenOnlineEpisode(sourceID, episodeID, animeID, animeTitle, coverU
 	return map[string]interface{}{
 		"launched":          true,
 		"stream_url":        chosenStream.URL,
+		"raw_stream_url":    chosenStream.URL,
+		"proxy_url":         mediaProxyURL(chosenStream.URL, chosenStream.Referer, chosenStream.Cookie),
 		"stream_host":       hostFromURL(chosenStream.URL),
 		"referer":           chosenStream.Referer,
 		"referer_host":      hostFromURL(chosenStream.Referer),
 		"stream_kind":       inferStreamKind(chosenStream.URL),
+		"source_label":      srcName,
 		"resume_sec":        playbackCtx.ProgressSec,
 		"duration_sec":      playbackCtx.DurationSec,
 		"episode_thumbnail": playbackCtx.EpisodeThumb,
@@ -2326,7 +2462,16 @@ func (a *App) DiagnoseOnlinePlaybackSource(sourceID, animeID, episodeID string) 
 		return result, nil
 	}
 
-	proxyProbe, proxyErr := server.ProbeMediaProxy(best.URL, best.Referer, best.Cookie)
+	candidates := playbackCandidateAnimeStreams(playable, a.preferredAnimeAudioForEpisode(episodeID), a.preferredAnimeQuality(""), 4)
+	chosenStream := best
+	if integratedChoice, integratedOK := chooseIntegratedPlaybackStreamSource(sourceID, candidates, server.ProbeMediaProxy); integratedOK {
+		chosenStream = integratedChoice
+	}
+	if strings.TrimSpace(chosenStream.URL) == "" {
+		chosenStream = best
+	}
+
+	proxyProbe, proxyErr := server.ProbeMediaProxy(chosenStream.URL, chosenStream.Referer, chosenStream.Cookie)
 	if proxyProbe != nil {
 		result["proxy_probe"] = proxyProbe
 	}
@@ -2337,13 +2482,13 @@ func (a *App) DiagnoseOnlinePlaybackSource(sourceID, animeID, episodeID string) 
 	}
 
 	result["best_stream"] = map[string]interface{}{
-		"url":         best.URL,
-		"host":        hostFromURL(best.URL),
-		"referer":     best.Referer,
-		"refererHost": hostFromURL(best.Referer),
-		"quality":     best.Quality,
-		"audio":       best.Audio,
-		"stream_kind": inferStreamKind(best.URL),
+		"url":         chosenStream.URL,
+		"host":        hostFromURL(chosenStream.URL),
+		"referer":     chosenStream.Referer,
+		"refererHost": hostFromURL(chosenStream.Referer),
+		"quality":     chosenStream.Quality,
+		"audio":       chosenStream.Audio,
+		"stream_kind": inferStreamKind(chosenStream.URL),
 	}
 
 	if proxyProbe != nil && proxyProbe.Classification == "proxy-broken" {
@@ -2372,23 +2517,42 @@ func (a *App) StreamTorrentMagnet(magnet, displayTitle, playerMode string) (map[
 	}
 	localURL := internalServerBaseURL + "/torrent/stream?id=" + url.QueryEscape(session.ID)
 	if a.playbackMode(playerMode) == "integrated" {
-		return integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle), nil
+		payload := integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle, "Torrent")
+		payload["session_id"] = session.ID
+		payload["info_hash"] = session.InfoHash
+		payload["file_name"] = session.FileName
+		payload["contentType"] = session.ContentType
+		return payload, nil
 	}
 	if a.player == nil {
-		return integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle), nil
+		payload := integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle, "Torrent")
+		payload["session_id"] = session.ID
+		payload["info_hash"] = session.InfoHash
+		payload["file_name"] = session.FileName
+		payload["contentType"] = session.ContentType
+		return payload, nil
 	}
 	if err := a.player.OpenEpisode(localURL, -1, 0, session.DisplayTitle, session.FileName, 0); err != nil {
-		return integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle), nil
+		payload := integratedPlaybackPayload(localURL, "", "", "torrent", session.DisplayTitle, "Torrent")
+		payload["session_id"] = session.ID
+		payload["info_hash"] = session.InfoHash
+		payload["file_name"] = session.FileName
+		payload["contentType"] = session.ContentType
+		return payload, nil
 	}
 	return map[string]interface{}{
-		"launched":    true,
-		"stream_url":  localURL,
-		"session_id":  session.ID,
-		"info_hash":   session.InfoHash,
-		"file_name":   session.FileName,
-		"title":       session.DisplayTitle,
-		"contentType": session.ContentType,
-		"stream_kind": "torrent",
+		"launched":          true,
+		"stream_url":        localURL,
+		"raw_stream_url":    localURL,
+		"proxy_url":         localURL,
+		"session_id":        session.ID,
+		"info_hash":         session.InfoHash,
+		"file_name":         session.FileName,
+		"title":             session.DisplayTitle,
+		"contentType":       session.ContentType,
+		"stream_kind":       "torrent",
+		"source_label":      "Torrent",
+		"episode_thumbnail": "",
 	}, nil
 }
 
@@ -2712,7 +2876,7 @@ func (a *App) resolveDashboardMangaFormat(anilistID int) string {
 	if anilistID <= 0 || a.metadata == nil {
 		return ""
 	}
-	meta, err := a.metadata.GetAniListMangaByID(anilistID)
+	meta, err := a.loadAniListMangaMetadata(anilistID)
 	if err != nil || meta == nil {
 		return ""
 	}
@@ -2740,7 +2904,7 @@ func (a *App) resolveTrackedMangaFormat(item db.MangaListEntry, origins map[int]
 		return "MANGA"
 	}
 
-	matches, err := a.metadata.SearchAniListMangaEntries(searchTitle)
+	matches, _, err := a.searchAniListMangaEntriesCached(searchTitle)
 	if err != nil || len(matches) == 0 {
 		return "MANGA"
 	}
@@ -2961,7 +3125,7 @@ func (a *App) backfillAnimeTableVisuals(limit int) error {
 	}
 
 	for _, c := range candidates {
-		meta, err := a.metadata.GetAnimeByID(c.anilistID)
+		meta, err := a.loadAniListAnimeMetadata(c.anilistID)
 		if err != nil || meta == nil || meta.BannerImage == "" {
 			continue
 		}
@@ -2999,7 +3163,7 @@ func (a *App) backfillAnimeListVisuals(limit int) error {
 	}
 
 	for _, anilistID := range candidates {
-		meta, err := a.metadata.GetAnimeByID(anilistID)
+		meta, err := a.loadAniListAnimeMetadata(anilistID)
 		if err != nil || meta == nil || meta.BannerImage == "" {
 			continue
 		}

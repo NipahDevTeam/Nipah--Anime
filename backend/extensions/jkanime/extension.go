@@ -913,13 +913,18 @@ func (e *Extension) GetEmbedURLs(episodeID string) ([]string, error) {
 	animeName := parts[0]
 	epNum := parts[1]
 
-	// Step 1: load episode page to get CSRF token
-	pageURL := fmt.Sprintf("%s/%s/%s", baseURL, animeName, epNum)
+	pageURL := fmt.Sprintf("%s/%s/%s/", baseURL, animeName, epNum)
 	body, err := fetchFullBrowser(pageURL)
 	if err != nil {
 		return nil, fmt.Errorf("jkanime: episode page failed: %w", err)
 	}
 
+	if embeds := jkAnimeEmbedCandidateURLs(extractJKAnimeEmbedCandidates(body)); len(embeds) > 0 {
+		return embeds, nil
+	}
+
+	// Step 2: request servers with CSRF token when the page itself does not
+	// expose the provider list inline.
 	// Extract CSRF token: <meta name="csrf-token" content="TOKEN">
 	csrfToken := ""
 	if idx := strings.Index(body, `name="csrf-token"`); idx != -1 {
@@ -932,8 +937,7 @@ func (e *Extension) GetEmbedURLs(episodeID string) ([]string, error) {
 		}
 	}
 
-	// Step 2: request servers with CSRF token
-	// Try multiple endpoint patterns JKAnime has used
+	// Try multiple endpoint patterns JKAnime has used.
 	endpoints := []string{
 		fmt.Sprintf("%s/ajax/servers/%s/%s/", baseURL, animeName, epNum),
 		fmt.Sprintf("%s/ajax/video_servers/%s/%s/", baseURL, animeName, epNum),
@@ -953,7 +957,10 @@ func (e *Extension) GetEmbedURLs(episodeID string) ([]string, error) {
 		if err2 != nil || len(resp) < 20 {
 			continue
 		}
-		embeds := extractServerURLs(resp)
+		embeds := jkAnimeEmbedCandidateURLs(extractJKAnimeEmbedCandidates(resp))
+		if len(embeds) == 0 {
+			embeds = extractServerURLs(resp)
+		}
 		if len(embeds) > 0 {
 			return embeds, nil
 		}
@@ -970,20 +977,147 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 		return nil, fmt.Errorf("jkanime: no embeds for %s", episodeID)
 	}
 	var sources []extensions.StreamSource
+	seen := map[string]bool{}
 	for _, embed := range embeds {
-		resolved, err := animeflv.Resolve(embed)
+		resolved, err := animeflv.ResolvePlayable(embed)
 		if err != nil {
 			continue
 		}
+		key := strings.TrimSpace(resolved.URL)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
 		sources = append(sources, extensions.StreamSource{
-			URL: resolved.URL, Quality: resolved.Quality,
+			URL:      resolved.URL,
+			Quality:  resolved.Quality,
 			Language: extensions.LangSpanish,
+			Referer:  embed,
 		})
+		if len(sources) >= 2 {
+			break
+		}
 	}
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("jkanime: all resolvers failed")
 	}
 	return sources, nil
+}
+
+type jkAnimeEmbedCandidate struct {
+	url    string
+	server string
+}
+
+func extractJKAnimeEmbedCandidates(body string) []jkAnimeEmbedCandidate {
+	var out []jkAnimeEmbedCandidate
+	seen := map[string]bool{}
+
+	serversJSON := extractJSArray(body, "var servers = ")
+	if serversJSON != "" {
+		var servers []jkanimeDownloadServer
+		if err := json.Unmarshal([]byte(serversJSON), &servers); err == nil {
+			for _, server := range servers {
+				u := decodeRemoteURL(server.Remote)
+				if u == "" || seen[u] || !jkAnimeLooksLikeStreamCandidate(u) {
+					continue
+				}
+				seen[u] = true
+				out = append(out, jkAnimeEmbedCandidate{
+					url:    u,
+					server: strings.TrimSpace(server.Server),
+				})
+			}
+		}
+	}
+
+	for _, u := range extractServerURLs(body) {
+		if seen[u] {
+			continue
+		}
+		seen[u] = true
+		out = append(out, jkAnimeEmbedCandidate{
+			url:    u,
+			server: jkAnimeInferServerName(u),
+		})
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		return jkAnimeServerPriority(out[i].server, out[i].url) < jkAnimeServerPriority(out[j].server, out[j].url)
+	})
+	return out
+}
+
+func jkAnimeEmbedCandidateURLs(candidates []jkAnimeEmbedCandidate) []string {
+	if len(candidates) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if strings.TrimSpace(candidate.url) == "" {
+			continue
+		}
+		out = append(out, candidate.url)
+	}
+	return out
+}
+
+func jkAnimeServerPriority(server, rawURL string) int {
+	value := strings.ToLower(strings.TrimSpace(server + " " + rawURL))
+	switch {
+	case strings.Contains(value, "mp4upload"):
+		return 0
+	case strings.Contains(value, "voe"):
+		return 1
+	case strings.Contains(value, "streamwish"), strings.Contains(value, "sfastwish"),
+		strings.Contains(value, "filemoon"), strings.Contains(value, "vidhide"),
+		strings.Contains(value, "streamhide"), strings.Contains(value, "streamvid"):
+		return 2
+	case strings.Contains(value, "streamtape"):
+		return 3
+	case strings.Contains(value, "dood"):
+		return 4
+	case strings.Contains(value, "jkanime.net/jkplayer/"):
+		return 5
+	case strings.Contains(value, "mega"):
+		return 6
+	case strings.Contains(value, "mediafire"):
+		return 7
+	case strings.Contains(value, "mixdrop"):
+		return 8
+	default:
+		return 99
+	}
+}
+
+func jkAnimeInferServerName(rawURL string) string {
+	value := strings.ToLower(strings.TrimSpace(rawURL))
+	switch {
+	case strings.Contains(value, "jkanime.net/jkplayer/"):
+		return "JKPlayer"
+	case strings.Contains(value, "mp4upload"):
+		return "Mp4upload"
+	case strings.Contains(value, "streamtape"):
+		return "Streamtape"
+	case strings.Contains(value, "voe"):
+		return "VOE"
+	case strings.Contains(value, "streamwish"), strings.Contains(value, "sfastwish"):
+		return "Streamwish"
+	case strings.Contains(value, "filemoon"):
+		return "Filemoon"
+	case strings.Contains(value, "vidhide"):
+		return "Vidhide"
+	case strings.Contains(value, "dood"):
+		return "Doodstream"
+	case strings.Contains(value, "mega"):
+		return "Mega"
+	case strings.Contains(value, "mediafire"):
+		return "Mediafire"
+	case strings.Contains(value, "mixdrop"):
+		return "Mixdrop"
+	default:
+		return ""
+	}
 }
 
 func extractServerURLs(body string) []string {
@@ -1030,7 +1164,7 @@ func extractServerURLs(body string) []string {
 		}
 		u := body[i : i+end]
 		i += end + 1
-		if strings.HasPrefix(u, "http") && !seen[u] && !skip(u) {
+		if strings.HasPrefix(u, "http") && !seen[u] && !skip(u) && jkAnimeLooksLikeStreamCandidate(u) {
 			seen[u] = true
 			out = append(out, u)
 		}
@@ -1046,7 +1180,7 @@ func extractServerURLs(body string) []string {
 			continue
 		}
 		u := part[:end]
-		if strings.Contains(u, ".") && !seen[u] && !skip(u) {
+		if strings.Contains(u, ".") && !seen[u] && !skip(u) && jkAnimeLooksLikeStreamCandidate(u) {
 			seen[u] = true
 			out = append(out, u)
 		}
@@ -1057,6 +1191,35 @@ func extractServerURLs(body string) []string {
 // ─────────────────────────────────────────────────────────────────────────────
 // Synopsis — extract Spanish synopsis from anime detail page
 // ─────────────────────────────────────────────────────────────────────────────
+
+func jkAnimeLooksLikeStreamCandidate(rawURL string) bool {
+	value := strings.ToLower(strings.TrimSpace(rawURL))
+	switch {
+	case strings.Contains(value, "jkanime.net/jkplayer/"),
+		strings.Contains(value, "player.zilla-networks.com/play/"),
+		strings.Contains(value, "streamtape"),
+		strings.Contains(value, "mp4upload"),
+		strings.Contains(value, "voe."),
+		strings.Contains(value, "streamwish"),
+		strings.Contains(value, "wishembed"),
+		strings.Contains(value, "sfastwish"),
+		strings.Contains(value, "awish"),
+		strings.Contains(value, "filemoon"),
+		strings.Contains(value, "mixdrop"),
+		strings.Contains(value, "dood"),
+		strings.Contains(value, "streamhide"),
+		strings.Contains(value, "guccihide"),
+		strings.Contains(value, "streamvid"),
+		strings.Contains(value, "vidhide"),
+		strings.Contains(value, "mega.nz/embed/"),
+		strings.Contains(value, "megaup"),
+		strings.Contains(value, "ok.ru"),
+		strings.Contains(value, "mediafire.com"):
+		return true
+	default:
+		return false
+	}
+}
 
 // GetSynopsisFromTitle converts a title string to a JKAnime slug and fetches
 // the Spanish synopsis. Used for local library anime matched by title.

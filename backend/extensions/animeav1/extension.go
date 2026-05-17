@@ -287,10 +287,10 @@ var av1EmbedSectionRe = regexp.MustCompile(`([A-Z]+):[\{\[]`)
 // animeav1.uns.bio is their custom UPNShare domain (JS hash-based player, not resolvable).
 var av1InternalRe = regexp.MustCompile(`animeav1\.com|animeav1\.uns\.bio`)
 
-// av1SlowPlayerRe matches JS-heavy embed players that always require a browser
-// and take 15+ seconds without reliably succeeding. We try these last.
+// av1DeferredPlayerRe matches embed players we still want to try, but only
+// after the direct or cheaper resolvers have run.
 // mega.nz requires their JS SDK and can't be resolved by our browser fallback either.
-var av1SlowPlayerRe = regexp.MustCompile(`player\.zilla-networks\.com|pixeldrain\.com|1fichier\.com|mega\.nz`)
+var av1DeferredPlayerRe = regexp.MustCompile(`pixeldrain\.com|1fichier\.com|mega\.nz`)
 
 var av1QualityRe = regexp.MustCompile(`(\d{3,4})p`)
 
@@ -343,7 +343,7 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 			continue
 		}
 		seen[u] = true
-		if av1SlowPlayerRe.MatchString(u) {
+		if animeAV1ShouldDeferEmbed(u) {
 			slowCandidates = append(slowCandidates, candidate)
 		} else {
 			fastCandidates = append(fastCandidates, candidate)
@@ -365,7 +365,7 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 		candidate := candidate
 		p.Go(func() resolveResult {
 			log.Info().Str("embed", candidate.url).Str("track", candidate.track).Msg("trying embed")
-			resolved, err := animeflv.Resolve(candidate.url)
+			resolved, err := animeflv.ResolvePlayable(candidate.url)
 			if err != nil {
 				log.Error().Err(err).Str("embed", candidate.url).Str("track", candidate.track).Msg("failed to resolve embed")
 				return resolveResult{}
@@ -400,10 +400,7 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 	if len(selected) == 0 || animeAV1NeedsMoreAudioVariants(selected, variants) {
 		for idx, candidate := range slowCandidates {
 			log.Info().Str("embed", candidate.url).Str("track", candidate.track).Msg("trying slow embed")
-			resolved, err := animeflv.Resolve(candidate.url)
-			if err != nil {
-				resolved, err = animeflv.BrowserResolveMedia(candidate.url)
-			}
+			resolved, err := animeflv.ResolvePlayable(candidate.url)
 			if err != nil {
 				log.Error().Err(err).Str("embed", candidate.url).Str("track", candidate.track).Msg("failed to resolve slow embed")
 				continue
@@ -605,6 +602,10 @@ func animeAV1NormalizeAudio(audio string) string {
 	default:
 		return ""
 	}
+}
+
+func animeAV1ShouldDeferEmbed(url string) bool {
+	return av1DeferredPlayerRe.MatchString(strings.ToLower(strings.TrimSpace(url)))
 }
 
 func extractEmbedsObject(body string) string {

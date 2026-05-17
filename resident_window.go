@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	appLaunchWidth             = 960
-	appLaunchHeight            = 620
-	startupRestoreWidth        = 1400
-	startupRestoreHeight       = 900
+	appLaunchWidth             = 1120
+	appLaunchHeight            = 720
+	startupRestoreWidth        = 1480
+	startupRestoreHeight       = 960
 	residentWindowRestoreDelay = 160 * time.Millisecond
 )
 
@@ -40,8 +40,11 @@ var (
 	runtimeWindowUnmaximise = runtime.WindowUnmaximise
 	runtimeWindowFullscreen = runtime.WindowFullscreen
 
-	runtimeWindowSetSize     = runtime.WindowSetSize
-	runtimeWindowSetPosition = runtime.WindowSetPosition
+	runtimeWindowSetSize      = runtime.WindowSetSize
+	runtimeWindowSetPosition  = runtime.WindowSetPosition
+	runtimeWindowSetDarkTheme = runtime.WindowSetDarkTheme
+	runtimeWindowSetMinSize   = runtime.WindowSetMinSize
+	runtimeWindowCenter       = runtime.WindowCenter
 
 	runtimeWindowGetSize          = runtime.WindowGetSize
 	runtimeWindowGetPosition      = runtime.WindowGetPosition
@@ -77,10 +80,13 @@ func newWailsAppOptions(app *App, processStarted time.Time) *options.App {
 		Height:    appLaunchHeight,
 		MinWidth:  920,
 		MinHeight: 560,
+		Frameless: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour:  &options.RGBA{R: 10, G: 10, B: 14, A: 1},
+		CSSDragProperty:   "--wails-draggable",
+		CSSDragValue:      "drag",
+		BackgroundColour:  &options.RGBA{R: 10, G: 10, B: 14, A: 255},
 		HideWindowOnClose: true,
 		OnStartup: func(ctx context.Context) {
 			installerLog.Info().Dur("since_process_start", time.Since(processStarted)).Msg("wails startup callback")
@@ -210,20 +216,8 @@ func (a *App) RestoreResidentWindow(_ options.SecondInstanceData) error {
 	if runtimeWindowIsMaximised(windowCtx) {
 		return nil
 	}
-	if state.wasMaximised {
-		scheduleResidentWindowRestore(residentWindowRestoreDelay, func() {
-			runtimeWindowMaximise(windowCtx)
-		})
-		return nil
-	}
-	if !state.hasBounds {
-		return nil
-	}
-
 	scheduleResidentWindowRestore(residentWindowRestoreDelay, func() {
-		runtimeWindowUnmaximise(windowCtx)
-		runtimeWindowSetSize(windowCtx, state.width, state.height)
-		runtimeWindowSetPosition(windowCtx, state.x, state.y)
+		runtimeWindowMaximise(windowCtx)
 	})
 	return nil
 }

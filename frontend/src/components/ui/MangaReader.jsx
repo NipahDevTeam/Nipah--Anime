@@ -8,7 +8,9 @@ import {
 import { useI18n } from '../../lib/i18n'
 import {
   getReaderCanvasPageLayout,
+  getReaderPagedSlotMetrics,
   getReaderCanvasVariables,
+  getReaderScrollPageLayout,
   getReaderScrollSheetVariables,
   getReaderViewMode,
   getReaderViewport,
@@ -20,6 +22,12 @@ import {
   stepReaderIndex,
   toggleReaderBookmark,
 } from './mangaReaderLayout'
+import {
+  getContentBoxRect,
+  getCroppedMediaLayout,
+  measureReaderContentBox,
+  normalizeReaderContentBox,
+} from './reader/readerContentBox'
 import ReaderStageHeader from './reader/ReaderStageHeader'
 import ReaderSettingsSheet from './reader/ReaderSettingsSheet'
 import ReaderChapterBrowser from './reader/ReaderChapterBrowser'
@@ -141,38 +149,65 @@ function ReaderSliderRow({ label, icon, value, min, max, step = 1, suffix = '', 
 function preloadReaderPage(page) {
   return new Promise((resolve) => {
     if (!page?.proxy_url) {
-      resolve()
+      resolve(null)
       return
     }
 
     const image = new Image()
     let finished = false
-    const finish = () => {
+    const finish = (metrics = null) => {
       if (finished) return
       finished = true
       window.clearTimeout(timeout)
-      resolve()
+      resolve(metrics)
     }
     const timeout = window.setTimeout(finish, READER_PAGE_PRELOAD_TIMEOUT_MS)
-    image.onload = finish
-    image.onerror = finish
+    image.onload = () => finish({
+      renderKey: page.renderKey,
+      naturalWidth: Number(image.naturalWidth) || 0,
+      naturalHeight: Number(image.naturalHeight) || 0,
+    })
+    image.onerror = () => finish(null)
     image.decoding = 'async'
     image.src = page.proxy_url
   })
 }
 
-function ReaderPageSheet({ page, alt, pageStyle, pageMediaStyle, sheetClassName = '', onImageLoad = null }) {
+function ReaderPageSheet({
+  page,
+  alt,
+  pageStyle,
+  pageMediaStyle,
+  sheetClassName = '',
+  cropStyle = null,
+  croppedMediaStyle = null,
+  onImageLoad = null,
+}) {
   return (
     <div className={`reader-page-sheet${sheetClassName ? ` ${sheetClassName}` : ''}`} style={pageStyle}>
-      <img
-        src={page.proxy_url}
-        alt={alt}
-        className="reader-page-media"
-        style={pageMediaStyle}
-        onLoad={onImageLoad}
-        loading="lazy"
-        decoding="async"
-      />
+      {croppedMediaStyle ? (
+        <div className="reader-page-media-crop" style={cropStyle}>
+          <img
+            src={page.proxy_url}
+            alt={alt}
+            className="reader-page-media reader-page-media--cropped"
+            style={croppedMediaStyle}
+            onLoad={onImageLoad}
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
+      ) : (
+        <img
+          src={page.proxy_url}
+          alt={alt}
+          className="reader-page-media"
+          style={pageMediaStyle}
+          onLoad={onImageLoad}
+          loading="lazy"
+          decoding="async"
+        />
+      )}
     </div>
   )
 }
@@ -203,8 +238,8 @@ export default function MangaReader({
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [bookmark, setBookmark] = useState(null)
   const [reloadToken, setReloadToken] = useState(0)
-  const [spreadSize, setSpreadSize] = useState({ width: 0, height: 0 })
-  const [pageCanvasMetrics, setPageCanvasMetrics] = useState({ width: 0, height: 0 })
+  const [scrollViewportMetrics, setScrollViewportMetrics] = useState({ width: 0, height: 0 })
+  const [stageSurfaceMetrics, setStageSurfaceMetrics] = useState({ width: 0, height: 0 })
   const [pageIntrinsicSizes, setPageIntrinsicSizes] = useState({})
   const [chapterBrowserOpen, setChapterBrowserOpen] = useState(false)
 
@@ -214,20 +249,25 @@ export default function MangaReader({
   const currentPageRef = useRef(0)
   const chapterLoadGeneration = useRef(0)
   const pageRefs = useRef([])
+  const stageSurfaceRef = useRef(null)
   const verticalRef = useRef(null)
   const pageCanvasRef = useRef(null)
-  const spreadRef = useRef(null)
 
   const chapterIndex = chapters.findIndex((chapter) => chapter.id === chapterID)
   const currentChapter = chapterIndex >= 0 ? chapters[chapterIndex] ?? null : null
   const prevChapter = chapterIndex > 0 ? chapters[chapterIndex - 1] : null
   const nextChapter = chapterIndex >= 0 ? chapters[chapterIndex + 1] ?? null : null
   const renderedPages = useMemo(() => pages.slice(0, visibleCount), [pages, visibleCount])
+  const pageMetrics = useMemo(
+    () => pages.map((page) => pageIntrinsicSizes[page.renderKey] ?? null),
+    [pageIntrinsicSizes, pages],
+  )
   const viewport = useMemo(() => getReaderViewport({
     readingMode: readerSettings.readingMode,
     currentPage,
     totalPages: pages.length,
-  }), [currentPage, pages.length, readerSettings.readingMode])
+    pageMetrics,
+  }), [currentPage, pageMetrics, pages.length, readerSettings.readingMode])
 
   const progressPage = viewport.visiblePages.length
     ? viewport.visiblePages[viewport.visiblePages.length - 1] + 1
@@ -316,22 +356,41 @@ export default function MangaReader({
     updateReaderSettings({ settingsOpen: !readerSettings.settingsOpen })
   }, [readerSettings.settingsOpen, updateReaderSettings])
 
+  const storePageMetrics = useCallback((pageKey, nextMetrics) => {
+    if (!pageKey || !nextMetrics) return
+
+    setPageIntrinsicSizes((current) => {
+      const existing = current[pageKey]
+      const sameContentBox = existing?.contentBox?.top === nextMetrics.contentBox?.top
+        && existing?.contentBox?.right === nextMetrics.contentBox?.right
+        && existing?.contentBox?.bottom === nextMetrics.contentBox?.bottom
+        && existing?.contentBox?.left === nextMetrics.contentBox?.left
+      if (
+        existing?.naturalWidth === nextMetrics.naturalWidth
+        && existing?.naturalHeight === nextMetrics.naturalHeight
+        && sameContentBox
+      ) {
+        return current
+      }
+      return {
+        ...current,
+        [pageKey]: nextMetrics,
+      }
+    })
+  }, [])
+
   const handleReaderPageLoad = useCallback((pageKey, event) => {
     const naturalWidth = Number(event?.currentTarget?.naturalWidth) || 0
     const naturalHeight = Number(event?.currentTarget?.naturalHeight) || 0
     if (!pageKey || !naturalWidth || !naturalHeight) return
 
-    setPageIntrinsicSizes((current) => {
-      const existing = current[pageKey]
-      if (existing?.naturalWidth === naturalWidth && existing?.naturalHeight === naturalHeight) {
-        return current
-      }
-      return {
-        ...current,
-        [pageKey]: { naturalWidth, naturalHeight },
-      }
-    })
-  }, [])
+    storePageMetrics(pageKey, { naturalWidth, naturalHeight, contentBox: null })
+    void measureReaderContentBox(event?.currentTarget).then((contentBox) => {
+      const normalizedContentBox = normalizeReaderContentBox(contentBox)
+      if (!normalizedContentBox) return
+      storePageMetrics(pageKey, { naturalWidth, naturalHeight, contentBox: normalizedContentBox })
+    }).catch(() => {})
+  }, [storePageMetrics])
 
   const scrollReaderViewport = useCallback((direction, behavior = 'smooth') => {
     const targetNode = readerSettings.readingMode === 'scroll' ? verticalRef.current : pageCanvasRef.current
@@ -401,9 +460,10 @@ export default function MangaReader({
         currentPage: page,
         totalPages: pages.length,
         direction,
+        pageMetrics,
       }))
     })
-  }, [pages.length, readerSettings.readingMode])
+  }, [pageMetrics, pages.length, readerSettings.readingMode])
 
   const handleSliderJump = useCallback((nextPageNumber) => {
     const nextIndex = Math.max(0, Math.min((Number(nextPageNumber) || 1) - 1, Math.max(pages.length - 1, 0)))
@@ -468,6 +528,7 @@ export default function MangaReader({
     setCurrentPage(0)
     setVisibleCount(INITIAL_VERTICAL_PAGE_BATCH)
     setTransitioningChapterID('')
+    setScrollViewportMetrics({ width: 0, height: 0 })
     setPageIntrinsicSizes({})
     pageRefs.current = []
     const loadGeneration = ++chapterLoadGeneration.current
@@ -482,8 +543,19 @@ export default function MangaReader({
         const blockingPreloadCount = readerSettings.readingMode === 'scroll'
           ? Math.min(INITIAL_VERTICAL_PAGE_BATCH, Math.max(nextPages.length, 1))
           : Math.min(nextPages.length, readerSettings.readingMode === 'double' ? 2 : 1)
-        await Promise.allSettled(nextPages.slice(0, blockingPreloadCount).map(preloadReaderPage))
+        const blockingPreloadResults = await Promise.allSettled(nextPages.slice(0, blockingPreloadCount).map(preloadReaderPage))
+        const blockingMetrics = blockingPreloadResults.reduce((accumulator, result) => {
+          const value = result.status === 'fulfilled' ? result.value : null
+          if (!value?.renderKey || !value.naturalWidth || !value.naturalHeight) return accumulator
+          accumulator[value.renderKey] = {
+            naturalWidth: value.naturalWidth,
+            naturalHeight: value.naturalHeight,
+            contentBox: null,
+          }
+          return accumulator
+        }, {})
         void Promise.allSettled(nextPages.slice(blockingPreloadCount).map(preloadReaderPage))
+        setPageIntrinsicSizes(blockingMetrics)
         setPages(nextPages)
         setCurrentPage(0)
         setVisibleCount(
@@ -500,7 +572,7 @@ export default function MangaReader({
         if (chapterLoadGeneration.current !== loadGeneration) return
         setLoading(false)
       })
-  }, [chapterID, dataSaver, isEnglish, mangaID, readerSettings.readingMode, reloadToken, sourceID])
+  }, [chapterID, dataSaver, isEnglish, mangaID, reloadToken, sourceID])
 
   useEffect(() => {
     const handler = (event) => {
@@ -588,14 +660,13 @@ export default function MangaReader({
   }, [pages, readerSettings.readingMode, viewport.endIndex, viewport.startIndex])
 
   useEffect(() => {
-    const node = spreadRef.current
+    const node = verticalRef.current
     if (!node || typeof ResizeObserver === 'undefined') return undefined
 
-    const updateSpreadSize = () => {
-      const rect = node.getBoundingClientRect()
-      setSpreadSize((current) => {
-        const nextWidth = Math.round(rect.width)
-        const nextHeight = Math.round(rect.height)
+    const updateScrollViewportMetrics = () => {
+      setScrollViewportMetrics((current) => {
+        const nextWidth = Math.max(0, Math.round(node.clientWidth))
+        const nextHeight = Math.max(0, Math.round(node.clientHeight))
         if (current.width === nextWidth && current.height === nextHeight) {
           return current
         }
@@ -603,27 +674,23 @@ export default function MangaReader({
       })
     }
 
-    updateSpreadSize()
+    updateScrollViewportMetrics()
     const observer = new ResizeObserver(() => {
-      updateSpreadSize()
+      updateScrollViewportMetrics()
     })
     observer.observe(node)
 
     return () => observer.disconnect()
-  }, [pages.length, readerSettings.readingMode, readerSettings.settingsOpen])
+  }, [readerSettings.readingMode])
 
   useEffect(() => {
-    const node = pageCanvasRef.current
+    const node = stageSurfaceRef.current
     if (!node || typeof ResizeObserver === 'undefined') return undefined
 
-    const updatePageCanvasMetrics = () => {
-      const styles = window.getComputedStyle(node)
-      const horizontalPadding = (Number.parseFloat(styles.paddingLeft) || 0) + (Number.parseFloat(styles.paddingRight) || 0)
-      const verticalPadding = (Number.parseFloat(styles.paddingTop) || 0) + (Number.parseFloat(styles.paddingBottom) || 0)
-
-      setPageCanvasMetrics((current) => {
-        const nextWidth = Math.max(0, Math.round(node.clientWidth - horizontalPadding))
-        const nextHeight = Math.max(0, Math.round(node.clientHeight - verticalPadding))
+    const updateStageSurfaceMetrics = () => {
+      setStageSurfaceMetrics((current) => {
+        const nextWidth = Math.max(0, Math.round(node.clientWidth))
+        const nextHeight = Math.max(0, Math.round(node.clientHeight))
         if (current.width === nextWidth && current.height === nextHeight) {
           return current
         }
@@ -631,14 +698,14 @@ export default function MangaReader({
       })
     }
 
-    updatePageCanvasMetrics()
+    updateStageSurfaceMetrics()
     const observer = new ResizeObserver(() => {
-      updatePageCanvasMetrics()
+      updateStageSurfaceMetrics()
     })
     observer.observe(node)
 
     return () => observer.disconnect()
-  }, [readerSettings.readingMode, readerSettings.settingsOpen])
+  }, [readerSettings.readingMode, readerSettings.settingsOpen, uiVisible])
 
   useEffect(() => {
     return () => {
@@ -734,8 +801,7 @@ export default function MangaReader({
       `contrast(${1 + (readerSettings.contrast / 100)})`,
     ]
     if (readerSettings.enhance) {
-      filterParts.push('grayscale(0.02)')
-      filterParts.push('contrast(1.04)')
+      filterParts.push('grayscale(0.01)')
     }
     return {
       filter: filterParts.join(' '),
@@ -759,19 +825,11 @@ export default function MangaReader({
   }, [effectivePageFit, readerSettings.zoomPercent])
 
   const pagedSlotMetrics = useMemo(() => {
-    const columnCount = readerSettings.readingMode === 'double' ? 2 : 1
-    const spreadGap = readerSettings.readingMode === 'double' ? 18 : 0
-    const stageWidth = spreadSize.width || pageCanvasMetrics.width
-    const stageHeight = readerSettings.readingMode === 'double'
-      ? (pageCanvasMetrics.height || spreadSize.height)
-      : spreadSize.height
-    const safeSpreadWidth = Math.max(0, stageWidth - (spreadGap * (columnCount - 1)))
-
-    return {
-      width: columnCount > 0 ? safeSpreadWidth / columnCount : 0,
-      height: stageHeight,
-    }
-  }, [pageCanvasMetrics.height, pageCanvasMetrics.width, readerSettings.readingMode, spreadSize.height, spreadSize.width])
+    return getReaderPagedSlotMetrics({
+      readingMode: readerSettings.readingMode,
+      stageSurfaceMetrics,
+    })
+  }, [readerSettings.readingMode, stageSurfaceMetrics.height, stageSurfaceMetrics.width])
 
   const chapterLineTitle = currentChapter?.title || `${isEnglish ? 'Chapter' : 'Capitulo'} ${currentChapter?.number || chapterIndex + 1 || ''}`
 
@@ -888,22 +946,74 @@ export default function MangaReader({
               onClick={toggleReaderChrome}
             >
               <div className={`reader-scroll-stack${stripReadingMode ? ' reader-scroll-stack--strip' : ''}`} style={scrollSheetStyle}>
-                {renderedPages.map((page, index) => (
-                  <div
-                    key={page.renderKey}
-                    ref={(node) => { pageRefs.current[index] = node }}
-                    className="reader-scroll-slice"
-                  >
-                    <img
-                      src={page.proxy_url}
-                      alt={`${isEnglish ? 'Page' : 'Pagina'} ${index + 1}`}
-                      className="reader-scroll-image"
-                      style={pageImageStyle}
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  </div>
-                ))}
+                {renderedPages.map((page, index) => {
+                  const intrinsicPageSize = pageIntrinsicSizes[page.renderKey]
+                  const contentBoxRect = getContentBoxRect({
+                    naturalWidth: intrinsicPageSize?.naturalWidth,
+                    naturalHeight: intrinsicPageSize?.naturalHeight,
+                    contentBox: intrinsicPageSize?.contentBox,
+                  })
+                  const scrollPageLayout = getReaderScrollPageLayout({
+                    effectivePageFit,
+                    zoomPercent: readerSettings.zoomPercent,
+                    viewportWidth: scrollViewportMetrics.width,
+                    viewportHeight: scrollViewportMetrics.height,
+                    naturalWidth: intrinsicPageSize?.naturalWidth,
+                    naturalHeight: intrinsicPageSize?.naturalHeight,
+                  })
+                  const croppedScrollMediaStyle = scrollPageLayout && contentBoxRect
+                    ? getCroppedMediaLayout({
+                      naturalWidth: intrinsicPageSize?.naturalWidth,
+                      naturalHeight: intrinsicPageSize?.naturalHeight,
+                      contentBox: intrinsicPageSize?.contentBox,
+                      frameWidth: scrollPageLayout.width,
+                      frameHeight: scrollPageLayout.height,
+                    })
+                    : null
+
+                  return (
+                    <div
+                      key={page.renderKey}
+                      ref={(node) => { pageRefs.current[index] = node }}
+                      className="reader-scroll-slice"
+                    >
+                      {croppedScrollMediaStyle && scrollPageLayout ? (
+                        <div
+                          className="reader-page-media-crop reader-page-media-crop--scroll"
+                          style={{ width: `${scrollPageLayout.width}px`, height: `${scrollPageLayout.height}px` }}
+                        >
+                          <img
+                            src={page.proxy_url}
+                            alt={`${isEnglish ? 'Page' : 'Pagina'} ${index + 1}`}
+                            className="reader-page-media reader-page-media--cropped"
+                            style={{
+                              ...pageImageStyle,
+                              width: `${croppedScrollMediaStyle.width}px`,
+                              height: `${croppedScrollMediaStyle.height}px`,
+                              left: `${croppedScrollMediaStyle.left}px`,
+                              top: `${croppedScrollMediaStyle.top}px`,
+                            }}
+                            onLoad={(event) => handleReaderPageLoad(page.renderKey, event)}
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        </div>
+                      ) : (
+                        <img
+                          src={page.proxy_url}
+                          alt={`${isEnglish ? 'Page' : 'Pagina'} ${index + 1}`}
+                          className="reader-scroll-image"
+                          style={scrollPageLayout
+                            ? { ...pageImageStyle, width: `${scrollPageLayout.width}px`, height: `${scrollPageLayout.height}px` }
+                            : pageImageStyle}
+                          onLoad={(event) => handleReaderPageLoad(page.renderKey, event)}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      )}
+                    </div>
+                  )
+                })}
               </div>
 
               <div className="reader-end-card">
@@ -929,63 +1039,87 @@ export default function MangaReader({
           ) : null}
 
           {!loading && !error && !continuousScrollMode ? (
-            <div
-              ref={pageCanvasRef}
-              className={`reader-page-canvas${readerSettings.readingDirection === 'rtl' ? ' is-rtl' : ''}`}
-              onClick={toggleReaderChrome}
-            >
-              <button type="button" className="reader-page-zone reader-page-zone--prev" aria-label={isEnglish ? 'Previous page' : 'Pagina anterior'} onClick={(event) => {
-                event.stopPropagation()
-                handlePageStep('prev')
-              }} />
-              <button type="button" className="reader-page-zone reader-page-zone--next" aria-label={isEnglish ? 'Next page' : 'Pagina siguiente'} onClick={(event) => {
-                event.stopPropagation()
-                handlePageStep('next')
-              }} />
+            <div ref={stageSurfaceRef} className="reader-stage-surface">
+              <div
+                ref={pageCanvasRef}
+                className={`reader-page-canvas${readerSettings.readingDirection === 'rtl' ? ' is-rtl' : ''}`}
+                onClick={toggleReaderChrome}
+              >
+                <button type="button" className="reader-page-zone reader-page-zone--prev" aria-label={isEnglish ? 'Previous page' : 'Pagina anterior'} onClick={(event) => {
+                  event.stopPropagation()
+                  handlePageStep('prev')
+                }} />
+                <button type="button" className="reader-page-zone reader-page-zone--next" aria-label={isEnglish ? 'Next page' : 'Pagina siguiente'} onClick={(event) => {
+                  event.stopPropagation()
+                  handlePageStep('next')
+                }} />
 
-              <button type="button" className="reader-page-arrow reader-page-arrow--prev" onClick={(event) => {
-                event.stopPropagation()
-                handlePageStep('prev')
-              }} disabled={viewport.startIndex === 0}>
-                <ReaderIcon kind="back" />
-              </button>
+                <button type="button" className="reader-page-arrow reader-page-arrow--prev" onClick={(event) => {
+                  event.stopPropagation()
+                  handlePageStep('prev')
+                }} disabled={viewport.startIndex === 0}>
+                  <ReaderIcon kind="back" />
+                </button>
 
-              <div ref={spreadRef} className={`reader-spread reader-spread--${readerSettings.readingMode}`} style={readerCanvasStyle}>
-                {(readerSettings.readingDirection === 'rtl' ? [...viewport.visiblePages].reverse() : viewport.visiblePages).map((pageIndex, spreadSlotIndex) => {
-                  const page = pages[pageIndex]
-                  if (!page) return null
-                  const intrinsicPageSize = pageIntrinsicSizes[page.renderKey]
-                  const pageLayout = getReaderCanvasPageLayout({
-                    effectivePageFit,
-                    zoomPercent: readerSettings.zoomPercent,
-                    slotWidth: pagedSlotMetrics.width,
-                    slotHeight: pagedSlotMetrics.height,
-                    naturalWidth: intrinsicPageSize?.naturalWidth,
-                    naturalHeight: intrinsicPageSize?.naturalHeight,
-                  })
-                  const sheetClassName = readerSettings.readingMode === 'double'
-                    ? `reader-page-sheet--double ${spreadSlotIndex === 0 ? 'reader-page-sheet--double-left' : 'reader-page-sheet--double-right'}`
-                    : 'reader-page-sheet--paged'
-                  return (
-                    <ReaderPageSheet
-                      key={page.renderKey}
-                      page={page}
-                      alt={`${isEnglish ? 'Page' : 'Pagina'} ${pageIndex + 1}`}
-                      pageStyle={pageLayout ? { width: `${pageLayout.width}px`, height: `${pageLayout.height}px` } : undefined}
-                      pageMediaStyle={pageLayout ? { ...pageImageStyle, width: '100%', height: '100%' } : pageImageStyle}
-                      sheetClassName={sheetClassName}
-                      onImageLoad={(event) => handleReaderPageLoad(page.renderKey, event)}
-                    />
-                  )
-                })}
+                <div className={`reader-spread reader-spread--${readerSettings.readingMode}`} style={readerCanvasStyle}>
+                  {(readerSettings.readingDirection === 'rtl' ? [...viewport.visiblePages].reverse() : viewport.visiblePages).map((pageIndex, spreadSlotIndex) => {
+                    const page = pages[pageIndex]
+                    if (!page) return null
+                    const intrinsicPageSize = pageIntrinsicSizes[page.renderKey]
+                    const contentBoxRect = getContentBoxRect({
+                      naturalWidth: intrinsicPageSize?.naturalWidth,
+                      naturalHeight: intrinsicPageSize?.naturalHeight,
+                      contentBox: intrinsicPageSize?.contentBox,
+                    })
+                    const pageLayout = getReaderCanvasPageLayout({
+                      effectivePageFit,
+                      zoomPercent: readerSettings.zoomPercent,
+                      slotWidth: pagedSlotMetrics.width,
+                      slotHeight: pagedSlotMetrics.height,
+                      naturalWidth: intrinsicPageSize?.naturalWidth,
+                      naturalHeight: intrinsicPageSize?.naturalHeight,
+                    })
+                    const croppedMediaStyle = pageLayout && contentBoxRect
+                      ? getCroppedMediaLayout({
+                        naturalWidth: intrinsicPageSize?.naturalWidth,
+                        naturalHeight: intrinsicPageSize?.naturalHeight,
+                        contentBox: intrinsicPageSize?.contentBox,
+                        frameWidth: pageLayout.width,
+                        frameHeight: pageLayout.height,
+                      })
+                      : null
+                    const sheetClassName = readerSettings.readingMode === 'double'
+                      ? `reader-page-sheet--double ${spreadSlotIndex === 0 ? 'reader-page-sheet--double-left' : 'reader-page-sheet--double-right'}`
+                      : 'reader-page-sheet--paged'
+                    return (
+                      <ReaderPageSheet
+                        key={page.renderKey}
+                        page={page}
+                        alt={`${isEnglish ? 'Page' : 'Pagina'} ${pageIndex + 1}`}
+                        pageStyle={pageLayout ? { width: `${pageLayout.width}px`, height: `${pageLayout.height}px` } : undefined}
+                        pageMediaStyle={pageLayout ? { ...pageImageStyle, width: '100%', height: '100%' } : pageImageStyle}
+                        cropStyle={pageLayout ? { width: `${pageLayout.width}px`, height: `${pageLayout.height}px` } : null}
+                        croppedMediaStyle={croppedMediaStyle ? {
+                          ...pageImageStyle,
+                          width: `${croppedMediaStyle.width}px`,
+                          height: `${croppedMediaStyle.height}px`,
+                          left: `${croppedMediaStyle.left}px`,
+                          top: `${croppedMediaStyle.top}px`,
+                        } : null}
+                        sheetClassName={sheetClassName}
+                        onImageLoad={(event) => handleReaderPageLoad(page.renderKey, event)}
+                      />
+                    )
+                  })}
+                </div>
+
+                <button type="button" className="reader-page-arrow reader-page-arrow--next" onClick={(event) => {
+                  event.stopPropagation()
+                  handlePageStep('next')
+                }} disabled={viewport.endIndex >= pages.length - 1}>
+                  <ReaderIcon kind="chapter-next" />
+                </button>
               </div>
-
-              <button type="button" className="reader-page-arrow reader-page-arrow--next" onClick={(event) => {
-                event.stopPropagation()
-                handlePageStep('next')
-              }} disabled={viewport.endIndex >= pages.length - 1}>
-                <ReaderIcon kind="chapter-next" />
-              </button>
             </div>
           ) : null}
         </section>

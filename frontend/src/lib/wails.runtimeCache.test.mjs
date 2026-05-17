@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 import {
   __clearRuntimeWarmCache,
+  invalidateRuntimeCache,
   rememberRuntimeCache,
   shouldCacheDirectMangaChapterList,
   shouldCacheMangaSourceMatchList,
@@ -42,6 +43,18 @@ async function run() {
   await rememberRuntimeCache(['source-match-list'], 60_000, readyLoader, { shouldCache: shouldCacheMangaSourceMatchList })
   await rememberRuntimeCache(['source-match-list'], 60_000, readyLoader, { shouldCache: shouldCacheMangaSourceMatchList })
   assert.equal(readyCalls, 1, 'fully ready source-match payloads should still be cached')
+
+  __clearRuntimeWarmCache()
+  let invalidatedCalls = 0
+  const invalidatedLoader = async () => {
+    invalidatedCalls += 1
+    return { episodes: [{ id: 'ep-1' }] }
+  }
+
+  await rememberRuntimeCache(['online-episodes', 'animepahe-en', 'series-1'], 60_000, invalidatedLoader)
+  invalidateRuntimeCache(['online-episodes', 'animepahe-en', 'series-1'])
+  await rememberRuntimeCache(['online-episodes', 'animepahe-en', 'series-1'], 60_000, invalidatedLoader)
+  assert.equal(invalidatedCalls, 2, 'explicit runtime cache invalidation should force a fresh online episode load after thumbnail updates')
 
   assert.equal(shouldCacheDirectMangaChapterList('m440-es'), true, 'rebuilt manga sources should use direct chapter runtime caching')
   assert.equal(shouldCacheDirectMangaChapterList('senshimanga-es'), true, 'stable chapter sources should still use direct runtime caching')

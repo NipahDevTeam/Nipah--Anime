@@ -46,8 +46,8 @@ export default function ReaderSettingsSheet({
       <div className="reader-settings-section">
         <div className="reader-settings-label">{isEnglish ? 'Page Fit' : 'Ajuste de pagina'}</div>
         <div className="reader-settings-button-grid reader-settings-button-grid--fit">
-          <ReaderToggleButton active={readerSettings.pageFit === 'width'} icon="width" label="Fit Width" onClick={() => onSetPageFit('width')} />
-          <ReaderToggleButton active={readerSettings.pageFit === 'height'} icon="height" label="Fit Height" onClick={() => onSetPageFit('height')} />
+          <ReaderToggleButton active={readerSettings.pageFit === 'contain'} icon="height" label="Fit Height" onClick={() => onSetPageFit('contain')} />
+          <ReaderToggleButton active={readerSettings.pageFit === 'overflow'} icon="width" label="Fit Width" onClick={() => onSetPageFit('overflow')} />
           <ReaderToggleButton active={readerSettings.pageFit === 'original'} icon="original" label="Original" onClick={() => onSetPageFit('original')} />
           <ReaderToggleButton active={readerSettings.pageFit === 'cover'} icon="cover" label="Cover" onClick={() => onSetPageFit('cover')} />
         </div>
