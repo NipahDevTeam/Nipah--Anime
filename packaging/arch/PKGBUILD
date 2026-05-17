@@ -1,5 +1,5 @@
 pkgname=nipah-anime
-pkgver=3.3.2
+pkgver=3.5.1
 pkgrel=1
 pkgdesc="Anime streaming and manga reader desktop client with AniList sync"
 arch=('x86_64')
@@ -24,7 +24,7 @@ package() {
   cd "${srcdir}/Nipah--Anime-${pkgver}"
 
   install -Dm755 "build/bin/Nipah! Anime" "${pkgdir}/usr/lib/nipah-anime/nipah-anime"
-  install -Dm644 "appimg.png" "${pkgdir}/usr/share/icons/hicolor/512x512/apps/nipah-anime.png"
+  install -Dm644 "build/appicon.png" "${pkgdir}/usr/share/icons/hicolor/512x512/apps/nipah-anime.png"
   install -Dm644 "packaging/linux/nipah-anime.desktop" "${pkgdir}/usr/share/applications/nipah-anime.desktop"
   install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/nipah-anime/LICENSE"
 

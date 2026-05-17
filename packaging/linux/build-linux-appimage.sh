@@ -76,9 +76,6 @@ echo "[Linux] Building Wails app"
 
 APP_BINARY="${ROOT_DIR}/build/bin/Nipah! Anime"
 APP_ICON="${ROOT_DIR}/build/appicon.png"
-if [[ ! -f "${APP_ICON}" ]]; then
-  APP_ICON="${ROOT_DIR}/appimg.png"
-fi
 MPV_BINARY="$(command -v mpv || true)"
 FFMPEG_BINARY="$(command -v ffmpeg || true)"
 if [[ ! -x "${APP_BINARY}" ]]; then
@@ -127,7 +124,12 @@ EOF
 chmod +x "${APPDIR}/AppRun"
 ln -sf "nipah-anime-bin" "${APPDIR}/usr/bin/nipah-anime"
 
-cp "${APP_ICON}" "${APPDIR}/usr/share/icons/hicolor/512x512/apps/nipah-anime.png"
+echo "[Linux] Normalizing AppImage icon"
+"${FFMPEG_BINARY}" -y \
+  -i "${APP_ICON}" \
+  -vf "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000" \
+  -frames:v 1 \
+  "${APPDIR}/usr/share/icons/hicolor/512x512/apps/nipah-anime.png" >/dev/null 2>&1
 cp "${ROOT_DIR}/packaging/linux/nipah-anime-appimage.desktop" "${APPDIR}/usr/share/applications/nipah-anime.desktop"
 
 echo "[Linux] Packaging AppImage"

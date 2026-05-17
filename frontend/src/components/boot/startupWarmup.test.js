@@ -45,17 +45,21 @@ assert.ok(plan.blocking.some((task) => task.key === 'anime-home-catalog'))
 assert.ok(plan.blocking.some((task) => task.key === 'manga-home-catalog'))
 assert.ok(plan.blocking.some((task) => task.key === 'anime-catalog-default'))
 assert.ok(plan.blocking.some((task) => task.key === 'manga-catalog-default'))
-assert.ok(plan.blocking.some((task) => task.key === 'my-lists-anime-entries'))
-assert.ok(plan.blocking.some((task) => task.key === 'my-lists-anime-counts'))
-assert.ok(plan.blocking.some((task) => task.key === 'my-lists-manga-entries'))
-assert.ok(plan.blocking.some((task) => task.key === 'my-lists-manga-counts'))
 assert.ok(plan.blocking.some((task) => task.key === 'remote-sync-status'))
 assert.ok(!plan.blocking.some((task) => task.key === 'mpv-status'))
+assert.ok(!plan.blocking.some((task) => task.key === 'my-lists-anime-entries'))
+assert.ok(!plan.blocking.some((task) => task.key === 'my-lists-anime-counts'))
+assert.ok(!plan.blocking.some((task) => task.key === 'my-lists-manga-entries'))
+assert.ok(!plan.blocking.some((task) => task.key === 'my-lists-manga-counts'))
 assert.ok(!plan.background.some((task) => task.key === 'home-popular-now'))
 assert.ok(!plan.background.some((task) => task.key === 'home-trending-season'))
 assert.ok(!plan.background.some((task) => task.key === 'home-top-rated'))
 assert.ok(plan.background.some((task) => task.key === 'mpv-status'))
 assert.ok(plan.background.some((task) => task.key === 'auth-status'))
+assert.ok(plan.background.some((task) => task.key === 'my-lists-anime-entries'))
+assert.ok(plan.background.some((task) => task.key === 'my-lists-anime-counts'))
+assert.ok(plan.background.some((task) => task.key === 'my-lists-manga-entries'))
+assert.ok(plan.background.some((task) => task.key === 'my-lists-manga-counts'))
 assert.ok(!plan.background.some((task) => task.key === 'anime-home-catalog'))
 assert.ok(!plan.background.some((task) => task.key === 'manga-home-catalog'))
 assert.ok(STARTUP_MIN_VISIBLE_MS >= 5000)
@@ -389,10 +393,6 @@ assert.deepEqual(queueEvents, ['start-a', 'end-a', 'start-b', 'end-b'])
       queryCalls.map((entry) => JSON.stringify(entry.queryKey)).sort(),
       [
         ['gui2-home-dashboard'],
-        ['gui2-my-lists-anime-entries'],
-        ['gui2-my-lists-anime-counts'],
-        ['gui2-my-lists-manga-entries'],
-        ['gui2-my-lists-manga-counts'],
         ['gui2-remote-sync-status'],
         ['gui2-home-anilist', 'en', warmPlan.season, warmPlan.year],
         ['anime-catalog', 'en', 'TRENDING_DESC', '', '', 0, 1, '', ''],
@@ -406,10 +406,6 @@ assert.deepEqual(queueEvents, ['start-a', 'end-a', 'start-b', 'end-b'])
       'runStartupWarmup should seed the full blocking startup contract before the app shell mounts',
     )
     assert.ok(runtimeCalls.includes('getDashboard'))
-    assert.ok(runtimeCalls.includes('getAnimeListAll'))
-    assert.ok(runtimeCalls.includes('getAnimeListCounts'))
-    assert.ok(runtimeCalls.includes('getMangaListAll'))
-    assert.ok(runtimeCalls.includes('getMangaListCounts'))
     assert.ok(runtimeCalls.includes('getRemoteListSyncStatus'))
     assert.ok(runtimeCalls.includes(`getAniListAnimeCatalogHome:${warmPlan.season}:${warmPlan.year}`))
     assert.ok(runtimeCalls.includes('getAniListMangaCatalogHome:en'))
@@ -417,13 +413,25 @@ assert.deepEqual(queueEvents, ['start-a', 'end-a', 'start-b', 'end-b'])
     assert.ok(runtimeCalls.includes('discoverManga'))
     assert.ok(!runtimeCalls.includes('getAuthStatus'))
     assert.ok(!runtimeCalls.includes('isMPVAvailable'))
+    assert.ok(!runtimeCalls.includes('getAnimeListAll'))
+    assert.ok(!runtimeCalls.includes('getAnimeListCounts'))
+    assert.ok(!runtimeCalls.includes('getMangaListAll'))
+    assert.ok(!runtimeCalls.includes('getMangaListCounts'))
 
     await warmup.startBackground()
 
     assert.ok(runtimeCalls.includes('getAuthStatus'))
     assert.ok(runtimeCalls.includes('isMPVAvailable'))
+    assert.ok(runtimeCalls.includes('getAnimeListAll'))
+    assert.ok(runtimeCalls.includes('getAnimeListCounts'))
+    assert.ok(runtimeCalls.includes('getMangaListAll'))
+    assert.ok(runtimeCalls.includes('getMangaListCounts'))
     assert.ok(runtimeCalls.includes('discoverAnime'))
     assert.ok(runtimeCalls.includes('discoverManga'))
+    assert.ok(queryCalls.some((entry) => JSON.stringify(entry.queryKey) === JSON.stringify(['gui2-my-lists-anime-entries'])))
+    assert.ok(queryCalls.some((entry) => JSON.stringify(entry.queryKey) === JSON.stringify(['gui2-my-lists-anime-counts'])))
+    assert.ok(queryCalls.some((entry) => JSON.stringify(entry.queryKey) === JSON.stringify(['gui2-my-lists-manga-entries'])))
+    assert.ok(queryCalls.some((entry) => JSON.stringify(entry.queryKey) === JSON.stringify(['gui2-my-lists-manga-counts'])))
   } finally {
     Object.assign(wails, originalMethods)
   }

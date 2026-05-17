@@ -65,13 +65,13 @@ assert.ok(
 )
 
 assert.ok(
-  source.includes("queryKey: ['gui2-my-lists-anime-entries']") && source.includes('wails.getAnimeListAll()'),
-  'Startup warmup should block on the full Anime My Lists payload before reveal',
+  source.includes("background: [") && source.includes("queryKey: ['gui2-my-lists-anime-entries']") && source.includes('wails.getAnimeListAll()'),
+  'Startup warmup should defer Anime My Lists hydration to the background queue instead of blocking first reveal',
 )
 
 assert.ok(
-  source.includes("queryKey: ['gui2-my-lists-manga-entries']") && source.includes('wails.getMangaListAll()'),
-  'Startup warmup should block on the full Manga My Lists payload before reveal',
+  source.includes("background: [") && source.includes("queryKey: ['gui2-my-lists-manga-entries']") && source.includes('wails.getMangaListAll()'),
+  'Startup warmup should defer Manga My Lists hydration to the background queue instead of blocking first reveal',
 )
 
 assert.ok(

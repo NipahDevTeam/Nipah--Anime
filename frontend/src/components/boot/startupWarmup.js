@@ -406,30 +406,6 @@ export function buildStartupWarmupPlan(settings = {}) {
         },
       },
       {
-        key: 'my-lists-anime-entries',
-        queryKey: ['gui2-my-lists-anime-entries'],
-        staleTime: 60_000,
-        run: () => wails.getAnimeListAll(),
-      },
-      {
-        key: 'my-lists-anime-counts',
-        queryKey: ['gui2-my-lists-anime-counts'],
-        staleTime: 60_000,
-        run: () => wails.getAnimeListCounts(),
-      },
-      {
-        key: 'my-lists-manga-entries',
-        queryKey: ['gui2-my-lists-manga-entries'],
-        staleTime: 60_000,
-        run: () => wails.getMangaListAll(),
-      },
-      {
-        key: 'my-lists-manga-counts',
-        queryKey: ['gui2-my-lists-manga-counts'],
-        staleTime: 60_000,
-        run: () => wails.getMangaListCounts(),
-      },
-      {
         key: 'remote-sync-status',
         queryKey: ['gui2-remote-sync-status'],
         staleTime: 30_000,
@@ -456,6 +432,33 @@ export function buildStartupWarmupPlan(settings = {}) {
       {
         key: 'history',
         run: () => wails.getWatchHistory(12),
+      },
+      // My Lists should never gate first paint. Fresh installs and empty databases
+      // can legitimately have no shelf data yet, and existing users still get these
+      // caches warmed immediately after reveal.
+      {
+        key: 'my-lists-anime-entries',
+        queryKey: ['gui2-my-lists-anime-entries'],
+        staleTime: 60_000,
+        run: () => wails.getAnimeListAll(),
+      },
+      {
+        key: 'my-lists-anime-counts',
+        queryKey: ['gui2-my-lists-anime-counts'],
+        staleTime: 60_000,
+        run: () => wails.getAnimeListCounts(),
+      },
+      {
+        key: 'my-lists-manga-entries',
+        queryKey: ['gui2-my-lists-manga-entries'],
+        staleTime: 60_000,
+        run: () => wails.getMangaListAll(),
+      },
+      {
+        key: 'my-lists-manga-counts',
+        queryKey: ['gui2-my-lists-manga-counts'],
+        staleTime: 60_000,
+        run: () => wails.getMangaListCounts(),
       },
     ],
   }
