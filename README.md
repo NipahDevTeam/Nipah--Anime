@@ -3,17 +3,17 @@
 # Nipah! Anime
 
 **A desktop app for anime, manga, and AniList sync.**  
-**Una app de escritorio para anime, manga y sincronizacion con AniList.**
+**Una app de escritorio para anime, manga, y sincronizacion con AniList.**
 
 </div>
 
 <p align="center">
-  <img src="./app1.png" alt="Nipah! Anime home" width="100%" />
+  <img src="./docs/assets/readme/app1.png" alt="Nipah! Anime home" width="100%" />
 </p>
 
 <p align="center">
-  <img src="./app2.png" alt="Nipah! Anime anime catalog" width="49%" />
-  <img src="./app3.png" alt="Nipah! Anime manga catalog" width="49%" />
+  <img src="./docs/assets/readme/app2.png" alt="Nipah! Anime anime catalog" width="49%" />
+  <img src="./docs/assets/readme/app3.png" alt="Nipah! Anime manga catalog" width="49%" />
 </p>
 
 ---
@@ -24,17 +24,10 @@ Nipah! Anime brings anime streaming, manga reading, AniList sync, and local libr
 
 ### Donations
 
-<<<<<<< Updated upstream
-Nipah! Anime is a one-man project, developed and constantly maintained by yours truly. And yours truly isn't well-off at all, so if you are enjoying Nipah! Anime and it has been of use to you, please consider supporting me:
-
-**BTC**  
-`bc1q806k3948azqzc97nr0u3cp39ynevjm8jdvlsk4`
-=======
 Nipah! Anime is a one-man project, developed and constantly maintained by yours truly. If you are enjoying Nipah! Anime and it has been of use to you, please consider supporting me:
 
 **BTC**  
-`bc1-your-example-address-here`
->>>>>>> Stashed changes
+`bc1q806k3948azqzc97nr0u3cp39ynevjm8jdvlsk4`
 
 You can also support me by giving this repo a star and sharing it with others.
 
@@ -60,14 +53,13 @@ You can also support me by giving this repo a star and sharing it with others.
 
 ---
 
-<<<<<<< Updated upstream
-## Español
+## Espanol
 
 Nipah! Anime reune streaming de anime, lectura de manga, sincronizacion con AniList y gestion de biblioteca local en una sola app de escritorio.
 
 ### Donaciones
 
-Nipah! Anime es un proyecto desarrollado y mantenido constantemente por una sola persona, osea yo. Si te ha gustado Nipah! Anime, considera apoyarme para seguir trabajando en el proyecto:
+Nipah! Anime es un proyecto desarrollado y mantenido constantemente por una sola persona. Si te ha gustado Nipah! Anime, considera apoyarme para seguir trabajando en el proyecto:
 
 **BTC**  
 `bc1q806k3948azqzc97nr0u3cp39ynevjm8jdvlsk4`
@@ -83,30 +75,6 @@ Tambien puedes apoyar el proyecto dandole una estrella al repositorio y comparti
 - MPV
 - AniList API
 
-=======
-## Espanol
-
-Nipah! Anime reune streaming de anime, lectura de manga, sincronizacion con AniList y gestion de biblioteca local en una sola app de escritorio.
-
-### Donaciones
-
-Nipah! Anime es un proyecto desarrollado y mantenido constantemente por una sola persona. Si te ha gustado Nipah! Anime, considera apoyarme para seguir trabajando en el proyecto:
-
-**BTC**  
-`bc1-your-example-address-here`
-
-Tambien puedes apoyar el proyecto dandole una estrella al repositorio y compartiendolo con otras personas.
-
-### Tech Stack
-
-- Go
-- Wails
-- React
-- Vite
-- MPV
-- AniList API
-
->>>>>>> Stashed changes
 ### Funcionalidades Destacadas
 
 - Reproduce anime desde multiples proveedores online dentro de una sola app de escritorio.
