@@ -65,7 +65,6 @@ artifacts/
 
 
 # === Personal / Internal Files ===
-.codex-*/
 backup/
 backups/
 PROJECT_HANDOFF*.md
