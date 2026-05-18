@@ -65,7 +65,6 @@ gitprogress.txt
 *.a
 
 # === Browser QA Profiles ===
-.claude/
 .chrome-headless/
 .playwright-cli/
 .edge-profile*/
@@ -73,7 +72,6 @@ artifacts/
 
 
 # === Personal / Internal Files ===
-.codex-*/
 .worktrees/
 backup/
 backups/
