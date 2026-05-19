@@ -6,6 +6,7 @@ import MangaSearch from '../pages/MangaSearch'
 import Local from '../pages/Local'
 import { ToastContainer } from '../components/ui/Toast'
 import NowPlaying from '../components/ui/NowPlaying'
+import MetadataFallbackOverlay from '../components/ui/MetadataFallbackOverlay'
 import Gui2Shell from './shell/Gui2Shell'
 import { getGui2RouteMeta, getGui2RouteParams, isGui2PreviewPath } from './routeRegistry'
 import Gui2HomeRoute from './routes/Gui2HomeRoute'
@@ -47,6 +48,7 @@ export default function Gui2App() {
     <Gui2Shell routeMeta={routeMeta} preview={preview}>
       {content}
       <NowPlaying />
+      <MetadataFallbackOverlay />
       <ToastContainer />
     </Gui2Shell>
   )

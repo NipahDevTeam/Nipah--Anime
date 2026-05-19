@@ -17,11 +17,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sourcegraph/conc/pool"
 
 	"miruro/backend/extensions"
 	"miruro/backend/extensions/animeflv"
+	"miruro/backend/extensions/sourceaccess"
 	"miruro/backend/logger"
 )
 
@@ -29,12 +31,24 @@ var log = logger.For("AnimeAV1")
 
 const baseURL = "https://animeav1.com"
 const cdnURL = "https://cdn.animeav1.com"
+const sourceID = "animeav1-es"
+
+func init() {
+	sourceaccess.RegisterProfile(sourceaccess.SourceAccessProfile{
+		SourceID:       sourceID,
+		BaseURL:        baseURL,
+		WarmupURL:      baseURL + "/catalogo?search=naruto",
+		DefaultReferer: baseURL + "/",
+		CookieDomains:  []string{"animeav1.com", "www.animeav1.com"},
+		SessionTTL:     2 * time.Hour,
+	})
+}
 
 type Extension struct{}
 
 func New() *Extension { return &Extension{} }
 
-func (e *Extension) ID() string   { return "animeav1-es" }
+func (e *Extension) ID() string   { return sourceID }
 func (e *Extension) Name() string { return "AnimeAV1 (Español)" }
 func (e *Extension) Languages() []extensions.Language {
 	return []extensions.Language{extensions.LangSpanish}
@@ -770,9 +784,12 @@ func embedTrackAudio(track string) string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func fetchJSON(url string) (string, error) {
-	return animeflv.FetchPageWithHeaders(url, baseURL, map[string]string{
-		"Accept":          "application/json, */*; q=0.9",
-		"Accept-Language": "es-ES,es;q=0.9",
+	return sourceaccess.FetchHTML(sourceID, url, sourceaccess.RequestOptions{
+		Referer: baseURL,
+		Headers: map[string]string{
+			"Accept":          "application/json, */*; q=0.9",
+			"Accept-Language": "es-ES,es;q=0.9",
+		},
 	})
 }
 

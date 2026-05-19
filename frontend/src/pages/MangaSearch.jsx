@@ -453,6 +453,7 @@ export default function MangaSearch() {
     directExplore: isEnglish ? 'Direct AniList browsing with source loading after opening' : 'Exploracion directa con AniList y carga de fuente al abrir',
     noCatalog: isEnglish ? 'No catalog available right now' : 'Sin catalogo por ahora',
     noCatalogDesc: isEnglish ? 'Could not load manga to explore. Adjust the filters or try again in a few seconds.' : 'No se pudieron cargar mangas para explorar. Ajusta los filtros o intenta de nuevo en unos segundos.',
+    catalogBootLoading: isEnglish ? 'Preparing the catalog...' : 'Preparando el catálogo...',
     catalogUnavailableTitle: isEnglish ? 'AniList catalog temporarily unavailable' : 'Catalogo de AniList temporalmente no disponible',
     catalogUnavailableDesc: isEnglish
       ? 'AniList is having upstream API problems right now. Catalog browsing is temporarily unavailable, so source resolution will resume after AniList recovers.'
@@ -743,6 +744,7 @@ export default function MangaSearch() {
     isCatalogBrowseMode && catalogLoading,
     { delayMs: 0, minVisibleMs: 280 },
   )
+  const catalogBootLoading = !searched && !selected && catalogQuery.isLoading && displayedCatalog.length === 0
 
   const sourceMatchesQuery = useQuery({
     queryKey: ['manga-source-matches', selected?.sessionKey ?? '', selected?.mode ?? '', selected?.anilist_id ?? 0, lang],
@@ -1651,6 +1653,14 @@ export default function MangaSearch() {
                   </div>
                 )}
               />
+            </div>
+          )
+        }
+
+        if (catalogBootLoading) {
+          return (
+            <div className="empty-state gui2-catalog-loading-state">
+              <div className="empty-state-title">{ui.catalogBootLoading}</div>
             </div>
           )
         }

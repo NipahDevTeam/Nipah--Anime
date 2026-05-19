@@ -21,7 +21,11 @@ assert.ok(wailsSource.includes('rememberRuntimeCache(['), 'runtime bridge should
 assert.ok(wailsSource.includes('export function invalidateRuntimeCache(keyParts) {'), 'runtime bridge should expose targeted cache invalidation for stale online source payloads')
 assert.ok(wailsSource.includes('async getOnlineEpisodes(sourceID, animeID, timeoutMs = 0, forceFresh = false) {'), 'runtime bridge should allow online episode callers to bypass the warm cache when live thumbnail changes need authoritative data')
 assert.ok(wailsSource.includes("['anilist-anime-detail-v2', Number(id) || 0]"), 'runtime bridge should memoize AniList anime detail payloads with the current detail cache version')
+assert.ok(wailsSource.includes('async getAnimeByMalID(malID) {'), 'runtime bridge should expose MAL-based anime detail lookup for Jikan fallback sessions')
+assert.ok(wailsSource.includes("['jikan-anime-recommendations-v1', Number(malID) || 0]"), 'runtime bridge should memoize Jikan anime recommendation payloads by MAL id')
 assert.ok(wailsSource.includes("['anilist-manga-detail-v3', Number(id) || 0]"), 'runtime bridge should memoize AniList manga detail payloads with the current detail cache version')
+assert.ok(wailsSource.includes("['jikan-manga-recommendations-v1', Number(malID) || 0]"), 'runtime bridge should memoize Jikan manga recommendation payloads by MAL id')
+assert.ok(wailsSource.includes('async getMetadataSourceStatus() {'), 'runtime bridge should expose metadata source health')
 assert.ok(wailsSource.includes('async prepareOnlineEpisodeThumbnail(payload) {'), 'runtime bridge should expose a non-playback thumbnail preparation binding')
 assert.ok(wailsSource.includes('async persistOnlineEpisodeThumbnail(payload) {'), 'runtime bridge should expose thumbnail persistence for browser-captured episode stills')
 

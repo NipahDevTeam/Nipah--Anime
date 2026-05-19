@@ -10,3 +10,14 @@ export function isAniListUnavailableErrorMessage(errorLike) {
     || message.includes('context deadline exceeded')
     || message.includes('client.timeout exceeded')
 }
+
+export function isAniListMetadataFallbackActive(status) {
+  return status?.anilist_mode === 'degraded' && status?.fallback_provider === 'jikan'
+}
+
+export function getAniListMetadataFallbackActivationKey(status) {
+  const activatedAtUnix = Number(status?.activated_at_unix || 0)
+  if (activatedAtUnix > 0) return String(activatedAtUnix)
+  if (isAniListMetadataFallbackActive(status)) return 'active'
+  return ''
+}

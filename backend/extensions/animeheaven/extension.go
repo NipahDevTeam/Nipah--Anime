@@ -11,21 +11,35 @@ import (
 	"html"
 	"regexp"
 	"strings"
+	"time"
 
 	"miruro/backend/extensions"
 	"miruro/backend/extensions/animeflv"
+	"miruro/backend/extensions/sourceaccess"
 	"miruro/backend/logger"
 )
 
 var log = logger.For("AnimeHeaven")
 
 const baseURL = "https://animeheaven.me"
+const sourceID = "animeheaven-en"
+
+func init() {
+	sourceaccess.RegisterProfile(sourceaccess.SourceAccessProfile{
+		SourceID:       sourceID,
+		BaseURL:        baseURL,
+		WarmupURL:      baseURL + "/search.php?s=naruto",
+		DefaultReferer: baseURL + "/",
+		CookieDomains:  []string{"animeheaven.me", "www.animeheaven.me"},
+		SessionTTL:     2 * time.Hour,
+	})
+}
 
 type Extension struct{}
 
 func New() *Extension { return &Extension{} }
 
-func (e *Extension) ID() string   { return "animeheaven-en" }
+func (e *Extension) ID() string   { return sourceID }
 func (e *Extension) Name() string { return "AnimeHeaven (English)" }
 func (e *Extension) Languages() []extensions.Language {
 	return []extensions.Language{extensions.LangEnglish}
@@ -281,33 +295,42 @@ func (e *Extension) GetStreamSources(episodeID string) ([]extensions.StreamSourc
 // ─────────────────────────────────────────────────────────────────────────────
 
 func fetchPage(url, referer string) (string, error) {
-	return animeflv.FetchPageWithHeaders(url, referer, map[string]string{
-		"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-		"Accept-Language":           "en-US,en;q=0.9",
-		"Upgrade-Insecure-Requests": "1",
-		"Sec-Fetch-Dest":            "document",
-		"Sec-Fetch-Mode":            "navigate",
-		"Sec-Fetch-Site":            "none",
-		"Cache-Control":             "max-age=0",
+	return sourceaccess.FetchHTML(sourceID, url, sourceaccess.RequestOptions{
+		Referer: referer,
+		Headers: map[string]string{
+			"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+			"Accept-Language":           "en-US,en;q=0.9",
+			"Upgrade-Insecure-Requests": "1",
+			"Sec-Fetch-Dest":            "document",
+			"Sec-Fetch-Mode":            "navigate",
+			"Sec-Fetch-Site":            "none",
+			"Cache-Control":             "max-age=0",
+		},
 	})
 }
 
 // fetchAJAX is used for AJAX endpoints like fastsearch.php which require
 // the X-Requested-With header to return the HTML fragment rather than a full page.
 func fetchAJAX(url, referer string) (string, error) {
-	return animeflv.FetchPageWithHeaders(url, referer, map[string]string{
-		"Accept":           "text/html, */*; q=0.01",
-		"Accept-Language":  "en-US,en;q=0.9",
-		"X-Requested-With": "XMLHttpRequest",
+	return sourceaccess.FetchHTML(sourceID, url, sourceaccess.RequestOptions{
+		Referer: referer,
+		Headers: map[string]string{
+			"Accept":           "text/html, */*; q=0.01",
+			"Accept-Language":  "en-US,en;q=0.9",
+			"X-Requested-With": "XMLHttpRequest",
+		},
 	})
 }
 
 func fetchGatePage(url, episodeKey string) (string, error) {
-	return animeflv.FetchPageWithHeaders(url, baseURL, map[string]string{
-		"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-		"Accept-Language":           "en-US,en;q=0.9",
-		"Upgrade-Insecure-Requests": "1",
-		"Cookie":                    "key=" + episodeKey,
+	return sourceaccess.FetchHTML(sourceID, url, sourceaccess.RequestOptions{
+		Referer: baseURL,
+		Headers: map[string]string{
+			"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+			"Accept-Language":           "en-US,en;q=0.9",
+			"Upgrade-Insecure-Requests": "1",
+			"Cookie":                    "key=" + episodeKey,
+		},
 	})
 }
 

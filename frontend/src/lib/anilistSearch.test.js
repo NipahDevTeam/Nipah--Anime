@@ -85,6 +85,22 @@ assert.equal(
 )
 
 assert.deepEqual(
+  buildAniListAnimeSearchResults({
+    data: {
+      Page: {
+        media: [
+          { id: 0, anilist_id: 0, mal_id: 52991, title: { english: 'Frieren: Beyond Journey\'s End' } },
+          { id: 0, anilist_id: 0, idMal: 52991, title: { english: 'Frieren duplicate' } },
+          { id: 0, anilist_id: 0, mal_id: 16498, title: { english: 'Attack on Titan' } },
+        ],
+      },
+    },
+  }).map((item) => item.title?.english),
+  ['Frieren: Beyond Journey\'s End', 'Attack on Titan'],
+  'AniList anime search shaping should keep honest Jikan fallback results keyed by MAL identity when AniList ids are unavailable',
+)
+
+assert.deepEqual(
   buildAniListAnimeSearchCandidates('Frieren: Beyond Journey\'s End'),
   ['Frieren: Beyond Journeys End', 'Frieren'],
   'AniList anime search candidates should expand a title into bounded alias-friendly variants',
@@ -185,6 +201,33 @@ assert.deepEqual(
     warmed,
     [1001, 1002],
     'AniList anime detail warmup should invoke the loader for the deduped id list in order',
+  )
+}
+
+{
+  const warmed = []
+  const ids = await prewarmAniListAnimeDetails({
+    data: {
+      Page: {
+        media: [
+          { id: 0, anilist_id: 0, mal_id: 52991 },
+          { id: 0, anilist_id: 0, mal_id: 16498 },
+        ],
+      },
+    },
+  }, async (id) => {
+    warmed.push(id)
+  }, 4)
+
+  assert.deepEqual(
+    ids,
+    [],
+    'AniList anime detail warmup should skip MAL-only fallback results instead of pretending they are AniList ids',
+  )
+  assert.deepEqual(
+    warmed,
+    [],
+    'AniList anime detail warmup should not invoke the loader for MAL-only fallback results',
   )
 }
 

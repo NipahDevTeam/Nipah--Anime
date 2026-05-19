@@ -68,8 +68,10 @@ copy_optional_dir() {
 }
 
 echo "[Linux] Building frontend"
-npm --prefix frontend install
-npm --prefix frontend run build
+pushd frontend >/dev/null
+npm install
+npm run build
+popd >/dev/null
 
 echo "[Linux] Building Wails app"
 "${WAILS_BIN}" build -clean -platform linux/amd64 -tags webkit2_41

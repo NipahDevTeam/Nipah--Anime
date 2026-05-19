@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toastError, toastSuccess } from '../../components/ui/Toast'
 import { useI18n } from '../../lib/i18n'
+import { isAniListMetadataFallbackActive } from '../../lib/anilistStatus'
 import { wails } from '../../lib/wails'
 import {
   getSavedReaderSettings,
@@ -119,6 +120,7 @@ export default function Gui2SettingsRoute() {
   const [animeImportDir, setAnimeImportDir] = useState('')
   const [libraryStats, setLibraryStats] = useState({ anime: 0, manga: 0, episodes: 0, chapters: 0 })
   const [authStatus, setAuthStatus] = useState({ anilist: { logged_in: false } })
+  const [metadataSourceStatus, setMetadataSourceStatus] = useState({ anilist_mode: 'normal', fallback_provider: 'none', tracking_remote_available: true })
   const [remoteSyncStatus, setRemoteSyncStatus] = useState({ pending_count: 0, failed_count: 0, by_provider: {}, errors: [] })
   const [updateStatus, setUpdateStatus] = useState({ state: 'idle', label: isEnglish ? 'Checking not started' : 'Sin revisar' })
   const [loading, setLoading] = useState(true)
@@ -143,6 +145,14 @@ export default function Gui2SettingsRoute() {
       .catch(() => {})
   }, [])
 
+  const refreshMetadataSourceStatus = useCallback(() => {
+    return wails.getMetadataSourceStatus()
+      .then((status) => {
+        setMetadataSourceStatus(status ?? { anilist_mode: 'normal', fallback_provider: 'none', tracking_remote_available: true })
+      })
+      .catch(() => {})
+  }, [])
+
   const refreshLibraryStats = useCallback(() => {
     return Promise.all([wails.getLibraryPaths(), wails.getAnimeImportDir(), wails.getLibraryStats()])
       .then(([paths, importDir, stats]) => {
@@ -163,8 +173,9 @@ export default function Gui2SettingsRoute() {
       wails.getLibraryStats(),
       wails.getAuthStatus(),
       wails.getRemoteListSyncStatus(),
+      wails.getMetadataSourceStatus(),
     ])
-      .then(([rawSettings, mpvAvailable, paths, importDir, stats, auth, remoteStatus]) => {
+      .then(([rawSettings, mpvAvailable, paths, importDir, stats, auth, remoteStatus, sourceStatus]) => {
         if (!active) return
         setSettings({ ...rawSettings, theme: 'dark' })
         setReaderSettings(getSavedReaderSettings())
@@ -174,6 +185,7 @@ export default function Gui2SettingsRoute() {
         setLibraryStats(stats ?? { anime: 0, manga: 0, episodes: 0, chapters: 0 })
         setAuthStatus(auth ?? { anilist: { logged_in: false } })
         setRemoteSyncStatus(remoteStatus ?? { pending_count: 0, failed_count: 0, by_provider: {}, errors: [] })
+        setMetadataSourceStatus(sourceStatus ?? { anilist_mode: 'normal', fallback_provider: 'none', tracking_remote_available: true })
       })
       .catch(() => {
         if (!active) return
@@ -259,28 +271,31 @@ export default function Gui2SettingsRoute() {
       await wails.loginAniList()
       await refreshAuth()
       await refreshRemoteSyncStatus()
+      await refreshMetadataSourceStatus()
       toastSuccess(isEnglish ? 'AniList connected.' : 'AniList conectado.')
     } catch (error) {
       toastError(`${isEnglish ? 'AniList connection failed' : 'Falló la conexión con AniList'}: ${error?.message ?? error}`)
     }
-  }, [isEnglish, refreshAuth, refreshRemoteSyncStatus])
+  }, [isEnglish, refreshAuth, refreshMetadataSourceStatus, refreshRemoteSyncStatus])
 
   const handleAniListDisconnect = useCallback(async () => {
     try {
       await wails.logout('anilist')
       await refreshAuth()
       await refreshRemoteSyncStatus()
+      await refreshMetadataSourceStatus()
       toastSuccess(isEnglish ? 'AniList disconnected.' : 'AniList desconectado.')
     } catch (error) {
       toastError(`${isEnglish ? 'AniList disconnect failed' : 'No se pudo desconectar AniList'}: ${error?.message ?? error}`)
     }
-  }, [isEnglish, refreshAuth, refreshRemoteSyncStatus])
+  }, [isEnglish, refreshAuth, refreshMetadataSourceStatus, refreshRemoteSyncStatus])
 
   const handleAniListSync = useCallback(async () => {
     setSyncing(true)
     try {
       const result = await wails.syncAniListLists()
       await refreshRemoteSyncStatus()
+      await refreshMetadataSourceStatus()
       toastSuccess(
         isEnglish
           ? `Synced ${result?.anime_count ?? 0} anime and ${result?.manga_count ?? 0} manga.`
@@ -291,13 +306,14 @@ export default function Gui2SettingsRoute() {
     } finally {
       setSyncing(false)
     }
-  }, [isEnglish, refreshRemoteSyncStatus])
+  }, [isEnglish, refreshMetadataSourceStatus, refreshRemoteSyncStatus])
 
   const handleRetryAniListSync = useCallback(async () => {
     setSyncing(true)
     try {
       const result = await wails.retryRemoteListSync('anilist')
       await refreshRemoteSyncStatus()
+      await refreshMetadataSourceStatus()
       if ((result?.remote_failed ?? 0) > 0) {
         toastError(result?.messages?.join(' ') || (isEnglish ? 'Some AniList items are still queued.' : 'Algunos elementos de AniList siguen en cola.'))
       } else {
@@ -308,7 +324,7 @@ export default function Gui2SettingsRoute() {
     } finally {
       setSyncing(false)
     }
-  }, [isEnglish, refreshRemoteSyncStatus])
+  }, [isEnglish, refreshMetadataSourceStatus, refreshRemoteSyncStatus])
 
   const handleCheckUpdates = useCallback(async () => {
     setCheckingUpdates(true)
@@ -352,6 +368,7 @@ export default function Gui2SettingsRoute() {
     const syncValue = authStatus.anilist?.logged_in
       ? (isEnglish ? 'AniList connected' : 'AniList conectado')
       : (isEnglish ? 'AniList not connected' : 'AniList sin conectar')
+    const syncFallbackValue = isEnglish ? 'Jikan fallback active' : 'Respaldo Jikan activo'
     const updateValue = updateStatus.state === 'idle'
       ? (isEnglish ? 'Check status manually' : 'Revísalo manualmente')
       : updateStatus.label
@@ -372,8 +389,8 @@ export default function Gui2SettingsRoute() {
       {
         icon: 'sync',
         label: 'Sync',
-        value: syncValue,
-        accent: authStatus.anilist?.logged_in ? 'is-positive' : '',
+        value: metadataFallbackActive ? syncFallbackValue : syncValue,
+        accent: metadataFallbackActive ? 'is-gold' : authStatus.anilist?.logged_in ? 'is-positive' : '',
       },
       {
         icon: 'updates',
@@ -382,7 +399,7 @@ export default function Gui2SettingsRoute() {
         accent: updateStatus.state === 'available' ? 'is-gold' : updateStatus.state === 'current' ? 'is-positive' : '',
       },
     ]
-  }, [authStatus.anilist?.logged_in, isEnglish, libPaths.length, mpvOk, updateStatus])
+  }, [authStatus.anilist?.logged_in, isEnglish, libPaths.length, metadataFallbackActive, mpvOk, updateStatus])
 
   const scrollToSection = useCallback((id) => {
     setActiveNav(id)
@@ -399,6 +416,7 @@ export default function Gui2SettingsRoute() {
 
   const remoteErrors = remoteSyncStatus?.errors ?? []
   const aniListConnected = Boolean(authStatus.anilist?.logged_in)
+  const metadataFallbackActive = isAniListMetadataFallbackActive(metadataSourceStatus)
   const anime4kEnabled = (settings.anime4k_level ?? 'off') !== 'off'
 
   return (
@@ -612,6 +630,13 @@ export default function Gui2SettingsRoute() {
               description={isEnglish ? 'Sync your lists, progress, and ratings.' : 'Sincroniza tus listas, progreso y puntuaciones.'}
               stacked
             >
+              {metadataFallbackActive ? (
+                <div className="gui2-inline-fallback-note">
+                  {isEnglish
+                    ? 'AniList sync is temporarily unavailable while Jikan keeps browsing metadata available.'
+                    : 'La sincronizacion de AniList no esta disponible temporalmente mientras Jikan mantiene disponibles los metadatos de exploracion.'}
+                </div>
+              ) : null}
               <div className="gui2-settingsv2-inline-spread">
                 <div className="gui2-settingsv2-account-summary">
                   <span className={`gui2-settingsv2-status${aniListConnected ? ' is-positive' : ''}`}>
@@ -626,10 +651,10 @@ export default function Gui2SettingsRoute() {
                 <div className="gui2-settingsv2-button-row">
                   {aniListConnected ? (
                     <>
-                      <button type="button" className="gui2-settingsv2-ghost-btn" onClick={handleAniListSync} disabled={syncing}>
+                      <button type="button" className="gui2-settingsv2-ghost-btn" onClick={handleAniListSync} disabled={syncing || metadataFallbackActive}>
                         {syncing ? (isEnglish ? 'Syncing...' : 'Sincronizando...') : (isEnglish ? 'Sync Now' : 'Sincronizar')}
                       </button>
-                      <button type="button" className="gui2-settingsv2-ghost-btn" onClick={handleRetryAniListSync} disabled={syncing}>
+                      <button type="button" className="gui2-settingsv2-ghost-btn" onClick={handleRetryAniListSync} disabled={syncing || metadataFallbackActive}>
                         {isEnglish ? 'Retry Failed' : 'Reintentar fallidos'}
                       </button>
                       <button type="button" className="gui2-settingsv2-text-btn" onClick={handleAniListDisconnect}>

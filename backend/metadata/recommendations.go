@@ -62,7 +62,7 @@ type aniListRecommendationMedia struct {
 }
 
 type aniListRecommendationEdge struct {
-	Node   aniListRecommendationNode `json:"node"`
+	Node aniListRecommendationNode `json:"node"`
 }
 
 func mapAniListRecommendations(edges []aniListRecommendationEdge) []AniListRecommendation {
@@ -108,6 +108,14 @@ func mapAniListRecommendations(edges []aniListRecommendationEdge) []AniListRecom
 		})
 	}
 	return out
+}
+
+func preferAniListDetailRecommendations(edges []aniListRecommendationEdge, fallback []AniListRecommendation) []AniListRecommendation {
+	recommendations := limitRecommendations(mapAniListRecommendations(edges), preferredRecommendationLimit)
+	if len(recommendations) > 0 {
+		return recommendations
+	}
+	return limitRecommendations(fallback, preferredRecommendationLimit)
 }
 
 func aniListRecommendationSelection() string {
@@ -162,7 +170,7 @@ func aniListAnimeDetailQuery() string {
 			studios(isMain: true) {
 				nodes { name }
 			}
-			characters(perPage: 12, sort: [ROLE, RELEVANCE]) {
+			characters(perPage: 5, sort: [ROLE, RELEVANCE]) {
 				edges {
 					role
 					node {
@@ -226,7 +234,7 @@ func aniListMangaDetailQuery() string {
 			genres
 			startDate { year month day }
 			endDate { year month day }
-			characters(perPage: 12, sort: [ROLE, RELEVANCE]) {
+			characters(perPage: 5, sort: [ROLE, RELEVANCE]) {
 				edges {
 					role
 					node {

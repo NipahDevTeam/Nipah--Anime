@@ -5,6 +5,7 @@ import { providerUsesExplicitEpisodeAudioVariant, shouldAllowAutomaticAudioFallb
 import { toastError, toastSuccess } from '../ui/Toast'
 import { useI18n } from '../../lib/i18n'
 import { extractAniListAnimeSearchMedia } from '../../lib/anilistSearch'
+import { isAniListMetadataFallbackActive } from '../../lib/anilistStatus'
 import { enrichEpisodesWithAnimePaheArtwork, hasZeroThumbnailCoverage, mergeEpisodeArtworkByNumber } from '../../lib/episodeArtwork'
 import { pickEpisodeArtwork } from '../../lib/episodeArtworkPriority'
 import IntegratedVideoPlayer from './IntegratedVideoPlayer'
@@ -74,7 +75,7 @@ function getAnimeRecommendationSubtitle(item) {
 
 function buildAnimeRecommendationNavigationEntry(item) {
   const media = item?.media || item?.node || item
-  const anilistID = Number(media?.id || item?.anilist_id || item?.id || 0)
+  const anilistID = Number(item?.anilist_id || item?.anilistID || item?.AniListID || media?.anilist_id || media?.anilistID || media?.AniListID || 0)
   const title = {
     english: typeof media?.title?.english === 'string' ? media.title.english : '',
     romaji: typeof media?.title?.romaji === 'string' ? media.title.romaji : '',
@@ -86,8 +87,9 @@ function buildAnimeRecommendationNavigationEntry(item) {
 
   return {
     ...media,
-    id: anilistID > 0 ? anilistID : Number(media?.id || 0),
+    id: anilistID,
     anilist_id: anilistID,
+    mal_id: Number(item?.mal_id || item?.malID || item?.MalID || media?.mal_id || media?.malID || media?.MalID || item?.idMal || media?.idMal || 0),
     title,
     title_english: title.english,
     title_romaji: title.romaji,
@@ -157,13 +159,31 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
   const variantProbeEpisodeID = String(episodes?.[0]?.id ?? anime.prefetchedEpisodes?.[0]?.id ?? '').trim()
 
   const source = SOURCE_LABELS[anime.source_id] ?? { name: anime.source_id, color: '#9090a8', flag: '' }
-  const coverSrc = providerCoverFailed ? null : (anime.anilistCoverImage || null)
-  const backdropSrc = anime.anilistBannerImage || coverSrc || ''
+  const rawCoverSrc = providerCoverFailed
+    ? ''
+    : (
+      anime.anilistCoverImage
+      || anime.cover_url
+      || anime.cover_image
+      || ''
+    )
+  const coverSrc = rawCoverSrc ? proxyImage(rawCoverSrc, { sourceID: anime.source_id }) : ''
+  const rawBackdropSrc = anime.anilistBannerImage || anime.banner_image || anime.bannerImage || rawCoverSrc || ''
+  const backdropSrc = rawBackdropSrc ? proxyImage(rawBackdropSrc, { sourceID: anime.source_id }) : ''
   const handleProviderCoverError = useCallback(() => setProviderCoverFailed(true), [])
+
+  const metadataStatusQuery = useQuery({
+    queryKey: ['metadata-source-status'],
+    queryFn: () => wails.getMetadataSourceStatus(),
+    staleTime: 15_000,
+    refetchInterval: 45_000,
+    retry: 1,
+  })
+  const metadataFallbackActive = isAniListMetadataFallbackActive(metadataStatusQuery.data)
 
   useEffect(() => {
     setProviderCoverFailed(false)
-  }, [anime.anilistBannerImage, anime.anilistCoverImage])
+  }, [anime.anilistBannerImage, anime.banner_image, anime.bannerImage, anime.anilistCoverImage, anime.cover_url, anime.cover_image])
 
   const ui = {
     openingEpisode: (num) => isEnglish ? `Opening episode ${num ?? ''}...` : `Abriendo episodio ${num ?? ''}...`,
@@ -191,7 +211,8 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
     integratedModeDesc: isEnglish ? 'Keeps playback inside Nipah! with quick episode controls and a darker theater view.' : 'Mantiene la reproducción dentro de Nipah! con controles rápidos y una vista más cinemática.',
     preparingIntegrated: isEnglish ? 'Preparing the in-app stream...' : 'Preparando el stream dentro de la app...',
     loadingEpisodes: isEnglish ? 'Loading episodes...' : 'Cargando episodios...',
-    resolvingSource: isEnglish ? 'Resolving source and preparing episodes...' : 'Resolviendo fuente y preparando episodios...',
+    resolvingSource: isEnglish ? 'Resolving source...' : 'Resolviendo fuente...',
+    sourceResolveFailure: isEnglish ? "Source could not be resolved (っ˘̩╭╮˘̩)っ. Please try another provider." : 'No se pudo resolver la fuente (っ˘̩╭╮˘̩)っ. Intenta con otro proveedor.',
     noEpisodesDesc: (name) => isEnglish ? `No episodes were found for this series on ${name}.` : `No se encontraron episodios para esta serie en ${name}.`,
     loading: isEnglish ? 'Loading...' : 'Cargando...',
     unwatchedEpisodes: isEnglish ? 'Show unwatched' : 'Ver no vistos',
@@ -200,7 +221,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
     episodeFilterEmpty: isEnglish ? 'You are fully caught up here.' : 'Aquí ya estás completamente al día.',
     episodeFilterEmptyDesc: isEnglish ? 'Switch to all episodes if you want to revisit earlier ones.' : 'Cambia a todos los episodios si quieres volver a los anteriores.',
     castTitle: isEnglish ? 'Cast' : 'Personajes',
-    castCopy: isEnglish ? 'AniList character metadata for a quick refresher before you hit play.' : 'Metadatos de personajes de AniList para ubicarse rápido antes de reproducir.',
+    castCopy: isEnglish ? 'Jikan-enriched character metadata for a quick refresher before you hit play.' : 'Metadatos de personajes enriquecidos con Jikan para ubicarse rápido antes de reproducir.',
     castLoading: isEnglish ? 'Loading cast...' : 'Cargando personajes...',
     castEmpty: isEnglish ? 'No character metadata is available for this title yet.' : 'Todavía no hay metadatos de personajes para este título.',
     supportingRole: isEnglish ? 'Supporting' : 'Secundario',
@@ -221,12 +242,13 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
     episodeQueue: isEnglish ? 'Episode queue' : 'Cola de episodios',
     episodeQueueCopy: isEnglish ? 'A cleaner list with quick playback actions and a stable desktop rhythm.' : 'Una lista mas limpia con acciones rapidas y un ritmo de escritorio estable.',
     continueLabel: isEnglish ? 'Continue watching' : 'Continuar viendo',
-    fallbackCast: isEnglish ? 'Cast is still loading from AniList. The page stays usable in the meantime.' : 'El reparto sigue cargando desde AniList. La pagina se mantiene usable mientras tanto.',
+    fallbackCast: isEnglish ? 'Cast is still loading from the metadata sidecar. The page stays usable in the meantime.' : 'El reparto sigue cargando desde el complemento de metadatos. La pagina se mantiene usable mientras tanto.',
     onlineStreaming: isEnglish ? 'Online Streaming' : 'Streaming online',
     torrentStreaming: isEnglish ? 'Torrent Streaming' : 'Streaming torrent',
     streamFamilyCopy: isEnglish ? 'Start with instant streaming now. Torrent support can join this landing later without changing the primary watch flow.' : 'Empieza con streaming instantaneo ahora. El soporte torrent puede sumarse a este landing despues sin cambiar el flujo principal de ver.',
     recommendationsTitle: isEnglish ? 'Keep watching' : 'Sigue viendo',
-    recommendationsEmptyCopy: isEnglish ? 'Related anime will settle here as recommendation data and source enrichment finish wiring in.' : 'Los animes relacionados se acomodaran aqui cuando terminen de conectarse las recomendaciones y el enriquecimiento de fuentes.',
+    recommendationsEmptyCopy: isEnglish ? 'This place seems rather empty... (￣ω￣;)' : 'Este lugar se ve bastante vacío... (￣ω￣;)',
+    trackingFallback: isEnglish ? 'Saved locally for now. AniList sync is temporarily unavailable while Jikan fallback is active.' : 'Guardado solo de forma local por ahora. La sincronizacion de AniList no esta disponible mientras el respaldo de Jikan esta activo.',
     readMore: isEnglish ? 'Read more' : 'Leer mas',
     readLess: isEnglish ? 'Show less' : 'Mostrar menos',
     torrentUnavailable: isEnglish ? 'Torrent streaming UI is ready, but the backend handoff still needs to land before playback can start here.' : 'La UI de streaming torrent ya esta lista, pero el backend todavia debe aterrizar antes de que la reproduccion pueda empezar aqui.',
@@ -303,20 +325,55 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
   }, [anime.source_id, sourceAnimeID, anime.audio_variant, preferredAudio])
 
   const activeAudioVariant = desiredAudioFlavor === 'dub' ? 'dub' : 'sub'
+  const detailQueryTitle = useMemo(() => (
+    String(
+      anime.title
+      || anime.anime_title
+      || anime.title_english
+      || anime.title_romaji
+      || anime.title_native
+      || '',
+    ).trim()
+  ), [
+    anime.anime_title,
+    anime.title,
+    anime.title_english,
+    anime.title_native,
+    anime.title_romaji,
+  ])
+  const detailQueryIdentity = useMemo(() => {
+    if (currentAniListID > 0) return `anilist:${currentAniListID}`
+    if (currentMalID > 0) return `mal:${currentMalID}`
+
+    const normalizedTitle = detailQueryTitle.toLowerCase().replace(/\s+/g, ' ').trim()
+    if (normalizedTitle) {
+      return `title:${anime.source_id}:${normalizedTitle}`
+    }
+    return ''
+  }, [anime.source_id, currentAniListID, currentMalID, detailQueryTitle])
 
   const animeDetailQuery = useQuery({
-    queryKey: ['anime-detail-anilist-v3', currentAniListID, lang],
+    queryKey: ['anime-detail-anilist-v3', detailQueryIdentity, lang],
     queryFn: async () => {
       let detail = null
 
       if (currentAniListID > 0) {
-        detail = await wails.getAniListAnimeByID(currentAniListID)
-      } else if (anime.title) {
-        const search = await wails.searchAniList(anime.title, lang)
+        detail = await wails.getAniListAnimeByID(currentAniListID).catch(() => null)
+      }
+      if (!detail && metadataFallbackActive && currentMalID > 0) {
+        detail = await wails.getAnimeByMalID(currentMalID).catch(() => null)
+      } else if (!detail && detailQueryTitle) {
+        const search = await wails.searchAniList(detailQueryTitle, lang)
         const firstHit = extractAniListAnimeSearchMedia(search)[0] ?? null
         const fallbackAniListID = Number(firstHit?.id || firstHit?.anilist_id || 0)
         if (fallbackAniListID > 0) {
-          detail = await wails.getAniListAnimeByID(fallbackAniListID)
+          detail = await wails.getAniListAnimeByID(fallbackAniListID).catch(() => null)
+        }
+        if (!detail && metadataFallbackActive) {
+          const fallbackMalID = Number(firstHit?.idMal || firstHit?.mal_id || 0)
+          if (fallbackMalID > 0) {
+            detail = await wails.getAnimeByMalID(fallbackMalID).catch(() => null)
+          }
         }
       }
 
@@ -354,9 +411,8 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
     gcTime: 60 * 60_000,
     retry: 1,
     refetchOnWindowFocus: false,
-    enabled: currentAniListID > 0 || Boolean(anime.title),
+    enabled: Boolean(detailQueryIdentity),
   })
-
   const audioVariantProbeSources = new Set(['animegg-en', 'animepahe-en', 'animeav1-es'])
   const canProbeAudioVariants = audioVariantProbeSources.has(anime.source_id)
     && Boolean(sourceAnimeID)
@@ -569,6 +625,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
 
   const loading = isResolvingSource || episodesQuery.isLoading
   const error = anime.source_resolve_error || episodesQuery.error?.message || null
+  const animeDetail = animeDetailQuery.data
   const selectedCharacters = animeDetailQuery.data?.characters ?? []
   const visibleEpisodes = useMemo(() => (
     episodeFilter === 'all'
@@ -935,10 +992,9 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
     }
   }, [activeAudioVariant, anime, persistPreferredAudio, t, useAnimeGGExplicitVariant])
 
-  const animeDetail = animeDetailQuery.data
   const titleEnglish = animeDetail?.title_english || anime.title_english || anime.titleEnglish || anime.title || anime.anime_title || ''
   const titleNative = animeDetail?.title_native || anime.title_native || anime.titleNative || ''
-  const canAddToList = currentAniListID > 0 && !anime.in_anime_list && !anime.in_list && !anime.anime_list_status
+  const canAddToList = currentAniListID > 0 && !metadataFallbackActive && !anime.in_anime_list && !anime.in_list && !anime.anime_list_status
   const factsInline = headlineFacts.filter(Boolean)
   const airingInfoRows = [
     nextUnwatchedEpisode
@@ -986,12 +1042,7 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
     { value: 'integrated', label: ui.integratedMode, active: playbackMode === 'integrated' },
   ]
   const explicitRecommendationItems = useMemo(() => {
-    const rawGroups = [
-      animeDetail?.recommendations,
-      animeDetail?.related_recommendations,
-    ]
-    const normalized = rawGroups
-      .flatMap((group) => Array.isArray(group) ? group : [])
+    const normalized = (Array.isArray(animeDetail?.recommendations) ? animeDetail.recommendations : Array.isArray(animeDetail?.Recommendations) ? animeDetail.Recommendations : [])
       .map((item, index) => {
         const title = getAnimeRecommendationTitle(item)
         if (!title) return null
@@ -1019,10 +1070,10 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
       })
       .filter(Boolean)
 
-    return Array.from(new Map(normalized.map((item) => [item.key, item])).values()).slice(0, 6)
-  }, [animeDetail?.recommendations, animeDetail?.related_recommendations])
+    return Array.from(new Map(normalized.map((item) => [item.key, item])).values()).slice(0, 5)
+  }, [animeDetail?.Recommendations, animeDetail?.recommendations, isEnglish])
   const recommendationItems = useMemo(() => {
-    return explicitRecommendationItems.slice(0, 6)
+    return explicitRecommendationItems.slice(0, 5)
   }, [explicitRecommendationItems])
   const activeWatchEpisode = integratedPlayback?.episode ?? pendingIntegratedEpisode
   const integratedEpisodeNumber = Number(activeWatchEpisode?.number || 0)
@@ -1202,26 +1253,31 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
             ) : null}
 
             {!showIntegratedWatchState ? (
-              <div className="gui2-landing-actions">
-                {heroPrimaryEpisode ? (
-                  <button className="btn btn-primary gui2-landing-primary-btn" type="button" onClick={() => handleStream(heroPrimaryEpisode)} disabled={streamFamily === 'torrent' || streaming === heroPrimaryEpisode.id}>
-                    {heroPrimaryLabel}
-                  </button>
+              <>
+                <div className="gui2-landing-actions">
+                  {heroPrimaryEpisode ? (
+                    <button className="btn btn-primary gui2-landing-primary-btn" type="button" onClick={() => handleStream(heroPrimaryEpisode)} disabled={streamFamily === 'torrent' || streaming === heroPrimaryEpisode.id}>
+                      {heroPrimaryLabel}
+                    </button>
+                  ) : null}
+                  {nextUnwatchedEpisode && watchedCount > 0 ? (
+                    <button className="btn btn-ghost gui2-landing-secondary-btn" type="button" onClick={() => handleStream(nextUnwatchedEpisode)} disabled={streamFamily === 'torrent' || streaming === nextUnwatchedEpisode.id}>
+                      {`${watchedCount}/${episodes.length} ${isEnglish ? 'watched' : 'vistos'}`}
+                      <span className="gui2-landing-inline-progress">
+                        <span className="gui2-landing-inline-progress-fill" style={{ width: `${progressValue}%` }} />
+                      </span>
+                    </button>
+                  ) : null}
+                  {canAddToList ? (
+                    <button className="btn btn-ghost gui2-landing-secondary-btn" type="button" onClick={handleAddToList} disabled={addingToList}>
+                      {addingToList ? (isEnglish ? 'Adding...' : 'Agregando...') : (isEnglish ? 'Add to List' : 'Agregar a lista')}
+                    </button>
+                  ) : null}
+                </div>
+                {metadataFallbackActive ? (
+                  <div className="gui2-inline-fallback-note">{ui.trackingFallback}</div>
                 ) : null}
-                {nextUnwatchedEpisode && watchedCount > 0 ? (
-                  <button className="btn btn-ghost gui2-landing-secondary-btn" type="button" onClick={() => handleStream(nextUnwatchedEpisode)} disabled={streamFamily === 'torrent' || streaming === nextUnwatchedEpisode.id}>
-                    {`${watchedCount}/${episodes.length} ${isEnglish ? 'watched' : 'vistos'}`}
-                    <span className="gui2-landing-inline-progress">
-                      <span className="gui2-landing-inline-progress-fill" style={{ width: `${progressValue}%` }} />
-                    </span>
-                  </button>
-                ) : null}
-                {canAddToList ? (
-                  <button className="btn btn-ghost gui2-landing-secondary-btn" type="button" onClick={handleAddToList} disabled={addingToList}>
-                    {addingToList ? (isEnglish ? 'Adding...' : 'Agregando...') : (isEnglish ? 'Add to List' : 'Agregar a lista')}
-                  </button>
-                ) : null}
-              </div>
+              </>
             ) : null}
           </div>
 
@@ -1518,11 +1574,15 @@ export default function OnlineAnimeDetail({ anime, onBack, onAnimeChange = null,
               </div>
             </div>
 
-            {loading ? <EpisodeGridSkeleton count={6} /> : null}
+            {isResolvingSource ? (
+              <div className="empty-state" style={{ padding: '40px 0' }}>
+                <div className="empty-state-title">{ui.resolvingSource}</div>
+              </div>
+            ) : loading ? <EpisodeGridSkeleton count={6} /> : null}
 
             {!loading && error ? (
               <div className="empty-state" style={{ padding: '40px 0' }}>
-                <div className="empty-state-title">{ui.resolveError}</div>
+                <div className="empty-state-title">{anime.source_resolve_error ? ui.sourceResolveFailure : ui.resolveError}</div>
                 <p className="empty-state-desc">{String(error)}</p>
               </div>
             ) : null}

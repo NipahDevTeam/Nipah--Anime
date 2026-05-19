@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toastError, toastSuccess } from '../../components/ui/Toast'
 import { useI18n } from '../../lib/i18n'
 import { extractAniListAnimeSearchMedia } from '../../lib/anilistSearch'
+import { isAniListMetadataFallbackActive } from '../../lib/anilistStatus'
 import { buildAnimeNavigationState, buildMangaListNavigationState } from '../../lib/mediaNavigation'
 import { proxyImage, wails } from '../../lib/wails'
 import { buildMotionVars, buildStaggerDelayMs } from '../motion/gui2Motion'
@@ -282,6 +283,7 @@ function Gui2MyListsCoverDriven(props) {
     handleSyncAniList,
     handleRetrySync,
     handleClearList,
+    metadataFallbackActive,
     showAddPanel,
     addQuery,
     setAddQuery,
@@ -370,6 +372,14 @@ function Gui2MyListsCoverDriven(props) {
                 ].filter(Boolean).join(' | ')}
               </div>
             </div>
+
+            {metadataFallbackActive ? (
+              <div className="gui2-inline-fallback-note">
+                {isEnglish
+                  ? 'Saved locally for now. AniList sync is temporarily unavailable while Jikan fallback is active.'
+                  : 'Guardado solo de forma local por ahora. La sincronizacion de AniList no esta disponible mientras el respaldo de Jikan esta activo.'}
+              </div>
+            ) : null}
 
             <div className="gui2-mylist-editor-fields">
               <label className="gui2-mylist-field">
@@ -765,6 +775,7 @@ export default function Gui2MyListsRoute({ preview = false }) {
   const [loadingAnime, setLoadingAnime] = useState(() => !queryClient.getQueryData(['gui2-my-lists-anime-entries']) || !queryClient.getQueryData(['gui2-my-lists-anime-counts']))
   const [loadingManga, setLoadingManga] = useState(() => !queryClient.getQueryData(['gui2-my-lists-manga-entries']) || !queryClient.getQueryData(['gui2-my-lists-manga-counts']))
   const [syncStatus, setSyncStatus] = useState(() => queryClient.getQueryData(['gui2-remote-sync-status']) ?? null)
+  const [metadataSourceStatus, setMetadataSourceStatus] = useState(() => queryClient.getQueryData(['metadata-source-status']) ?? { anilist_mode: 'normal', fallback_provider: 'none', tracking_remote_available: true })
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [sortKey, setSortKey] = useState('UPDATED_DESC')
@@ -843,6 +854,18 @@ export default function Gui2MyListsRoute({ preview = false }) {
     }
   }
 
+  const loadMetadataSourceStatus = async () => {
+    try {
+      const status = await wails.getMetadataSourceStatus()
+      setMetadataSourceStatus(status ?? { anilist_mode: 'normal', fallback_provider: 'none', tracking_remote_available: true })
+      queryClient.setQueryData(['metadata-source-status'], status ?? { anilist_mode: 'normal', fallback_provider: 'none', tracking_remote_available: true })
+    } catch {
+      const fallbackStatus = { anilist_mode: 'normal', fallback_provider: 'none', tracking_remote_available: true }
+      setMetadataSourceStatus(fallbackStatus)
+      queryClient.setQueryData(['metadata-source-status'], fallbackStatus)
+    }
+  }
+
   useEffect(() => {
     if (animeEntries.length === 0 && Object.keys(animeCounts).length === 0) {
       loadAnime()
@@ -857,6 +880,7 @@ export default function Gui2MyListsRoute({ preview = false }) {
     if (!syncStatus) {
       loadSyncMeta()
     }
+    loadMetadataSourceStatus()
   }, [])
 
   const activeEntries = activeMediaType === 'anime' ? animeEntries : mangaEntries
@@ -865,6 +889,7 @@ export default function Gui2MyListsRoute({ preview = false }) {
   const loading = activeMediaType === 'anime' ? loadingAnime : loadingManga
   const pendingSyncCount = Number(syncStatus?.pending_count || 0)
   const failedSyncCount = Number(syncStatus?.failed_count || 0)
+  const metadataFallbackActive = isAniListMetadataFallbackActive(metadataSourceStatus)
   const sortLabel = (SORT_OPTIONS.find((option) => option.value === sortKey)?.label?.[lang] || SORT_OPTIONS[0].label[lang] || SORT_OPTIONS[0].label.en)
 
   const filteredEntries = useMemo(() => {
@@ -1035,6 +1060,10 @@ export default function Gui2MyListsRoute({ preview = false }) {
   }
 
   const handleAddAnime = async (anime) => {
+    if (metadataFallbackActive || Number(anime?.id || 0) <= 0) {
+      toastError(isEnglish ? 'AniList tracking is temporarily unavailable right now.' : 'El seguimiento de AniList no esta disponible temporalmente ahora mismo.')
+      return
+    }
     try {
       const result = await wails.addToAnimeList(
         anime.id,
@@ -1072,7 +1101,7 @@ export default function Gui2MyListsRoute({ preview = false }) {
 
   const handleRemoveSelection = async () => {
     if (!selectedEntry) return
-    const syncRemote = window.confirm(
+    const syncRemote = metadataFallbackActive ? false : window.confirm(
       isEnglish
         ? 'Also remove it from AniList if connected?'
         : 'Tambien quieres eliminarlo de AniList si esta conectado?',
@@ -1180,6 +1209,7 @@ export default function Gui2MyListsRoute({ preview = false }) {
       handleSyncAniList={handleSyncAniList}
       handleRetrySync={handleRetrySync}
       handleClearList={handleClearList}
+      metadataFallbackActive={metadataFallbackActive}
       showAddPanel={showAddPanel}
       addQuery={addQuery}
       setAddQuery={setAddQuery}

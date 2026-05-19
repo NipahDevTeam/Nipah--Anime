@@ -5,8 +5,9 @@ import {
   BOOT_STAGE_HYDRATING_MANGA,
   BOOT_STAGE_PREPARING_HOME,
 } from './bootStageModel.js'
+import { saveStartupSnapshot } from './startupSnapshotStore.js'
 
-export const STARTUP_MIN_VISIBLE_MS = 5000
+export const STARTUP_MIN_VISIBLE_MS = 1200
 export const STARTUP_EXIT_MS = 280
 export const STARTUP_TASK_TIMEOUT_MS = 5200
 export const STARTUP_BACKGROUND_DELAY_MS = 120
@@ -17,7 +18,7 @@ export const STARTUP_HOME_MIN_ANIME_SHELVES = 2
 export const STARTUP_HOME_MIN_MANGA_SHELVES = 2
 export const STARTUP_HOME_MIN_MANGA_RECENT_ITEMS = 3
 export const STARTUP_REQUIRED_READY_TIMEOUT_MS = 24000
-export const STARTUP_REQUIRED_READY_RETRY_MS = 260
+export const STARTUP_REQUIRED_READY_RETRY_MS = 180
 
 function wait(ms) {
   return new Promise((resolve) => {
@@ -349,6 +350,30 @@ async function settleWithin(task, timeoutMs = STARTUP_TASK_TIMEOUT_MS) {
 export function buildStartupWarmupPlan(settings = {}) {
   const lang = getStartupWarmupLanguage(settings)
   const { season, year } = getStartupSeason()
+  const loadDefaultAnimeCatalogPage = async (queryClient) => {
+    const sort = 'TRENDING_DESC'
+    const page = normalizeCatalogPage(await wails.discoverAnime('', '', 0, sort, '', '', 1))
+    await prewarmAniListDetailEntries(
+      page.media,
+      lang,
+      (id) => wails.getAniListAnimeByID(id),
+      (id, queryLang) => ['anime-detail-anilist-v3', id, queryLang],
+      queryClient,
+    )
+    return page
+  }
+  const loadDefaultMangaCatalogPage = async (queryClient) => {
+    const sort = 'TRENDING_DESC'
+    const page = normalizeMangaCatalogPage(await wails.discoverManga('', 0, sort, '', '', 1))
+    await prewarmAniListDetailEntries(
+      page.media,
+      lang,
+      (id) => wails.getAniListMangaByID(id),
+      (id, queryLang) => ['manga-detail-anilist-v3', id, queryLang],
+      queryClient,
+    )
+    return page
+  }
 
   return {
     lang,
@@ -373,37 +398,19 @@ export function buildStartupWarmupPlan(settings = {}) {
         staleTime: 10 * 60_000,
         run: () => wails.getAniListMangaCatalogHome(lang),
       },
+    ],
+    background: [
       {
         key: 'anime-catalog-default',
         queryKey: ['anime-catalog', lang, 'TRENDING_DESC', '', '', 0, 1, '', ''],
         staleTime: 20 * 60_000,
-        run: async (queryClient) => {
-          const page = normalizeCatalogPage(await wails.discoverAnime('', '', 0, 'TRENDING_DESC', '', '', 1))
-          await prewarmAniListDetailEntries(
-            page.media,
-            lang,
-            (id) => wails.getAniListAnimeByID(id),
-            (id, queryLang) => ['anime-detail-anilist-v3', id, queryLang],
-            queryClient,
-          )
-          return page
-        },
+        run: loadDefaultAnimeCatalogPage,
       },
       {
         key: 'manga-catalog-default',
         queryKey: ['manga-catalog', lang, 'TRENDING_DESC', '', 0, 1, '', ''],
         staleTime: 20 * 60_000,
-        run: async (queryClient) => {
-          const page = normalizeMangaCatalogPage(await wails.discoverManga('', 0, 'TRENDING_DESC', '', '', 1))
-          await prewarmAniListDetailEntries(
-            page.media,
-            lang,
-            (id) => wails.getAniListMangaByID(id),
-            (id, queryLang) => ['manga-detail-anilist-v3', id, queryLang],
-            queryClient,
-          )
-          return page
-        },
+        run: loadDefaultMangaCatalogPage,
       },
       {
         key: 'remote-sync-status',
@@ -411,8 +418,6 @@ export function buildStartupWarmupPlan(settings = {}) {
         staleTime: 30_000,
         run: () => wails.getRemoteListSyncStatus(),
       },
-    ],
-    background: [
       {
         key: 'auth-status',
         run: () => wails.getAuthStatus(),
@@ -475,11 +480,6 @@ export async function runStartupWarmup(queryClient, options = {}) {
   const getTaskTimeout = (task) => (Number(task?.timeoutMs) > 0 ? Number(task.timeoutMs) : STARTUP_TASK_TIMEOUT_MS)
   const preparationTasks = plan.blocking.filter((task) => [
     'home-dashboard',
-    'my-lists-anime-entries',
-    'my-lists-anime-counts',
-    'my-lists-manga-entries',
-    'my-lists-manga-counts',
-    'remote-sync-status',
   ].includes(task.key))
   const animeTasks = plan.blocking.filter((task) => [
     'anime-home-catalog',
@@ -545,6 +545,15 @@ export async function runStartupWarmup(queryClient, options = {}) {
   if (queryClient?.setQueryData) {
     queryClient.setQueryData(['gui2-home-startup-snapshot', plan.lang, plan.season, plan.year], snapshot)
     queryClient.setQueryData(['gui2-home-startup-readiness', plan.lang, plan.season, plan.year], readiness)
+  }
+  if (startupReady) {
+    saveStartupSnapshot({
+      lang: plan.lang,
+      season: plan.season,
+      year: plan.year,
+      snapshot,
+      readiness,
+    })
   }
 
   return {

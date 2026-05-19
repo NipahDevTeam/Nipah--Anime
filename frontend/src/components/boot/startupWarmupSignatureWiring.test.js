@@ -5,23 +5,23 @@ import { resolve } from 'node:path'
 const source = readFileSync(resolve(import.meta.dirname, 'startupWarmup.js'), 'utf8')
 
 assert.ok(
-  source.includes("await wails.discoverManga('', 0, 'TRENDING_DESC', '', '', 1)"),
-  'Startup warmup should block on the default manga catalog so Manga Online is ready as part of startup',
+  !source.includes("await wails.discoverManga('', 0, 'TRENDING_DESC', '', '', 1)"),
+  'Startup warmup should not block on the default manga catalog once Manga Online is allowed to trail after Home reveal',
 )
 
 assert.ok(
-  source.includes('await prewarmAniListDetailEntries(') && source.includes('wails.getAniListMangaByID'),
-  'Startup warmup should also seed a small AniList manga detail band so landing-page recommendations do not wait on source resolution',
+  source.includes('wails.getAniListMangaByID') && source.includes("background: ["),
+  'Startup warmup should move manga AniList detail prewarm behind reveal instead of blocking startup',
 )
 
 assert.ok(
-  source.includes("await wails.discoverAnime('', '', 0, 'TRENDING_DESC', '', '', 1)"),
-  'Startup warmup should block on the default anime catalog so Anime Online is ready as part of startup',
+  !source.includes("await wails.discoverAnime('', '', 0, 'TRENDING_DESC', '', '', 1)"),
+  'Startup warmup should not block on the default anime catalog once Anime Online is allowed to trail after Home reveal',
 )
 
 assert.ok(
-  source.includes('await prewarmAniListDetailEntries(') && source.includes('wails.getAniListAnimeByID'),
-  'Startup warmup should also seed a small AniList anime detail band so the first landing opens reuse cached enrichment immediately',
+  source.includes('wails.getAniListAnimeByID') && source.includes("background: ["),
+  'Startup warmup should move anime AniList detail prewarm behind reveal instead of blocking startup',
 )
 
 assert.ok(
@@ -55,13 +55,13 @@ assert.ok(
 )
 
 assert.ok(
-  source.includes("queryKey: ['anime-catalog', lang, 'TRENDING_DESC', '', '', 0, 1, '', '']"),
-  'Startup warmup should seed the exact default Anime Online catalog key before reveal',
+  source.includes("queryKey: ['anime-catalog', lang, 'TRENDING_DESC', '', '', 0, 1, '', '']") && source.includes("background: ["),
+  'Startup warmup should keep the default Anime Online catalog warmup, but only behind reveal',
 )
 
 assert.ok(
-  source.includes("queryKey: ['manga-catalog', lang, 'TRENDING_DESC', '', 0, 1, '', '']"),
-  'Startup warmup should seed the exact default Manga Online catalog key before reveal',
+  source.includes("queryKey: ['manga-catalog', lang, 'TRENDING_DESC', '', 0, 1, '', '']") && source.includes("background: ["),
+  'Startup warmup should keep the default Manga Online catalog warmup, but only behind reveal',
 )
 
 assert.ok(
@@ -86,12 +86,12 @@ assert.ok(
 
 assert.ok(
   source.includes('ready: startupReady'),
-  'startup warmup should expose a single overall startup-ready flag instead of treating Home-only readiness as sufficient',
+  'startup warmup should expose a single overall startup-ready flag once the reduced Home-first contract is satisfied',
 )
 
 assert.ok(
-  source.includes("key: 'mpv-status'") && source.includes('background: ['),
-  'Startup warmup should keep generic app-status work outside the blocking Home first-paint path',
+  source.includes("key: 'remote-sync-status'") && source.includes('background: ['),
+  'Startup warmup should move remote sync status behind reveal with the rest of the non-Home contract',
 )
 
 console.log('startup warmup signature wiring tests passed')

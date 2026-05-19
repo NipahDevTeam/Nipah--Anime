@@ -28,18 +28,44 @@ var (
 )
 
 const (
-	anilistEndpoint  = "https://graphql.anilist.co"
-	mangadexEndpoint = "https://api.mangadex.org"
-	defaultUserAgent = "NipahAnime/1.1.0 (+https://github.com/NipahDevTeam/Nipah--Anime)"
-	aniListTurnDelay = 320 * time.Millisecond
+	anilistEndpoint              = "https://graphql.anilist.co"
+	mangadexEndpoint             = "https://api.mangadex.org"
+	defaultUserAgent             = "NipahAnime/1.1.0 (+https://github.com/NipahDevTeam/Nipah--Anime)"
+	aniListTurnDelay             = 320 * time.Millisecond
+	aniListDegradeThreshold      = 2
+	aniListDegradeWindow         = 45 * time.Second
+	aniListDegradeCooldown       = 8 * time.Minute
+	preferredCharacterLimit      = 5
+	preferredRecommendationLimit = 5
 )
+
+type metadataSourceMode string
+
+const (
+	metadataSourceModeNormal   metadataSourceMode = "normal"
+	metadataSourceModeDegraded metadataSourceMode = "degraded"
+)
+
+type MetadataSourceStatus struct {
+	AniListMode             string `json:"anilist_mode"`
+	FallbackProvider        string `json:"fallback_provider"`
+	TrackingRemoteAvailable bool   `json:"tracking_remote_available"`
+	MessageKey              string `json:"message_key"`
+	ActivatedAtUnix         int64  `json:"activated_at_unix"`
+	CooldownEndsAtUnix      int64  `json:"cooldown_ends_at_unix"`
+}
 
 // Manager handles all external metadata API calls.
 type Manager struct {
-	mu                 sync.Mutex
-	active             map[string]*inFlightCall
-	nextAniListRequest time.Time
-	aniListCooldownEnd time.Time
+	mu                      sync.Mutex
+	active                  map[string]*inFlightCall
+	nextAniListRequest      time.Time
+	aniListCooldownEnd      time.Time
+	aniListMode             metadataSourceMode
+	aniListDegradedUntil    time.Time
+	aniListDegradedAt       time.Time
+	aniListInstabilitySince time.Time
+	aniListInstabilityCount int
 }
 
 type inFlightCall struct {
@@ -50,7 +76,8 @@ type inFlightCall struct {
 
 func NewManager() *Manager {
 	return &Manager{
-		active: make(map[string]*inFlightCall),
+		active:      make(map[string]*inFlightCall),
+		aniListMode: metadataSourceModeNormal,
 	}
 }
 
@@ -118,6 +145,69 @@ type AnimeCharacter struct {
 	NameNative string `json:"name_native"`
 	Role       string `json:"role"`
 	Image      string `json:"image"`
+}
+
+func limitAnimeCharacters(characters []AnimeCharacter, limit int) []AnimeCharacter {
+	if limit <= 0 || len(characters) == 0 {
+		return nil
+	}
+
+	mainCharacters := make([]AnimeCharacter, 0, limit)
+	supportingCharacters := make([]AnimeCharacter, 0, limit)
+	seen := make(map[string]struct{}, len(characters))
+
+	appendCharacter := func(target *[]AnimeCharacter, character AnimeCharacter) {
+		name := strings.TrimSpace(character.Name)
+		if name == "" {
+			return
+		}
+
+		role := strings.ToUpper(strings.TrimSpace(character.Role))
+		if role == "" {
+			role = "SUPPORTING"
+		}
+
+		key := fmt.Sprintf("%d:%s", character.ID, strings.ToLower(name))
+		if character.ID <= 0 {
+			key = strings.ToLower(name)
+		}
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+
+		*target = append(*target, AnimeCharacter{
+			ID:         character.ID,
+			Name:       name,
+			NameNative: strings.TrimSpace(character.NameNative),
+			Role:       role,
+			Image:      strings.TrimSpace(character.Image),
+		})
+	}
+
+	for _, character := range characters {
+		if strings.EqualFold(strings.TrimSpace(character.Role), "MAIN") {
+			appendCharacter(&mainCharacters, character)
+			continue
+		}
+		appendCharacter(&supportingCharacters, character)
+	}
+
+	limited := append(mainCharacters, supportingCharacters...)
+	if len(limited) > limit {
+		limited = limited[:limit]
+	}
+	return limited
+}
+
+func limitRecommendations(recommendations []AniListRecommendation, limit int) []AniListRecommendation {
+	if limit <= 0 || len(recommendations) == 0 {
+		return nil
+	}
+	if len(recommendations) <= limit {
+		return recommendations
+	}
+	return recommendations[:limit]
 }
 
 // MangaMetadata is the enriched result for manga from MangaDex.
@@ -385,7 +475,7 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 		}
 	}
 
-	return &AnimeMetadata{
+	result := &AnimeMetadata{
 		AniListID:         med.ID,
 		MalID:             med.IDMal,
 		TitleRomaji:       med.Title.Romaji,
@@ -431,10 +521,16 @@ func (m *Manager) GetAnimeByID(id int) (*AnimeMetadata, error) {
 					Image:      item.Node.Image.Large,
 				})
 			}
-			return out
+			return limitAnimeCharacters(out, preferredCharacterLimit)
 		}(),
-		Recommendations: mapAniListRecommendations(med.Recommendations.Edges),
-	}, nil
+		Recommendations: preferAniListDetailRecommendations(med.Recommendations.Edges, nil),
+	}
+	if med.IDMal > 0 {
+		if enrichment, enrichErr := m.GetAnimeDetailViaJikan(med.IDMal); enrichErr == nil {
+			result = applyJikanAnimeEnrichment(result, enrichment)
+		}
+	}
+	return result, nil
 }
 
 // GetAnimeEnrichmentByID fetches a lighter AniList payload for backend enrichment flows.
@@ -583,6 +679,10 @@ func (m *Manager) GetTrending(lang string) (interface{}, error) {
 }
 
 func (m *Manager) GetAniListAnimeCatalogHome(season string, year int) (map[string][]map[string]interface{}, error) {
+	if m.shouldUseJikanFallback(time.Now()) {
+		return m.GetAnimeCatalogHomeViaJikan(season, year)
+	}
+
 	nextSeason, nextYear := shiftAniListSeason(season, year, 1)
 	prevSeason, prevYear := shiftAniListSeason(season, year, -1)
 	gql := `
@@ -764,6 +864,9 @@ func (m *Manager) GetAniListAnimeCatalogHome(season string, year int) (map[strin
 		},
 	})
 	if err != nil {
+		if m.shouldUseJikanFallback(time.Now()) {
+			return m.GetAnimeCatalogHomeViaJikan(season, year)
+		}
 		return nil, err
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -918,6 +1021,11 @@ func buildAnimeCatalogPayload(request catalogFetchRequest) map[string]interface{
 
 // SearchAniList is the raw search used by the frontend search bar.
 func (m *Manager) SearchAniList(query string, lang string) (interface{}, error) {
+	now := time.Now()
+	if m.shouldUseJikanFallback(now) {
+		return m.SearchAnimeViaJikan(query)
+	}
+
 	gql := `
 	query ($search: String) {
 		Page(page: 1, perPage: 30) {
@@ -942,6 +1050,9 @@ func (m *Manager) SearchAniList(query string, lang string) (interface{}, error) 
 
 	body, err := m.postJSON(anilistEndpoint, payload)
 	if err != nil {
+		if m.shouldUseJikanFallback(time.Now()) {
+			return m.SearchAnimeViaJikan(query)
+		}
 		return nil, err
 	}
 
@@ -1669,12 +1780,14 @@ func (m *Manager) requestBytes(method, endpoint string, body []byte, contentType
 		cachepkg.Global().SetBytes(staleKey, respBody, staleMetadataRequestTTL(endpoint, body, freshTTL))
 		if endpoint == anilistEndpoint {
 			m.clearAniListRateLimitCooldown()
+			m.noteAniListRecovery(time.Now())
 		}
 		m.finishRequest(call, respBody, nil)
 		return respBody, nil
 	}
 
 	if endpoint == anilistEndpoint {
+		m.noteAniListInstability(lastErr)
 		if stale, ok := cachepkg.Global().GetBytes(staleKey); ok {
 			if aniListGraphQLError(stale) == nil {
 				m.finishRequest(call, stale, nil)
@@ -1778,7 +1891,7 @@ func performMetadataRequest(method, endpoint string, body []byte, contentType st
 }
 
 func usesStandardMetadataClient(endpoint string) bool {
-	return endpoint == anilistEndpoint || endpoint == mangadexEndpoint
+	return endpoint == anilistEndpoint || endpoint == mangadexEndpoint || strings.HasPrefix(endpoint, jikanEndpoint)
 }
 
 func (m *Manager) getJSON(endpoint string) ([]byte, error) {
@@ -1851,6 +1964,90 @@ func (m *Manager) clearAniListRateLimitCooldown() {
 	m.mu.Lock()
 	m.aniListCooldownEnd = time.Time{}
 	m.mu.Unlock()
+}
+
+func isAniListInstabilityError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if IsAniListUnavailableError(err) || IsRetryableAniListError(err) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "anilist") && (strings.Contains(message, "timeout") || strings.Contains(message, "timed out"))
+}
+
+func (m *Manager) noteAniListInstability(err error) {
+	if !isAniListInstabilityError(err) {
+		return
+	}
+
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.aniListInstabilitySince.IsZero() || now.Sub(m.aniListInstabilitySince) > aniListDegradeWindow {
+		m.aniListInstabilitySince = now
+		m.aniListInstabilityCount = 1
+	} else {
+		m.aniListInstabilityCount++
+	}
+
+	if m.aniListInstabilityCount >= aniListDegradeThreshold {
+		m.aniListMode = metadataSourceModeDegraded
+		if m.aniListDegradedAt.IsZero() {
+			m.aniListDegradedAt = now
+		}
+		until := now.Add(aniListDegradeCooldown)
+		if until.After(m.aniListDegradedUntil) {
+			m.aniListDegradedUntil = until
+		}
+	}
+}
+
+func (m *Manager) shouldUseJikanFallback(now time.Time) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.aniListMode == metadataSourceModeDegraded && now.Before(m.aniListDegradedUntil)
+}
+
+func (m *Manager) noteAniListRecovery(now time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.aniListInstabilitySince = time.Time{}
+	m.aniListInstabilityCount = 0
+	m.aniListCooldownEnd = time.Time{}
+	if !m.aniListDegradedUntil.After(now) {
+		m.aniListMode = metadataSourceModeNormal
+		m.aniListDegradedUntil = time.Time{}
+		m.aniListDegradedAt = time.Time{}
+	}
+}
+
+func (m *Manager) MetadataSourceStatus(now time.Time) MetadataSourceStatus {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	activeFallback := m.aniListMode == metadataSourceModeDegraded && now.Before(m.aniListDegradedUntil)
+	status := MetadataSourceStatus{
+		AniListMode:             string(metadataSourceModeNormal),
+		FallbackProvider:        "none",
+		TrackingRemoteAvailable: true,
+	}
+	if activeFallback {
+		status.AniListMode = string(metadataSourceModeDegraded)
+		status.FallbackProvider = "jikan"
+		status.TrackingRemoteAvailable = false
+		status.MessageKey = "anilist_degraded_jikan_active"
+	}
+	if !m.aniListDegradedAt.IsZero() {
+		status.ActivatedAtUnix = m.aniListDegradedAt.Unix()
+	}
+	if !m.aniListDegradedUntil.IsZero() {
+		status.CooldownEndsAtUnix = m.aniListDegradedUntil.Unix()
+	}
+	return status
 }
 
 func (m *Manager) reserveAniListTurn(now time.Time) time.Time {

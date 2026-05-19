@@ -123,8 +123,13 @@ New-Item -ItemType Directory -Force -Path $windowsFfmpegDir | Out-Null
 Copy-Item $ffmpegBinary (Join-Path $windowsFfmpegDir "ffmpeg.exe") -Force
 Write-Host "[Windows] Using FFmpeg from $ffmpegBinary"
 
-Invoke-Step "[Windows] Building frontend bundle" { npm.cmd --prefix frontend install }
-Invoke-Step "[Windows] Building frontend assets" { npm.cmd --prefix frontend run build }
+Push-Location "frontend"
+try {
+    Invoke-Step "[Windows] Building frontend bundle" { npm.cmd install }
+    Invoke-Step "[Windows] Building frontend assets" { npm.cmd run build }
+} finally {
+    Pop-Location
+}
 
 $preservedArtifacts = @()
 if (Test-Path "build\bin") {

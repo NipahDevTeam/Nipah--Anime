@@ -1,9 +1,12 @@
 package sourceaccess
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +55,25 @@ type responseData struct {
 	headers     http.Header
 }
 
+type persistedSessionFile struct {
+	Entries map[string]persistedSessionEntry `json:"entries"`
+}
+
+type persistedSessionEntry struct {
+	SourceID  string                   `json:"source_id"`
+	BaseURL   string                   `json:"base_url"`
+	SavedAt   time.Time                `json:"saved_at"`
+	ExpiresAt time.Time                `json:"expires_at"`
+	Cookies   []persistedSessionCookie `json:"cookies"`
+}
+
+type persistedSessionCookie struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Domain string `json:"domain,omitempty"`
+	Path   string `json:"path,omitempty"`
+}
+
 var (
 	log = logger.For("SourceAccess")
 
@@ -62,6 +84,8 @@ var (
 	sessions  = map[string]*sessionCache{}
 
 	session = httpclient.NewSession(20)
+
+	sourceAccessSessionCachePath = defaultSourceAccessSessionCachePath
 )
 
 var browserBlockedURLPatterns = []string{
@@ -251,17 +275,22 @@ func performRequest(profile SourceAccessProfile, rawURL string, opts RequestOpti
 	reqHeaders := azuretls.OrderedHeaders{
 		{"Referer", referer},
 	}
+	existingCookieHeader := findHeaderValue(opts.Headers, "Cookie")
 	for k, v := range opts.Headers {
+		if strings.EqualFold(strings.TrimSpace(k), "Cookie") {
+			continue
+		}
 		reqHeaders = append(reqHeaders, []string{k, v})
 	}
 
 	// Inject browser-solved cookies if available
 	if cookies := validSession(profile.SourceID); cookies != nil {
-		var parts []string
-		for _, c := range cookies {
-			parts = append(parts, c.Name+"="+c.Value)
+		cookieHeader := mergeCookieHeader(existingCookieHeader, cookies)
+		if cookieHeader != "" {
+			reqHeaders = append(reqHeaders, []string{"Cookie", cookieHeader})
 		}
-		reqHeaders = append(reqHeaders, []string{"Cookie", strings.Join(parts, "; ")})
+	} else if strings.TrimSpace(existingCookieHeader) != "" {
+		reqHeaders = append(reqHeaders, []string{"Cookie", existingCookieHeader})
 	}
 
 	req := &azuretls.Request{
@@ -339,19 +368,36 @@ func looksBlocked(profile SourceAccessProfile, status int, headers http.Header, 
 
 func validSession(sourceID string) []*http.Cookie {
 	sessionMu.Lock()
-	defer sessionMu.Unlock()
-
 	cached := sessions[sourceID]
-	if cached == nil || len(cached.cookies) == 0 || time.Now().After(cached.expires) {
+	if cached != nil && len(cached.cookies) > 0 && time.Now().Before(cached.expires) {
+		out := make([]*http.Cookie, 0, len(cached.cookies))
+		for _, cookie := range cached.cookies {
+			clone := *cookie
+			out = append(out, &clone)
+		}
+		sessionMu.Unlock()
+		return out
+	}
+	sessionMu.Unlock()
+
+	profile, ok := GetProfile(sourceID)
+	if !ok {
+		return nil
+	}
+	cookies, expiresAt, loaded := loadPersistedSession(profile)
+	if !loaded {
 		return nil
 	}
 
-	out := make([]*http.Cookie, 0, len(cached.cookies))
-	for _, cookie := range cached.cookies {
-		clone := *cookie
-		out = append(out, &clone)
+	sessionMu.Lock()
+	sessions[sourceID] = &sessionCache{
+		cookies: cloneCookies(cookies),
+		expires: expiresAt,
 	}
-	return out
+	sessionMu.Unlock()
+
+	log.Debug().Str("source_id", sourceID).Int("cookie_count", len(cookies)).Msg("sourceaccess restored persisted session")
+	return cloneCookies(cookies)
 }
 
 func ensureSession(profile SourceAccessProfile) ([]*http.Cookie, error) {
@@ -386,11 +432,15 @@ func ensureSession(profile SourceAccessProfile) ([]*http.Cookie, error) {
 	if err != nil {
 		cache.cookies = nil
 		cache.expires = time.Time{}
+		_ = clearPersistedSession(profile.SourceID)
 		return nil, err
 	}
 
 	cache.cookies = cloneCookies(cookies)
 	cache.expires = time.Now().Add(profile.SessionTTL)
+	if persistErr := persistSession(profile, cookies, cache.expires); persistErr != nil {
+		log.Debug().Err(persistErr).Str("source_id", profile.SourceID).Msg("sourceaccess persist session failed")
+	}
 	return cloneCookies(cookies), nil
 }
 
@@ -535,6 +585,194 @@ func cloneCookies(cookies []*http.Cookie) []*http.Cookie {
 		out = append(out, &clone)
 	}
 	return out
+}
+
+func findHeaderValue(headers map[string]string, key string) string {
+	for candidate, value := range headers {
+		if strings.EqualFold(strings.TrimSpace(candidate), key) {
+			return value
+		}
+	}
+	return ""
+}
+
+func mergeCookieHeader(existing string, cookies []*http.Cookie) string {
+	parts := make([]string, 0, len(cookies)+1)
+	if value := strings.TrimSpace(existing); value != "" {
+		parts = append(parts, value)
+	}
+	for _, cookie := range cookies {
+		if cookie == nil {
+			continue
+		}
+		parts = append(parts, cookie.Name+"="+cookie.Value)
+	}
+	return strings.Join(parts, "; ")
+}
+
+func defaultSourceAccessSessionCachePath() string {
+	if configDir, err := os.UserConfigDir(); err == nil && strings.TrimSpace(configDir) != "" {
+		return filepath.Join(configDir, "Nipah", "sourceaccess-sessions.json")
+	}
+	return filepath.Join(os.TempDir(), "sourceaccess-sessions.json")
+}
+
+func persistSession(profile SourceAccessProfile, cookies []*http.Cookie, expiresAt time.Time) error {
+	path := sourceAccessSessionCachePath()
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+
+	store, err := readPersistedSessionFile(path)
+	if err != nil {
+		return err
+	}
+	if store.Entries == nil {
+		store.Entries = map[string]persistedSessionEntry{}
+	}
+
+	persisted := make([]persistedSessionCookie, 0, len(cookies))
+	for _, cookie := range cookies {
+		if cookie == nil || strings.TrimSpace(cookie.Name) == "" {
+			continue
+		}
+		persisted = append(persisted, persistedSessionCookie{
+			Name:   cookie.Name,
+			Value:  cookie.Value,
+			Domain: cookie.Domain,
+			Path:   cookie.Path,
+		})
+	}
+
+	store.Entries[profile.SourceID] = persistedSessionEntry{
+		SourceID:  profile.SourceID,
+		BaseURL:   profile.BaseURL,
+		SavedAt:   time.Now(),
+		ExpiresAt: expiresAt,
+		Cookies:   persisted,
+	}
+	return writePersistedSessionFile(path, store)
+}
+
+func loadPersistedSession(profile SourceAccessProfile) ([]*http.Cookie, time.Time, bool) {
+	path := sourceAccessSessionCachePath()
+	if strings.TrimSpace(path) == "" {
+		return nil, time.Time{}, false
+	}
+
+	store, err := readPersistedSessionFile(path)
+	if err != nil || store.Entries == nil {
+		return nil, time.Time{}, false
+	}
+	entry, ok := store.Entries[profile.SourceID]
+	if !ok || time.Now().After(entry.ExpiresAt) {
+		if ok {
+			_ = clearPersistedSession(profile.SourceID)
+		}
+		return nil, time.Time{}, false
+	}
+
+	cookies := make([]*http.Cookie, 0, len(entry.Cookies))
+	for _, cookie := range entry.Cookies {
+		if strings.TrimSpace(cookie.Name) == "" {
+			continue
+		}
+		cookies = append(cookies, &http.Cookie{
+			Name:   cookie.Name,
+			Value:  cookie.Value,
+			Domain: cookie.Domain,
+			Path:   cookie.Path,
+		})
+	}
+	cookies = filterCookies(cookies, profile.CookieDomains)
+	if len(cookies) == 0 {
+		return nil, time.Time{}, false
+	}
+	return cookies, entry.ExpiresAt, true
+}
+
+func clearPersistedSession(sourceIDs ...string) error {
+	path := sourceAccessSessionCachePath()
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	if len(sourceIDs) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+
+	store, err := readPersistedSessionFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if store.Entries == nil {
+		return nil
+	}
+	for _, sourceID := range sourceIDs {
+		delete(store.Entries, strings.TrimSpace(sourceID))
+	}
+	if len(store.Entries) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return writePersistedSessionFile(path, store)
+}
+
+func prunePersistedSessionEntries(store persistedSessionFile) persistedSessionFile {
+	if store.Entries == nil {
+		store.Entries = map[string]persistedSessionEntry{}
+		return store
+	}
+	now := time.Now()
+	for key, entry := range store.Entries {
+		if strings.TrimSpace(key) == "" || entry.ExpiresAt.IsZero() || now.After(entry.ExpiresAt) || len(entry.Cookies) == 0 {
+			delete(store.Entries, key)
+		}
+	}
+	return store
+}
+
+func readPersistedSessionFile(path string) (persistedSessionFile, error) {
+	var store persistedSessionFile
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return persistedSessionFile{Entries: map[string]persistedSessionEntry{}}, nil
+		}
+		return persistedSessionFile{}, err
+	}
+	if len(body) == 0 {
+		return persistedSessionFile{Entries: map[string]persistedSessionEntry{}}, nil
+	}
+	if err := json.Unmarshal(body, &store); err != nil {
+		return persistedSessionFile{}, err
+	}
+	return prunePersistedSessionEntries(store), nil
+}
+
+func writePersistedSessionFile(path string, store persistedSessionFile) error {
+	store = prunePersistedSessionEntries(store)
+	if len(store.Entries) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	body, err := json.Marshal(store)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, body, 0600)
 }
 
 func IsBlocked(sourceID string, status int, headers http.Header, body []byte) bool {

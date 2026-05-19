@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 	"time"
+	"unsafe"
 
 	"miruro/backend/db"
 	"miruro/backend/metadata"
@@ -40,6 +41,29 @@ func writeRuntimeCacheSnapshotForTest[T any](t *testing.T, database *db.Database
 	if err := database.SetSetting(key, string(payload)); err != nil {
 		t.Fatalf("write snapshot payload: %v", err)
 	}
+}
+
+func assertiveAniListRateLimitError() error {
+	return metadataError("metadata request failed: 429 (Too Many Requests.)")
+}
+
+type metadataError string
+
+func (e metadataError) Error() string { return string(e) }
+
+func forceMetadataManagerDegradedForTest(t *testing.T, manager *metadata.Manager, now time.Time) {
+	t.Helper()
+
+	managerValue := reflect.ValueOf(manager).Elem()
+
+	modeField := managerValue.FieldByName("aniListMode")
+	reflect.NewAt(modeField.Type(), unsafe.Pointer(modeField.UnsafeAddr())).Elem().SetString("degraded")
+
+	degradedUntilField := managerValue.FieldByName("aniListDegradedUntil")
+	reflect.NewAt(degradedUntilField.Type(), unsafe.Pointer(degradedUntilField.UnsafeAddr())).Elem().Set(reflect.ValueOf(now.Add(8 * time.Minute)))
+
+	degradedAtField := managerValue.FieldByName("aniListDegradedAt")
+	reflect.NewAt(degradedAtField.Type(), unsafe.Pointer(degradedAtField.UnsafeAddr())).Elem().Set(reflect.ValueOf(now))
 }
 
 func TestGetAniListMangaCatalogHomeUsesPersistentSnapshotBeforeRefresh(t *testing.T) {
@@ -242,6 +266,32 @@ func TestGetAniListAnimeByIDUsesPersistentSnapshotBeforeRefresh(t *testing.T) {
 			t.Fatalf("expected stale persisted anime payload before refresh, got %#v", typed)
 		}
 	})
+}
+
+func TestGetMetadataSourceStatusReportsDegradedJikanFallback(t *testing.T) {
+	database := newRuntimeCacheTestDB(t)
+	manager := metadata.NewManager()
+	forceMetadataManagerDegradedForTest(t, manager, time.Now())
+
+	app := &App{
+		db:       database,
+		metadata: manager,
+	}
+
+	status, err := app.GetMetadataSourceStatus()
+	if err != nil {
+		t.Fatalf("expected metadata source status, got error: %v", err)
+	}
+
+	if got := status["anilist_mode"]; got != "degraded" {
+		t.Fatalf("expected degraded AniList mode, got %#v", got)
+	}
+	if got := status["fallback_provider"]; got != "jikan" {
+		t.Fatalf("expected Jikan fallback provider, got %#v", got)
+	}
+	if got := status["tracking_remote_available"]; got != false {
+		t.Fatalf("expected remote tracking to be unavailable during fallback, got %#v", got)
+	}
 }
 
 func TestGetAniListMangaByIDUsesPersistentSnapshotBeforeRefresh(t *testing.T) {

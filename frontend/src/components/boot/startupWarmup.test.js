@@ -43,14 +43,17 @@ assert.equal(plan.lang, 'en')
 assert.ok(plan.blocking.some((task) => task.key === 'home-dashboard'))
 assert.ok(plan.blocking.some((task) => task.key === 'anime-home-catalog'))
 assert.ok(plan.blocking.some((task) => task.key === 'manga-home-catalog'))
-assert.ok(plan.blocking.some((task) => task.key === 'anime-catalog-default'))
-assert.ok(plan.blocking.some((task) => task.key === 'manga-catalog-default'))
-assert.ok(plan.blocking.some((task) => task.key === 'remote-sync-status'))
+assert.ok(!plan.blocking.some((task) => task.key === 'anime-catalog-default'))
+assert.ok(!plan.blocking.some((task) => task.key === 'manga-catalog-default'))
+assert.ok(!plan.blocking.some((task) => task.key === 'remote-sync-status'))
 assert.ok(!plan.blocking.some((task) => task.key === 'mpv-status'))
 assert.ok(!plan.blocking.some((task) => task.key === 'my-lists-anime-entries'))
 assert.ok(!plan.blocking.some((task) => task.key === 'my-lists-anime-counts'))
 assert.ok(!plan.blocking.some((task) => task.key === 'my-lists-manga-entries'))
 assert.ok(!plan.blocking.some((task) => task.key === 'my-lists-manga-counts'))
+assert.ok(plan.background.some((task) => task.key === 'anime-catalog-default'))
+assert.ok(plan.background.some((task) => task.key === 'manga-catalog-default'))
+assert.ok(plan.background.some((task) => task.key === 'remote-sync-status'))
 assert.ok(!plan.background.some((task) => task.key === 'home-popular-now'))
 assert.ok(!plan.background.some((task) => task.key === 'home-trending-season'))
 assert.ok(!plan.background.some((task) => task.key === 'home-top-rated'))
@@ -62,7 +65,7 @@ assert.ok(plan.background.some((task) => task.key === 'my-lists-manga-entries'))
 assert.ok(plan.background.some((task) => task.key === 'my-lists-manga-counts'))
 assert.ok(!plan.background.some((task) => task.key === 'anime-home-catalog'))
 assert.ok(!plan.background.some((task) => task.key === 'manga-home-catalog'))
-assert.ok(STARTUP_MIN_VISIBLE_MS >= 5000)
+assert.ok(STARTUP_MIN_VISIBLE_MS <= 1500)
 assert.ok(STARTUP_EXIT_MS <= 320)
 assert.ok(STARTUP_BACKGROUND_DELAY_MS <= 200)
 assert.ok(STARTUP_TASK_TIMEOUT_MS >= 5000)
@@ -71,7 +74,7 @@ assert.ok(STARTUP_HOME_MIN_ANIME_RECENT_ITEMS >= 3)
 assert.ok(STARTUP_HOME_MIN_MANGA_SHELVES >= 2)
 assert.ok(STARTUP_HOME_MIN_MANGA_RECENT_ITEMS >= 3)
 assert.ok(STARTUP_REQUIRED_READY_TIMEOUT_MS >= 20000)
-assert.ok(STARTUP_REQUIRED_READY_RETRY_MS >= 200)
+assert.ok(STARTUP_REQUIRED_READY_RETRY_MS <= 180)
 
 assert.equal(plan.blocking[0]?.key, 'home-dashboard')
 assert.equal(plan.blocking[1]?.key, 'anime-home-catalog')
@@ -186,8 +189,8 @@ assert.equal(blockedReadiness.mode, 'blocked')
 assert.ok(blockedReadiness.missing.includes('anime-recent'))
 assert.ok(blockedReadiness.missing.includes('anime-shelves'))
 
-const mangaCatalogTask = plan.blocking.find((task) => task.key === 'manga-catalog-default')
-assert.ok(mangaCatalogTask, 'manga catalog blocking task should exist')
+const mangaCatalogTask = plan.background.find((task) => task.key === 'manga-catalog-default')
+assert.ok(mangaCatalogTask, 'manga catalog warmup task should exist in the background queue')
 const mangaRunSource = String(mangaCatalogTask.run)
 assert.ok(mangaRunSource.includes('normalizeMangaCatalogPage'), 'manga catalog startup task should normalize AniList data before it reaches the route cache')
 assert.ok(mangaRunSource.includes('prewarmAniListDetailEntries'), 'manga catalog startup task should immediately seed a small AniList manga detail band for the first landing opens')
@@ -393,24 +396,19 @@ assert.deepEqual(queueEvents, ['start-a', 'end-a', 'start-b', 'end-b'])
       queryCalls.map((entry) => JSON.stringify(entry.queryKey)).sort(),
       [
         ['gui2-home-dashboard'],
-        ['gui2-remote-sync-status'],
         ['gui2-home-anilist', 'en', warmPlan.season, warmPlan.year],
-        ['anime-catalog', 'en', 'TRENDING_DESC', '', '', 0, 1, '', ''],
-        ['anime-detail-anilist-v3', 7001, 'en'],
         ['gui2-home-manga-catalog', 'en'],
-        ['manga-catalog', 'en', 'TRENDING_DESC', '', 0, 1, '', ''],
-        ['manga-detail-anilist-v3', 8001, 'en'],
         ['gui2-home-startup-snapshot', 'en', warmPlan.season, warmPlan.year],
         ['gui2-home-startup-readiness', 'en', warmPlan.season, warmPlan.year],
       ].map((queryKey) => JSON.stringify(queryKey)).sort(),
-      'runStartupWarmup should seed the full blocking startup contract before the app shell mounts',
+      'runStartupWarmup should seed only the reduced Home-first startup contract before the app shell mounts',
     )
     assert.ok(runtimeCalls.includes('getDashboard'))
-    assert.ok(runtimeCalls.includes('getRemoteListSyncStatus'))
     assert.ok(runtimeCalls.includes(`getAniListAnimeCatalogHome:${warmPlan.season}:${warmPlan.year}`))
     assert.ok(runtimeCalls.includes('getAniListMangaCatalogHome:en'))
-    assert.ok(runtimeCalls.includes('discoverAnime'))
-    assert.ok(runtimeCalls.includes('discoverManga'))
+    assert.ok(!runtimeCalls.includes('getRemoteListSyncStatus'))
+    assert.ok(!runtimeCalls.includes('discoverAnime'))
+    assert.ok(!runtimeCalls.includes('discoverManga'))
     assert.ok(!runtimeCalls.includes('getAuthStatus'))
     assert.ok(!runtimeCalls.includes('isMPVAvailable'))
     assert.ok(!runtimeCalls.includes('getAnimeListAll'))
@@ -422,6 +420,7 @@ assert.deepEqual(queueEvents, ['start-a', 'end-a', 'start-b', 'end-b'])
 
     assert.ok(runtimeCalls.includes('getAuthStatus'))
     assert.ok(runtimeCalls.includes('isMPVAvailable'))
+    assert.ok(runtimeCalls.includes('getRemoteListSyncStatus'))
     assert.ok(runtimeCalls.includes('getAnimeListAll'))
     assert.ok(runtimeCalls.includes('getAnimeListCounts'))
     assert.ok(runtimeCalls.includes('getMangaListAll'))

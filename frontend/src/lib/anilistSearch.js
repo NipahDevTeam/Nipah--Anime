@@ -13,14 +13,24 @@ export function buildAniListAnimeSearchCandidates(query, limit = 3) {
   return buildExpandedTitleVariants(query).slice(0, resolvedLimit)
 }
 
+export function getAniListAnimeSearchIdentity(item) {
+  const aniListID = Number(item?.id || item?.anilist_id || 0)
+  if (aniListID > 0) return `anilist:${aniListID}`
+
+  const malID = Number(item?.idMal || item?.mal_id || 0)
+  if (malID > 0) return `mal:${malID}`
+
+  return ''
+}
+
 export function buildAniListAnimeSearchResults(payload, limit = 20) {
   const seen = new Set()
   const resolvedLimit = Math.max(1, Number(limit) || 20)
   return extractAniListAnimeSearchMedia(payload)
     .filter((item) => {
-      const id = Number(item?.id || item?.anilist_id || 0)
-      if (id <= 0 || seen.has(id)) return false
-      seen.add(id)
+      const identity = getAniListAnimeSearchIdentity(item)
+      if (!identity || seen.has(identity)) return false
+      seen.add(identity)
       return true
     })
     .slice(0, resolvedLimit)

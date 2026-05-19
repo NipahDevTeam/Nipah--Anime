@@ -991,6 +991,32 @@ func (a *App) GetAniListAnimeByID(id int) (interface{}, error) {
 	return result, err
 }
 
+func (a *App) GetAnimeByMalID(malID int) (interface{}, error) {
+	started := time.Now()
+	if a.metadata == nil {
+		return nil, fmt.Errorf("metadata not initialized")
+	}
+	cacheKey := fmt.Sprintf("jikan:anime:mal:v1:%d", malID)
+	result, origin, err := rememberPersistentSnapshotWithStale[*metadata.AnimeMetadata](a.db, cacheKey, 2*time.Hour, 12*time.Hour, func() (*metadata.AnimeMetadata, error) {
+		return a.metadata.GetAnimeDetailViaJikan(malID)
+	})
+	log.Debug().Int("mal_id", malID).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAnimeByMalID")
+	return result, err
+}
+
+func (a *App) GetAnimeRecommendationsByMalID(malID int) (interface{}, error) {
+	started := time.Now()
+	if a.metadata == nil {
+		return nil, fmt.Errorf("metadata not initialized")
+	}
+	cacheKey := fmt.Sprintf("jikan:anime:recommendations:mal:v1:%d", malID)
+	result, origin, err := rememberPersistentSnapshotWithStale[[]metadata.AniListRecommendation](a.db, cacheKey, 2*time.Hour, 12*time.Hour, func() ([]metadata.AniListRecommendation, error) {
+		return a.metadata.GetAnimeRecommendationsViaJikan(malID)
+	})
+	log.Debug().Int("mal_id", malID).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAnimeRecommendationsByMalID")
+	return result, err
+}
+
 func (a *App) GetAniListAnimeCatalogHome(season string, year int) (map[string][]map[string]interface{}, error) {
 	started := time.Now()
 	if a.metadata == nil {
@@ -1053,6 +1079,19 @@ func (a *App) GetAniListMangaByID(id int) (interface{}, error) {
 		return a.metadata.GetAniListMangaByID(id)
 	})
 	log.Debug().Int("id", id).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetAniListMangaByID")
+	return result, err
+}
+
+func (a *App) GetMangaRecommendationsByMalID(malID int) (interface{}, error) {
+	started := time.Now()
+	if a.metadata == nil {
+		return nil, fmt.Errorf("metadata not initialized")
+	}
+	cacheKey := fmt.Sprintf("jikan:manga:recommendations:mal:v1:%d", malID)
+	result, origin, err := rememberPersistentSnapshotWithStale[[]metadata.AniListRecommendation](a.db, cacheKey, 2*time.Hour, 12*time.Hour, func() ([]metadata.AniListRecommendation, error) {
+		return a.metadata.GetMangaRecommendationsViaJikan(malID)
+	})
+	log.Debug().Int("mal_id", malID).Str("cache", origin).Dur("took", time.Since(started)).Msg("GetMangaRecommendationsByMalID")
 	return result, err
 }
 
@@ -4036,6 +4075,26 @@ func (a *App) GetAuthStatus() map[string]interface{} {
 		}
 	}
 	return result
+}
+
+func (a *App) GetMetadataSourceStatus() (map[string]interface{}, error) {
+	status := metadata.MetadataSourceStatus{
+		AniListMode:             "normal",
+		FallbackProvider:        "none",
+		TrackingRemoteAvailable: true,
+	}
+	if a.metadata != nil {
+		status = a.metadata.MetadataSourceStatus(time.Now())
+	}
+
+	return map[string]interface{}{
+		"anilist_mode":              status.AniListMode,
+		"fallback_provider":         status.FallbackProvider,
+		"tracking_remote_available": status.TrackingRemoteAvailable,
+		"message_key":               status.MessageKey,
+		"activated_at_unix":         status.ActivatedAtUnix,
+		"cooldown_ends_at_unix":     status.CooldownEndsAtUnix,
+	}, nil
 }
 
 // LoginAniList starts the AniList OAuth flow.

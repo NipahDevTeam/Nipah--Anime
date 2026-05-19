@@ -80,6 +80,49 @@ func TestReserveAniListTurnSerializesConcurrentReservations(t *testing.T) {
 	}
 }
 
+func TestAniListDegradationActivatesAfterRetryableBurst(t *testing.T) {
+	manager := NewManager()
+
+	manager.noteAniListInstability(fmt.Errorf("metadata request failed: 429 (Too Many Requests.)"))
+	if manager.shouldUseJikanFallback(time.Now()) {
+		t.Fatalf("expected first retryable AniList instability to stay below fallback threshold")
+	}
+
+	manager.noteAniListInstability(fmt.Errorf("metadata request failed: 429 (Too Many Requests.)"))
+	if !manager.shouldUseJikanFallback(time.Now()) {
+		t.Fatalf("expected repeated retryable AniList instability to activate Jikan fallback")
+	}
+}
+
+func TestAniListDegradationSkipsNonAniListErrors(t *testing.T) {
+	manager := NewManager()
+
+	manager.noteAniListInstability(fmt.Errorf("plain network blip"))
+	manager.noteAniListInstability(fmt.Errorf("plain network blip"))
+	if manager.shouldUseJikanFallback(time.Now()) {
+		t.Fatalf("expected non-AniList instability errors to avoid activating Jikan fallback")
+	}
+}
+
+func TestAniListDegradationRecoversAfterCooldownAndSuccess(t *testing.T) {
+	manager := NewManager()
+
+	manager.noteAniListInstability(fmt.Errorf("metadata request failed: 429 (Too Many Requests.)"))
+	manager.noteAniListInstability(fmt.Errorf("metadata request failed: 429 (Too Many Requests.)"))
+	if !manager.shouldUseJikanFallback(time.Now()) {
+		t.Fatalf("expected fallback to activate before recovery")
+	}
+
+	manager.mu.Lock()
+	manager.aniListDegradedUntil = time.Now().Add(-time.Minute)
+	manager.mu.Unlock()
+
+	manager.noteAniListRecovery(time.Now())
+	if manager.shouldUseJikanFallback(time.Now()) {
+		t.Fatalf("expected successful AniList recovery after cooldown to disable fallback")
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {

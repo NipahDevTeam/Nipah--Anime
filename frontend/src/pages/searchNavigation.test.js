@@ -80,6 +80,16 @@ assert.ok(
 )
 
 assert.ok(
+  source.includes('const catalogBootLoading = !searched && !selected && catalogQuery.isLoading && displayedCatalog.length === 0'),
+  'Anime Online should detect the boot-trailing catalog loading case once Home can reveal before the catalog arrives',
+)
+
+assert.ok(
+  source.includes('ui.catalogBootLoading'),
+  'Anime Online should expose a dedicated warm loading message for the trailing startup catalog state',
+)
+
+assert.ok(
   source.includes('searchAniListAnimeWithFallback('),
   'Search should run AniList anime lookups through the shared fallback helper so aliases and sequel fragments stay visible',
 )

@@ -44,6 +44,59 @@ type AniListMangaCharacter struct {
 	Image      string `json:"image"`
 }
 
+func limitAniListMangaCharacters(characters []AniListMangaCharacter, limit int) []AniListMangaCharacter {
+	if limit <= 0 || len(characters) == 0 {
+		return nil
+	}
+
+	mainCharacters := make([]AniListMangaCharacter, 0, limit)
+	supportingCharacters := make([]AniListMangaCharacter, 0, limit)
+	seen := make(map[string]struct{}, len(characters))
+
+	appendCharacter := func(target *[]AniListMangaCharacter, character AniListMangaCharacter) {
+		name := strings.TrimSpace(character.Name)
+		if name == "" {
+			return
+		}
+
+		role := strings.ToUpper(strings.TrimSpace(character.Role))
+		if role == "" {
+			role = "SUPPORTING"
+		}
+
+		key := fmt.Sprintf("%d:%s", character.ID, strings.ToLower(name))
+		if character.ID <= 0 {
+			key = strings.ToLower(name)
+		}
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+
+		*target = append(*target, AniListMangaCharacter{
+			ID:         character.ID,
+			Name:       name,
+			NameNative: strings.TrimSpace(character.NameNative),
+			Role:       role,
+			Image:      strings.TrimSpace(character.Image),
+		})
+	}
+
+	for _, character := range characters {
+		if strings.EqualFold(strings.TrimSpace(character.Role), "MAIN") {
+			appendCharacter(&mainCharacters, character)
+			continue
+		}
+		appendCharacter(&supportingCharacters, character)
+	}
+
+	limited := append(mainCharacters, supportingCharacters...)
+	if len(limited) > limit {
+		limited = limited[:limit]
+	}
+	return limited
+}
+
 type aniListMangaNode struct {
 	ID              int    `json:"id"`
 	IDMal           int    `json:"idMal"`
@@ -294,7 +347,8 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 			Image:      strings.TrimSpace(edge.Node.Image.Large),
 		})
 	}
-	return &AniListMangaMetadata{
+
+	result := &AniListMangaMetadata{
 		AniListID:       media.ID,
 		MalID:           media.IDMal,
 		Format:          media.Format,
@@ -318,10 +372,16 @@ func (m *Manager) GetAniListMangaByID(id int) (*AniListMangaMetadata, error) {
 		Volumes:         media.Volumes,
 		Genres:          media.Genres,
 		Synonyms:        media.Synonyms,
-		Characters:      characters,
-		Recommendations: mapAniListRecommendations(media.Recommendations.Edges),
+		Characters:      limitAniListMangaCharacters(characters, preferredCharacterLimit),
+		Recommendations: preferAniListDetailRecommendations(media.Recommendations.Edges, nil),
 		DetailHydrated:  true,
-	}, nil
+	}
+	if media.IDMal > 0 {
+		if enrichment, enrichErr := m.GetMangaDetailViaJikan(media.IDMal); enrichErr == nil {
+			result = applyJikanMangaEnrichment(result, enrichment)
+		}
+	}
+	return result, nil
 }
 
 func (m *Manager) GetAniListMangaEnrichmentByID(id int) (*AniListMangaMetadata, error) {

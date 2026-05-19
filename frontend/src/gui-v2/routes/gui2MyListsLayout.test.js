@@ -11,6 +11,7 @@ assert.ok(routeSource.includes('gui2-lists-hero gui2-lists-hero-premium'), 'My L
 assert.ok(routeSource.includes('gui2-mylist-switchline gui2-lists-hero gui2-lists-hero-premium gui2-motion-enter'), 'My Lists should reduce the top area to a quiet anime/manga switchline')
 assert.ok(routeSource.includes('gui2-mylist-grid-shell gui2-lists-shelf gui2-motion-enter'), 'My Lists should animate the cover-driven collection shell as the main surface')
 assert.ok(routeSource.includes('gui2-mylist-card'), 'My Lists should render cover-driven cards instead of relying on the old table rows')
+assert.ok(routeSource.includes('Saved locally for now'), 'My Lists should explain that AniList tracking changes stay local during fallback')
 assert.ok(routeSource.includes('gui2-mylist-card-edit'), 'My Lists cards should expose a dedicated edit action')
 assert.ok(routeSource.includes('gui2-mylist-status-shelf'), 'My Lists should group the All view into status shelves')
 assert.ok(routeSource.includes('gui2-mylist-status-shelf-grid'), 'My Lists status shelves should render their own card grids')

@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	appVersion             = "3.5.1"
+	appVersion             = "3.5.2"
 	githubLatestReleaseAPI = "https://api.github.com/repos/NipahDevTeam/Nipah--Anime/releases/latest"
 )
 

@@ -677,6 +677,10 @@ a {
 }
 
 @media (max-width: 720px) {
+  .gui2-landing-recommendations-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .gui2-boot-scene-lamp {
     width: 46vw;
     height: 20vh;
@@ -5278,6 +5282,13 @@ body.reader-active .gui2-content {
   transform: translateY(-3px);
 }
 
+.gui2-catalog-loading-state {
+  min-height: clamp(280px, 34vw, 420px);
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
 .gui2-catalog-grid-motion {
   display: grid;
   gap: 0;
@@ -5805,13 +5816,26 @@ body.reader-active .gui2-content {
 
 .gui2-landing-recommendations-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.gui2-landing-recommendations-empty {
+  min-height: clamp(220px, 28vw, 320px);
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 2vw, 20px);
+  color: rgba(255, 244, 227, 0.88);
+  text-align: center;
+  font-size: clamp(22px, 2vw, 30px);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
 }
 
 .gui2-landing-recommendation-card {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   align-content: start;
   min-height: 100%;
   padding: 0;
@@ -5844,12 +5868,12 @@ body.reader-active .gui2-content {
 .gui2-landing-recommendation-artwrap {
   position: relative;
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: 16px;
   background:
     radial-gradient(circle at top, rgba(214, 164, 89, 0.18), transparent 55%),
     rgba(10, 10, 14, 0.78);
   aspect-ratio: 5 / 7;
-  box-shadow: 0 24px 42px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.2);
 }
 
 .gui2-landing-recommendation-art {
@@ -5873,8 +5897,8 @@ body.reader-active .gui2-content {
 
 .gui2-landing-recommendation-copy {
   display: grid;
-  gap: 6px;
-  padding: 0 2px;
+  gap: 5px;
+  padding: 0 1px;
 }
 
 .gui2-landing-recommendation-eyebrow {
@@ -5888,17 +5912,17 @@ body.reader-active .gui2-content {
 .gui2-landing-recommendation-title {
   margin: 0;
   color: var(--gui2-text);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  line-height: 1.14;
+  line-height: 1.12;
 }
 
 .gui2-landing-recommendation-subtitle {
   margin: 0;
   color: rgba(243, 239, 232, 0.64);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .gui2-landing-recommendation-card--placeholder .gui2-landing-recommendation-copy {
@@ -10201,7 +10225,79 @@ body.reader-active .reader-shell-v2 {
   justify-content: center;
 }
 
+.metadata-fallback-overlay {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 52;
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 14px 15px 14px 16px;
+  border: 1px solid rgba(214, 164, 89, 0.28);
+  border-radius: 18px;
+  background:
+    linear-gradient(160deg, rgba(38, 24, 10, 0.94), rgba(17, 12, 8, 0.92)),
+    radial-gradient(circle at top right, rgba(240, 188, 117, 0.16), transparent 58%);
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(18px);
+}
+
+.metadata-fallback-overlay__eyebrow {
+  color: rgba(245, 205, 149, 0.94);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.metadata-fallback-overlay__message {
+  margin: 0;
+  color: rgba(255, 245, 231, 0.92);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.metadata-fallback-overlay__dismiss {
+  justify-self: end;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 244, 228, 0.92);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    background 180ms var(--gui2-ease-premium),
+    border-color 180ms var(--gui2-ease-premium),
+    transform 180ms var(--gui2-ease-premium);
+}
+
+.metadata-fallback-overlay__dismiss:hover,
+.metadata-fallback-overlay__dismiss:focus-visible {
+  border-color: rgba(245, 205, 149, 0.3);
+  background: rgba(245, 205, 149, 0.12);
+  transform: translateY(-1px);
+}
+
+.gui2-inline-fallback-note {
+  margin: 0;
+  padding: 11px 13px;
+  border: 1px solid rgba(214, 164, 89, 0.24);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(214, 164, 89, 0.12), rgba(214, 164, 89, 0.05));
+  color: rgba(255, 243, 224, 0.88);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 @media (max-width: 1100px) {
+  .gui2-landing-recommendations-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .gui2-online-player-page {
     min-height: auto;
     padding: 18px 12px 22px;
@@ -10253,6 +10349,12 @@ body.reader-active .reader-shell-v2 {
     margin-left: 0;
     width: 100%;
     justify-content: center;
+  }
+
+  .metadata-fallback-overlay {
+    right: 16px;
+    bottom: 16px;
+    width: min(340px, calc(100vw - 24px));
   }
 
   .integrated-player-footer-actions {

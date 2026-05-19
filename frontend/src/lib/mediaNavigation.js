@@ -92,8 +92,27 @@ export function normalizeSelectedAnimePayload(anime, fallbackSourceID = '') {
     anime.title_native,
     pickAniListTitle(anime.title),
   ])
-  const providerCoverURL = anime.cover_url || anime.cover_image || ''
-  const anilistCoverURL = anime.anilistCoverImage || anime.coverImage?.extraLarge || anime.coverImage?.large || anime.coverImage?.medium || ''
+  const providerCoverURL = firstNonEmptyString([anime.cover_url, anime.cover_image])
+  const anilistCoverURL = firstNonEmptyString([
+    anime.anilistCoverImage,
+    anime.cover_large,
+    anime.cover_medium,
+    anime.coverLarge,
+    anime.coverMedium,
+    anime.coverImage?.extraLarge,
+    anime.coverImage?.large,
+    anime.coverImage?.medium,
+    anime.cover_image,
+    anime.cover_url,
+  ])
+  const bannerURL = firstNonEmptyString([
+    anime.anilistBannerImage,
+    anime.bannerImage,
+    anime.banner_image,
+    anime.resolved_banner_url,
+    anilistCoverURL,
+    providerCoverURL,
+  ])
   const preferAniListCover = ['animegg-en', 'animepahe-en'].includes(sourceID) && sourceID !== 'animekai-en'
 
   return {
@@ -103,6 +122,8 @@ export function normalizeSelectedAnimePayload(anime, fallbackSourceID = '') {
     anime_id: anime.anime_id ?? sourceAnimeID,
     title,
     anime_title: firstNonEmptyString([anime.anime_title, title]),
+    anilistCoverImage: firstNonEmptyString([anime.anilistCoverImage, anilistCoverURL, providerCoverURL]),
+    anilistBannerImage: bannerURL,
     cover_url: preferAniListCover
       ? (anilistCoverURL || providerCoverURL)
       : (providerCoverURL || anilistCoverURL),
@@ -238,6 +259,27 @@ export function buildMangaListNavigationState(entry = {}) {
     entry.title_native,
     entry.title,
   ])
+  const coverURL = firstNonEmptyString([
+    entry.cover_image,
+    entry.cover_url,
+    entry.resolved_cover_url,
+    entry.cover_large,
+    entry.cover_medium,
+    entry.coverLarge,
+    entry.coverMedium,
+    entry.coverImage?.extraLarge,
+    entry.coverImage?.large,
+    entry.coverImage?.medium,
+    entry.image,
+  ])
+  const bannerURL = firstNonEmptyString([
+    entry.banner_image,
+    entry.banner_url,
+    entry.resolved_banner_url,
+    entry.bannerImage,
+    entry.coverImage?.extraLarge,
+    coverURL,
+  ])
   const searchCandidates = buildOrderedMangaSearchCandidates(entry)
 
   return {
@@ -256,10 +298,10 @@ export function buildMangaListNavigationState(entry = {}) {
       canonical_title_english: entry.title_english || title,
       title_romaji: entry.title_romaji || title,
       title_native: entry.title_native || '',
-      cover_url: entry.cover_image || entry.cover_url || '',
-      resolved_cover_url: entry.cover_image || entry.cover_url || '',
-      banner_url: entry.banner_image || entry.banner_url || '',
-      resolved_banner_url: entry.banner_image || entry.banner_url || '',
+      cover_url: coverURL,
+      resolved_cover_url: coverURL,
+      banner_url: bannerURL,
+      resolved_banner_url: bannerURL,
       description: entry.description || entry.synopsis || '',
       resolved_description: entry.description || entry.synopsis || '',
       year: Number(entry.year || 0),

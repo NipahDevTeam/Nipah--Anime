@@ -6,7 +6,7 @@ const CACHE_TTL_MS = 10 * 60 * 1000
 const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000
 const MAX_RESOLVE_SEARCH_CANDIDATES = 4
 const MAX_RESOLVE_HITS = 4
-const RESOLVER_CACHE_VERSION = 'v9'
+const RESOLVER_CACHE_VERSION = 'v10'
 const GENERIC_SOURCE_TOKENS = new Set(['tv', 'series', 'anime', 'online'])
 const VALUE_MISS = Symbol('cache-miss')
 const STRICT_ENGLISH_SOURCE_IDS = new Set(['animekai-en', 'animepahe-en', 'animegg-en'])
@@ -134,6 +134,206 @@ function buildHitCacheKey(hit, lang = 'es') {
 
 function buildSearchCacheKey(prefix, value, extra = '') {
   return `${prefix}:${normalizeTitleForMatch(value)}:${extra}`
+}
+
+function firstNonEmptyResolverString(values = []) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
+function firstPositiveResolverNumber(values = []) {
+  for (const value of values) {
+    const numericValue = Number(value) || 0
+    if (numericValue > 0) return numericValue
+  }
+  return 0
+}
+
+function uniqueResolverStrings(values = []) {
+  const seen = new Set()
+  const out = []
+  for (const value of values) {
+    const text = String(value ?? '').trim()
+    if (!text) continue
+    const key = normalizeTitleForMatch(text)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(text)
+  }
+  return out
+}
+
+function buildResolverNonEnglishSignalSet(media = {}) {
+  return new Set(
+    uniqueResolverStrings([
+      media?.title_romaji,
+      media?.titleRomaji,
+      media?.title?.romaji,
+      media?.title_native,
+      media?.titleNative,
+      media?.title?.native,
+      media?.canonical_title,
+      media?.display_title,
+      media?.anime_title,
+    ])
+      .map((value) => normalizeTitleForMatch(value))
+      .filter(Boolean),
+  )
+}
+
+function englishResolverSignalLooksFallback(value, media = {}) {
+  const normalized = normalizeTitleForMatch(value)
+  if (!normalized) return true
+  return buildResolverNonEnglishSignalSet(media).has(normalized)
+}
+
+function mergeResolverMedia(base = {}, hydrated = {}) {
+  const baseTitle = typeof base?.title === 'object' && base?.title !== null ? base.title : {}
+  const hydratedTitle = typeof hydrated?.title === 'object' && hydrated?.title !== null ? hydrated.title : {}
+  const baseEnglishTitle = firstNonEmptyResolverString([
+    baseTitle.english,
+    base?.title_english,
+    base?.titleEnglish,
+  ])
+  const hydratedEnglishTitle = firstNonEmptyResolverString([
+    hydratedTitle.english,
+    hydrated?.title_english,
+    hydrated?.titleEnglish,
+  ])
+  const preferHydratedEnglishTitle = Boolean(
+    hydratedEnglishTitle
+    && (!baseEnglishTitle || englishResolverSignalLooksFallback(baseEnglishTitle, base)),
+  )
+  const mergedTitle = {
+    english: firstNonEmptyResolverString([
+      preferHydratedEnglishTitle ? hydratedEnglishTitle : '',
+      baseTitle.english,
+      base?.title_english,
+      base?.titleEnglish,
+      hydratedTitle.english,
+      hydrated?.title_english,
+      hydrated?.titleEnglish,
+    ]),
+    romaji: firstNonEmptyResolverString([
+      baseTitle.romaji,
+      base?.title_romaji,
+      base?.titleRomaji,
+      hydratedTitle.romaji,
+      hydrated?.title_romaji,
+      hydrated?.titleRomaji,
+    ]),
+    native: firstNonEmptyResolverString([
+      baseTitle.native,
+      base?.title_native,
+      base?.titleNative,
+      hydratedTitle.native,
+      hydrated?.title_native,
+      hydrated?.titleNative,
+    ]),
+  }
+  mergedTitle.userPreferred = firstNonEmptyResolverString([
+    baseTitle.userPreferred,
+    hydratedTitle.userPreferred,
+    mergedTitle.english,
+    mergedTitle.romaji,
+    mergedTitle.native,
+  ])
+
+  return {
+    ...hydrated,
+    ...base,
+    title: mergedTitle,
+    title_english: firstNonEmptyResolverString([
+      preferHydratedEnglishTitle ? mergedTitle.english : '',
+      base?.title_english,
+      base?.titleEnglish,
+      mergedTitle.english,
+      hydrated?.title_english,
+      hydrated?.titleEnglish,
+    ]),
+    title_romaji: firstNonEmptyResolverString([
+      base?.title_romaji,
+      base?.titleRomaji,
+      mergedTitle.romaji,
+      hydrated?.title_romaji,
+      hydrated?.titleRomaji,
+    ]),
+    title_native: firstNonEmptyResolverString([
+      base?.title_native,
+      base?.titleNative,
+      mergedTitle.native,
+      hydrated?.title_native,
+      hydrated?.titleNative,
+    ]),
+    canonical_title: firstNonEmptyResolverString([
+      base?.canonical_title,
+      base?.display_title,
+      base?.anime_title,
+      hydrated?.canonical_title,
+      hydrated?.display_title,
+      hydrated?.anime_title,
+      mergedTitle.english,
+      mergedTitle.romaji,
+      mergedTitle.native,
+    ]),
+    canonical_title_english: firstNonEmptyResolverString([
+      preferHydratedEnglishTitle ? mergedTitle.english : '',
+      base?.canonical_title_english,
+      base?.title_english,
+      hydrated?.canonical_title_english,
+      hydrated?.title_english,
+      mergedTitle.english,
+    ]),
+    mal_id: firstPositiveResolverNumber([base?.mal_id, base?.malID, base?.idMal, hydrated?.mal_id, hydrated?.malID, hydrated?.idMal]),
+    idMal: firstPositiveResolverNumber([base?.idMal, base?.mal_id, base?.malID, hydrated?.idMal, hydrated?.mal_id, hydrated?.malID]),
+    episodes: firstPositiveResolverNumber([base?.episodes, hydrated?.episodes]),
+    seasonYear: firstPositiveResolverNumber([base?.seasonYear, base?.startDate?.year, hydrated?.seasonYear, hydrated?.startDate?.year]),
+    synonyms: uniqueResolverStrings([
+      ...(Array.isArray(base?.synonyms) ? base.synonyms : []),
+      ...(Array.isArray(hydrated?.synonyms) ? hydrated.synonyms : []),
+    ]),
+  }
+}
+
+function needsStrictEnglishResolverHydration(media = {}, sourceID = '') {
+  if (!supportsEnglishAliasHydration(sourceID)) return false
+
+  const malID = firstPositiveResolverNumber([media?.mal_id, media?.malID, media?.idMal])
+  if (malID <= 0) return false
+
+  const englishSignals = uniqueResolverStrings([
+    media?.title_english,
+    media?.titleEnglish,
+    media?.canonical_title_english,
+    media?.title?.english,
+  ])
+  if (englishSignals.length === 0) return true
+
+  return englishSignals.every((value) => {
+    return englishResolverSignalLooksFallback(value, media)
+  })
+}
+
+async function hydrateResolverMediaForSource(media = {}, api = null, sourceID = '') {
+  if (!needsStrictEnglishResolverHydration(media, sourceID)) {
+    return media
+  }
+  if (typeof api?.getAnimeByMalID !== 'function') {
+    return media
+  }
+
+  const malID = firstPositiveResolverNumber([media?.mal_id, media?.malID, media?.idMal])
+  if (malID <= 0) return media
+
+  try {
+    const hydrated = await api.getAnimeByMalID(malID)
+    if (!hydrated || typeof hydrated !== 'object') return media
+    return mergeResolverMedia(media, hydrated)
+  } catch {
+    return media
+  }
 }
 
 function buildResolverTitleValues(media = {}) {
@@ -633,6 +833,15 @@ export function isStrictEnglishAnimeSource(sourceID = '') {
   return STRICT_ENGLISH_SOURCE_IDS.has(String(sourceID || '').toLowerCase())
 }
 
+function supportsEnglishAliasHydration(sourceID = '') {
+  switch (String(sourceID || '').toLowerCase()) {
+    case 'animeheaven-en':
+      return true
+    default:
+      return isStrictEnglishAnimeSource(sourceID)
+  }
+}
+
 export function rankOnlineSourceHits(results, needles, options = {}) {
   return [...results].sort((a, b) => (
     scoreSourceHit(b, needles, options) - scoreSourceHit(a, needles, options)
@@ -858,10 +1067,13 @@ function episodeCountMatchScore(targetEpisodes, actualEpisodes, sourceID = '') {
   return strictAnimeGG ? -40 : -20
 }
 
-function shouldStopResolvingAfterEpisodeProbe(media, episodeMatchScore) {
+function shouldStopResolvingAfterEpisodeProbe(media, episodeMatchScore, sourceID = '', resolvedScore = 0) {
   const expected = Number(media?.episodes) || 0
   if (episodeMatchScore >= 24) return true
   if (expected <= 0 && episodeMatchScore >= 8) return true
+  if (String(sourceID || '').toLowerCase() === 'animepahe-en' && resolvedScore >= 90 && episodeMatchScore >= 10) {
+    return true
+  }
   return false
 }
 
@@ -1005,9 +1217,10 @@ function isHighConfidenceAnimePaheHit(hit, media, sourceID = '', score = 0) {
 }
 
 export async function resolveAniListToJKAnime(media, api = wails, sourceFilter = null, lang = 'es') {
-  const candidates = buildResolveSearchQueries(media, sourceFilter || '')
   const searchSourceID = sourceFilter || 'jkanime-es'
-  const cacheKey = buildMediaCacheKey(media, candidates, searchSourceID, lang)
+  const resolverMedia = await hydrateResolverMediaForSource(media, api, searchSourceID)
+  const candidates = buildResolveSearchQueries(resolverMedia, searchSourceID)
+  const cacheKey = buildMediaCacheKey(resolverMedia, candidates, searchSourceID, lang)
   const cached = readCache(resolvedMediaCache, cacheKey)
   if (cached !== VALUE_MISS) return cached
 
@@ -1038,7 +1251,7 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
           aggregatedHits.push(hit)
         }
 
-        if (hits.length && hasStrongSearchCandidate(aggregatedHits, media, searchSourceID, title)) {
+        if (hits.length && hasStrongSearchCandidate(aggregatedHits, resolverMedia, searchSourceID, title)) {
           break
         }
       } catch (error) {
@@ -1086,13 +1299,13 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
   }
 
   const minResolveScore = resolveMinScore(searchSourceID)
-  const rankedHits = rankJKAnimeResults(aggregatedHits, media, searchSourceID)
+  const rankedHits = rankJKAnimeResults(aggregatedHits, resolverMedia, searchSourceID)
     .filter((entry) => entry.score >= minResolveScore)
     .slice(0, resolveHitProbeLimit(searchSourceID))
 
   const resolvedHits = []
   for (const { hit, score } of rankedHits) {
-    const shouldRetryStrongHit = isHighConfidenceAnimePaheHit(hit, media, searchSourceID, score)
+    const shouldRetryStrongHit = isHighConfidenceAnimePaheHit(hit, resolverMedia, searchSourceID, score)
     const probeTimeouts = [
       resolveEpisodeProbeTimeoutMs(searchSourceID, api),
       shouldRetryStrongHit ? resolveEpisodeProbeRetryTimeoutMs(searchSourceID, api) : 0,
@@ -1124,13 +1337,14 @@ export async function resolveAniListToJKAnime(media, api = wails, sourceFilter =
       if (!episodes?.length) continue
 
       const episodeMatch = episodeCountMatchScore(media?.episodes, episodes.length, searchSourceID)
+      const resolvedScore = score + episodeMatch
       resolvedHits.push({
-        hit: enrichHit(hit, media, episodes),
+        hit: enrichHit(hit, resolverMedia, episodes),
         searchedTitle,
-        score: score + episodeMatch,
+        score: resolvedScore,
       })
 
-      if (shouldStopResolvingAfterEpisodeProbe(media, episodeMatch)) {
+      if (shouldStopResolvingAfterEpisodeProbe(resolverMedia, episodeMatch, searchSourceID, resolvedScore)) {
         break
       }
     } catch (error) {

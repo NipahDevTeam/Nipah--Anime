@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { buildMotionVars } from '../../gui-v2/motion/gui2Motion'
-import { proxyImage, wails } from '../../lib/wails'
+import { proxyImage } from '../../lib/wails'
 import { getMangaSourceMeta } from '../../lib/mangaSources'
 import LandingRecommendationsStage from './landing/LandingRecommendationsStage'
 import { buildLandingQueueWindow } from './landing/landingQueueWindowing'
@@ -118,14 +117,16 @@ function buildMangaRecommendationNavigationEntry(item) {
   const titleRomaji = typeof media?.title?.romaji === 'string' ? media.title.romaji : ''
   const titleNative = typeof media?.title?.native === 'string' ? media.title.native : ''
   const title = getRecommendationTitle(item)
-  const anilistID = Number(media?.id || item?.anilist_id || item?.id || 0)
+  const anilistID = Number(item?.anilist_id || item?.anilistID || item?.AniListID || media?.anilist_id || media?.anilistID || media?.AniListID || 0)
   const coverImage = media?.coverImage || item?.coverImage || null
 
   if (anilistID <= 0 && !title) return null
 
   return {
     ...media,
+    id: anilistID,
     anilist_id: anilistID,
+    mal_id: Number(item?.mal_id || item?.malID || item?.MalID || media?.mal_id || media?.malID || media?.MalID || item?.idMal || media?.idMal || 0),
     title,
     title_english: titleEnglish || title,
     title_romaji: titleRomaji || title,
@@ -368,18 +369,8 @@ export default function OnlineMangaDetail({
     (detail?.averageScore || detail?.average_score) ? { label: isEnglish ? 'Rating' : 'Puntuacion', value: `${detail.averageScore || detail.average_score}` } : null,
   ]
   const explicitRecommendationItems = useMemo(() => {
-    const localSources = [
-      detail?.recommendations,
-      detail?.recommendedMedia,
-      detail?.relatedRecommendations,
-      detail?.related_recommendations,
-      selected?.recommendations,
-      selected?.recommendedMedia,
-    ].filter(Array.isArray)
-
     const seen = new Set()
-    return localSources
-      .flat()
+    return (Array.isArray(detail?.recommendations) ? detail.recommendations : Array.isArray(detail?.Recommendations) ? detail.Recommendations : [])
       .map((item) => {
         const title = getRecommendationTitle(item)
         const discriminator = getRecommendationDiscriminator(item)
@@ -396,15 +387,15 @@ export default function OnlineMangaDetail({
         }
       })
       .filter(Boolean)
-      .slice(0, 6)
-  }, [detail, isEnglish, selected])
+      .slice(0, 5)
+  }, [detail?.Recommendations, detail?.recommendations, isEnglish])
   const recommendationItems = useMemo(() => {
-    return explicitRecommendationItems.slice(0, 6)
+    return explicitRecommendationItems.slice(0, 5)
   }, [explicitRecommendationItems])
   const recommendationsTitle = ui.recommendationsTitle || (isEnglish ? 'Keep reading' : 'Sigue leyendo')
   const recommendationsEmptyCopy = ui.recommendationsEmptyCopy || (isEnglish
-    ? 'Related manga will settle here as recommendation data and source enrichment finish wiring in.'
-    : 'Los mangas relacionados se acomodaran aqui cuando terminen de conectarse las recomendaciones y el enriquecimiento de fuentes.')
+    ? 'This place seems rather empty... (￣ω￣;)'
+    : 'Este lugar se ve bastante vacío... (￣ω￣;)')
   const chapterWindow = useMemo(() => buildLandingQueueWindow({
     items: visibleChapters,
     page: chapterPage,
@@ -534,23 +525,9 @@ export default function OnlineMangaDetail({
             </div>
 
             {sourceIsLoading ? (
-              <>
-                <div className="manga-skeleton-caption">
-                  {selected.mode === 'canonical' ? ui.resolvingSource : ui.loadingChapters}
-                </div>
-                <div className="manga-chapter-grid">
-                  {Array.from({ length: 8 }).map((_, index) => (
-                    <div key={index} className="manga-chapter-card manga-chapter-card-skeleton">
-                      <div className="skeleton-block manga-chapter-skeleton-number" />
-                      <div className="manga-chapter-body">
-                        <div className="skeleton-block skeleton-line skeleton-line-xs" />
-                        <div className="skeleton-block skeleton-line skeleton-line-md" />
-                        <div className="skeleton-block skeleton-line skeleton-line-sm" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
+              <div className="empty-state" style={{ padding: '40px 0' }}>
+                <div className="empty-state-title">{selected.mode === 'canonical' ? ui.resolvingSource : ui.loadingChapters}</div>
+              </div>
             ) : null}
 
             {!sourceIsLoading && (activeSourceMatch?.status === 'not_found' || activeSourceMatch?.status === 'unresolved' || activeSourceMatch?.status === 'error') ? (
@@ -659,7 +636,7 @@ export default function OnlineMangaDetail({
         items={recommendationItems}
         onSelectItem={onRecommendationSelect}
         emptyCopy={recommendationsEmptyCopy}
-        placeholderCount={4}
+        placeholderCount={5}
       />
     </div>
   )

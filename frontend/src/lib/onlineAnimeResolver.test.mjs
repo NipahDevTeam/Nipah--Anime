@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { buildResolveSearchQueries, enrichJKAnimeHit, isStrictEnglishAnimeSource, resolveAniListToJKAnime, scoreOnlineSourceHit } from './onlineAnimeResolver.js'
+import { buildPendingAniListSelectedAnime } from './mediaNavigation.js'
 
 const flatAniListMedia = {
   anilist_id: 44567,
@@ -211,6 +212,285 @@ assert.equal(
     searchCallCount,
     1,
     `AnimeHeaven should stop after the first strong search hit instead of fanning out extra fallback searches (observed ${searchCallCount} searches)`,
+  )
+}
+
+{
+  const searchedTitles = []
+  let malDetailLookups = 0
+  const media = {
+    mal_id: 21273,
+    title_romaji: 'Wotaku ni Koi wa Muzukashii',
+    title_native: 'ヲタクに恋は難しい',
+    canonical_title: 'Wotaku ni Koi wa Muzukashii',
+    episodes: 11,
+    seasonYear: 2018,
+  }
+
+  const api = {
+    async searchOnline(title, sourceID) {
+      searchedTitles.push(`${sourceID}:${title}`)
+      if (title === 'Wotakoi: Love Is Hard for Otaku') {
+        return [{
+          id: 'wotakoi-hit',
+          title: 'Wotakoi: Love Is Hard for Otaku',
+          year: 2018,
+          source_id: sourceID,
+        }]
+      }
+      return []
+    },
+    async getOnlineEpisodes(_sourceID, animeID) {
+      return Array.from({ length: animeID === 'wotakoi-hit' ? 11 : 0 }, (_, index) => ({
+        id: `${animeID}-ep-${index + 1}`,
+        number: index + 1,
+      }))
+    },
+    async getAnimeByMalID(malID) {
+      malDetailLookups += 1
+      assert.equal(malID, 21273, 'resolver should hydrate the expected MAL entry')
+      return {
+        mal_id: malID,
+        title: {
+          english: 'Wotakoi: Love Is Hard for Otaku',
+          romaji: 'Wotaku ni Koi wa Muzukashii',
+          native: 'ヲタクに恋は難しい',
+        },
+        title_english: 'Wotakoi: Love Is Hard for Otaku',
+        title_romaji: 'Wotaku ni Koi wa Muzukashii',
+        title_native: 'ヲタクに恋は難しい',
+        canonical_title: 'Wotakoi: Love Is Hard for Otaku',
+        synonyms: ['Wotakoi', 'Love is Hard for Otaku'],
+        episodes: 11,
+        seasonYear: 2018,
+      }
+    },
+  }
+
+  const resolved = await resolveAniListToJKAnime(media, api, 'animepahe-en', 'en')
+
+  assert.equal(
+    resolved.hit?.id,
+    'wotakoi-hit',
+    `Strict English resolution should hydrate MAL/Jikan aliases before giving up on romaji-dominant metadata. Got ${JSON.stringify(resolved)}`,
+  )
+  assert.equal(
+    malDetailLookups,
+    1,
+    'Strict English resolution should hydrate MAL/Jikan metadata once when AniList detail is missing',
+  )
+  assert.ok(
+    searchedTitles.some((value) => value.endsWith(':Wotakoi: Love Is Hard for Otaku')),
+    `Strict English resolution should search the hydrated English alias for romaji-dominant metadata. Searches: ${JSON.stringify(searchedTitles)}`,
+  )
+}
+
+{
+  const searchedTitles = []
+  let malDetailLookups = 0
+  const pendingMedia = buildPendingAniListSelectedAnime({
+    mal_id: 50425,
+    title: {
+      romaji: 'Fuufu Ijou, Koibito Miman.',
+    },
+    title_romaji: 'Fuufu Ijou, Koibito Miman.',
+    canonical_title: 'Fuufu Ijou, Koibito Miman.',
+    episodes: 12,
+    seasonYear: 2022,
+  }, 'animepahe-en')
+
+  assert.equal(
+    pendingMedia.title_english,
+    'Fuufu Ijou, Koibito Miman.',
+    'Pending navigation payloads should reproduce the current romaji-as-English fallback shape seen in the app path',
+  )
+
+  const api = {
+    async searchOnline(title, sourceID) {
+      searchedTitles.push(`${sourceID}:${title}`)
+      const normalized = String(title).replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
+      if (normalized === 'fuufu ijou koibito miman' || normalized === 'more than a married couple but not lovers') {
+        return [{
+          id: 'married-couple-hit',
+          title: 'More than a Married Couple, but Not Lovers.',
+          year: 2022,
+          source_id: sourceID,
+        }]
+      }
+      return []
+    },
+    async getOnlineEpisodes(_sourceID, animeID) {
+      return Array.from({ length: animeID === 'married-couple-hit' ? 12 : 0 }, (_, index) => ({
+        id: `${animeID}-ep-${index + 1}`,
+        number: index + 1,
+      }))
+    },
+    async getAnimeByMalID(malID) {
+      malDetailLookups += 1
+      assert.equal(malID, 50425, 'resolver should hydrate the expected MAL entry')
+      return {
+        mal_id: malID,
+        title: {
+          english: 'More than a Married Couple, but Not Lovers.',
+          romaji: 'Fuufu Ijou, Koibito Miman.',
+          native: '夫婦以上、恋人未満。',
+        },
+        title_english: 'More than a Married Couple, but Not Lovers.',
+        title_romaji: 'Fuufu Ijou, Koibito Miman.',
+        title_native: '夫婦以上、恋人未満。',
+        canonical_title: 'More than a Married Couple, but Not Lovers.',
+        synonyms: ['Fuukoi'],
+        episodes: 12,
+        seasonYear: 2022,
+      }
+    },
+  }
+
+  const resolved = await resolveAniListToJKAnime(pendingMedia, api, 'animepahe-en', 'en')
+
+  assert.equal(
+    resolved.hit?.id,
+    'married-couple-hit',
+    `Strict English resolution should still hydrate MAL/Jikan aliases when a pending navigation payload copied romaji into title_english. Got ${JSON.stringify(resolved)}`,
+  )
+  assert.equal(
+    malDetailLookups,
+    1,
+    'Strict English resolution should not treat a romaji fallback in title_english as proof that real English metadata is already present',
+  )
+  assert.ok(
+    searchedTitles.some((value) => value.includes(':More than a Married Couple')),
+    `Strict English resolution should search the hydrated English title for pending romaji-first payloads. Searches: ${JSON.stringify(searchedTitles)}`,
+  )
+}
+
+{
+  const searchedTitles = []
+  let malDetailLookups = 0
+  const pendingMedia = buildPendingAniListSelectedAnime({
+    mal_id: 77777,
+    title: {
+      romaji: 'Kimi to Boku no Mirai',
+    },
+    title_romaji: 'Kimi to Boku no Mirai',
+    canonical_title: 'Kimi to Boku no Mirai',
+    episodes: 13,
+    seasonYear: 2024,
+  }, 'animeheaven-en')
+
+  const api = {
+    async searchOnline(title, sourceID) {
+      searchedTitles.push(`${sourceID}:${title}`)
+      if (title === 'Our Future Together') {
+        return [{
+          id: 'animeheaven-english-hit',
+          title: 'Our Future Together',
+          year: 2024,
+          source_id: sourceID,
+        }]
+      }
+      return []
+    },
+    async getOnlineEpisodes(_sourceID, animeID) {
+      return Array.from({ length: animeID === 'animeheaven-english-hit' ? 13 : 0 }, (_, index) => ({
+        id: `${animeID}-ep-${index + 1}`,
+        number: index + 1,
+      }))
+    },
+    async getAnimeByMalID(malID) {
+      malDetailLookups += 1
+      assert.equal(malID, 77777, 'AnimeHeaven hydration should request the expected MAL entry')
+      return {
+        mal_id: malID,
+        title: {
+          english: 'Our Future Together',
+          romaji: 'Kimi to Boku no Mirai',
+          native: '君と僕の未来',
+        },
+        title_english: 'Our Future Together',
+        title_romaji: 'Kimi to Boku no Mirai',
+        title_native: '君と僕の未来',
+        canonical_title: 'Our Future Together',
+        episodes: 13,
+        seasonYear: 2024,
+      }
+    },
+  }
+
+  const resolved = await resolveAniListToJKAnime(pendingMedia, api, 'animeheaven-en', 'en')
+
+  assert.equal(
+    resolved.hit?.id,
+    'animeheaven-english-hit',
+    `AnimeHeaven should hydrate MAL/Jikan English aliases when pending navigation payloads only carry romaji fallback titles. Got ${JSON.stringify(resolved)}`,
+  )
+  assert.equal(
+    malDetailLookups,
+    1,
+    'AnimeHeaven should use the same MAL/Jikan hydration fallback when English metadata is missing or copied from romaji',
+  )
+  assert.ok(
+    searchedTitles.some((value) => value.endsWith(':Our Future Together')),
+    `AnimeHeaven should search the hydrated English alias when romaji-only pending payloads would otherwise fail. Searches: ${JSON.stringify(searchedTitles)}`,
+  )
+}
+
+{
+  const searchedTitles = []
+  const media = {
+    mal_id: 60001,
+    title_romaji: 'Koori no Sekai',
+    canonical_title: 'Koori no Sekai',
+    episodes: 12,
+    seasonYear: 2024,
+  }
+
+  const api = {
+    async searchOnline(title, sourceID) {
+      searchedTitles.push(`${sourceID}:${title}`)
+      if (title === 'Ice World') {
+        return [{
+          id: 'ice-world-hit',
+          title: 'Ice World',
+          year: 2024,
+          source_id: sourceID,
+        }]
+      }
+      return []
+    },
+    async getOnlineEpisodes(_sourceID, animeID) {
+      return Array.from({ length: animeID === 'ice-world-hit' ? 12 : 0 }, (_, index) => ({
+        id: `${animeID}-ep-${index + 1}`,
+        number: index + 1,
+      }))
+    },
+    async getAnimeByMalID(malID) {
+      assert.equal(malID, 60001)
+      return {
+        mal_id: malID,
+        title: {
+          english: 'Ice World',
+          romaji: 'Koori no Sekai',
+        },
+        title_english: 'Ice World',
+        title_romaji: 'Koori no Sekai',
+        canonical_title: 'Ice World',
+        episodes: 12,
+        seasonYear: 2024,
+      }
+    },
+  }
+
+  const resolved = await resolveAniListToJKAnime(media, api, 'animegg-en', 'en')
+
+  assert.equal(
+    resolved.hit?.id,
+    'ice-world-hit',
+    `Strict English sources should share the same MAL/Jikan hydration path instead of relying on AnimePahe-only heuristics. Got ${JSON.stringify(resolved)}`,
+  )
+  assert.ok(
+    searchedTitles.some((value) => value.endsWith(':Ice World')),
+    `Strict English resolution should search hydrated English aliases for AnimeGG-style lookups too. Searches: ${JSON.stringify(searchedTitles)}`,
   )
 }
 

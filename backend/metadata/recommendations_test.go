@@ -5,17 +5,14 @@ import (
 	"testing"
 )
 
-func TestAniListAnimeDetailQueryIncludesRecommendations(t *testing.T) {
+func TestAniListAnimeDetailQueryIncludesRecommendationsAgain(t *testing.T) {
 	query := aniListAnimeDetailQuery()
 
 	for _, expected := range []string{
-		"recommendations(",
-		"node {",
-		"rating",
-		"mediaRecommendation {",
-		"idMal",
-		"coverImage { extraLarge large medium }",
-		"siteUrl",
+		"characters(perPage: 5, sort: [ROLE, RELEVANCE])",
+		"streamingEpisodes",
+		"studios(isMain: true)",
+		"recommendations(perPage: 8, sort: [RATING_DESC, ID_DESC])",
 	} {
 		if !strings.Contains(query, expected) {
 			t.Fatalf("expected anime detail query to contain %q, got %q", expected, query)
@@ -23,17 +20,14 @@ func TestAniListAnimeDetailQueryIncludesRecommendations(t *testing.T) {
 	}
 }
 
-func TestAniListMangaDetailQueryIncludesRecommendations(t *testing.T) {
+func TestAniListMangaDetailQueryIncludesRecommendationsAgain(t *testing.T) {
 	query := aniListMangaDetailQuery()
 
 	for _, expected := range []string{
-		"recommendations(",
-		"node {",
-		"rating",
-		"mediaRecommendation {",
-		"idMal",
-		"coverImage { extraLarge large medium }",
-		"siteUrl",
+		"characters(perPage: 5, sort: [ROLE, RELEVANCE])",
+		"description(asHtml: false)",
+		"genres",
+		"recommendations(perPage: 8, sort: [RATING_DESC, ID_DESC])",
 	} {
 		if !strings.Contains(query, expected) {
 			t.Fatalf("expected manga detail query to contain %q, got %q", expected, query)
@@ -174,5 +168,59 @@ func TestMapAniListRecommendationsSkipsUntitledAndDuplicateNodes(t *testing.T) {
 	}
 	if recommendations[0].ID != 2 || recommendations[0].Title.English != "Blue Box" {
 		t.Fatalf("expected Blue Box recommendation to remain, got %+v", recommendations[0])
+	}
+}
+
+func TestAnimeDetailRecommendationsPreferAniListEdges(t *testing.T) {
+	edges := []aniListRecommendationEdge{
+		{
+			Node: aniListRecommendationNode{
+				ID:     1,
+				Rating: 94,
+				MediaRecommendation: aniListRecommendationMedia{
+					ID:    111,
+					IDMal: 211,
+					Title: aniListRecommendationTitleNode{English: "AniList Pick"},
+				},
+			},
+		},
+	}
+	jikanFallback := []AniListRecommendation{
+		{ID: 999, AniListID: 0, MalID: 999, Title: AniListRecommendationTitle{English: "Jikan Pick"}},
+	}
+
+	recommendations := preferAniListDetailRecommendations(edges, jikanFallback)
+	if len(recommendations) != 1 {
+		t.Fatalf("expected AniList recommendations to win, got %+v", recommendations)
+	}
+	if recommendations[0].AniListID != 111 || recommendations[0].Title.English != "AniList Pick" {
+		t.Fatalf("expected AniList recommendation payload to win, got %+v", recommendations[0])
+	}
+}
+
+func TestMangaDetailRecommendationsPreferAniListEdges(t *testing.T) {
+	edges := []aniListRecommendationEdge{
+		{
+			Node: aniListRecommendationNode{
+				ID:     2,
+				Rating: 91,
+				MediaRecommendation: aniListRecommendationMedia{
+					ID:    212,
+					IDMal: 312,
+					Title: aniListRecommendationTitleNode{English: "AniList Manga Pick"},
+				},
+			},
+		},
+	}
+	jikanFallback := []AniListRecommendation{
+		{ID: 888, AniListID: 0, MalID: 888, Title: AniListRecommendationTitle{English: "Jikan Manga Pick"}},
+	}
+
+	recommendations := preferAniListDetailRecommendations(edges, jikanFallback)
+	if len(recommendations) != 1 {
+		t.Fatalf("expected AniList recommendations to win, got %+v", recommendations)
+	}
+	if recommendations[0].AniListID != 212 || recommendations[0].Title.English != "AniList Manga Pick" {
+		t.Fatalf("expected AniList manga recommendation payload to win, got %+v", recommendations[0])
 	}
 }

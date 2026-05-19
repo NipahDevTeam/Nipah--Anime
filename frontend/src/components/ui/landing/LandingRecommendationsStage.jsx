@@ -39,28 +39,14 @@ function RecommendationCard({ item, onSelectItem = null }) {
   return <article className="gui2-landing-recommendation-card">{cardContent}</article>
 }
 
-function PlaceholderCard({ title, copy, slot }) {
-  return (
-    <article className="gui2-landing-recommendation-card gui2-landing-recommendation-card--placeholder">
-      <div className="gui2-landing-recommendation-art gui2-landing-recommendation-art--placeholder" aria-hidden="true">
-        {slot}
-      </div>
-      <div className="gui2-landing-recommendation-copy">
-        <div className="gui2-landing-recommendation-eyebrow">{title}</div>
-        <p className="gui2-landing-recommendation-subtitle">{copy}</p>
-      </div>
-    </article>
-  )
-}
-
 export default function LandingRecommendationsStage({
   title,
   items,
   emptyCopy,
-  placeholderCount = 4,
+  placeholderCount = 5,
   onSelectItem = null,
 }) {
-  const visibleItems = Array.isArray(items) ? items.slice(0, 6) : []
+  const visibleItems = Array.isArray(items) ? items.slice(0, 5) : []
   const hasItems = visibleItems.length > 0
 
   return (
@@ -69,18 +55,13 @@ export default function LandingRecommendationsStage({
         <h3 className="gui2-landing-section-title">{title}</h3>
       </div>
 
-      <div className="gui2-landing-recommendations-grid">
-        {hasItems
-          ? visibleItems.map((item) => <RecommendationCard key={item.key} item={item} onSelectItem={onSelectItem} />)
-          : Array.from({ length: placeholderCount }).map((_, index) => (
-            <PlaceholderCard
-              key={`recommendation-placeholder-${index}`}
-              slot={index + 1}
-              title={title}
-              copy={emptyCopy}
-            />
-          ))}
-      </div>
+      {hasItems ? (
+        <div className="gui2-landing-recommendations-grid">
+          {visibleItems.map((item) => <RecommendationCard key={item.key} item={item} onSelectItem={onSelectItem} />)}
+        </div>
+      ) : (
+        <div className="media-detail-empty-copy gui2-landing-recommendations-empty">{emptyCopy}</div>
+      )}
     </section>
   )
 }

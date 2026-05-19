@@ -13,6 +13,7 @@ const cssSource = readFileSync(cssPath, 'utf8')
 const notifierSource = readFileSync(notifierPath, 'utf8')
 
 assert.ok(routeSource.includes('AniList'), 'settings route should keep AniList integration')
+assert.ok(routeSource.includes('AniList sync is temporarily unavailable'), 'settings route should explain when AniList sync is disabled during Jikan fallback')
 assert.ok(!routeSource.includes('MyAnimeList'), 'settings route should not expose MyAnimeList controls')
 assert.ok(!routeSource.includes('preferred_audio'), 'settings route should not expose preferred audio controls')
 assert.ok(routeSource.includes('gui2-settingsv2'), 'settings route should render the new settings v2 shell')

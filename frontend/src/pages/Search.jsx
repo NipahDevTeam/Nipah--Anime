@@ -487,6 +487,7 @@ export default function Search() {
     noCatalogDesc: isEnglish
       ? 'Could not load anime to explore. Adjust the filters or try again in a few seconds.'
       : 'No se pudieron cargar animes para explorar. Ajusta los filtros o intenta de nuevo en unos segundos.',
+    catalogBootLoading: isEnglish ? 'Preparing the catalog...' : 'Preparando el catálogo...',
     catalogUnavailableTitle: isEnglish ? 'AniList catalog temporarily unavailable' : 'Catálogo de AniList temporalmente no disponible',
     catalogUnavailableDesc: isEnglish
       ? 'AniList is having upstream API problems right now. Search and catalog browsing will resume after AniList recovers.'
@@ -846,6 +847,7 @@ export default function Search() {
     isCatalogBrowseMode && catalogLoading,
     { delayMs: 0, minVisibleMs: 280 },
   )
+  const catalogBootLoading = !searched && !selected && catalogQuery.isLoading && displayedCatalog.length === 0
 
   useEffect(() => {
     const perfKey = [appLang, catalogSort, catalogGenres.join(','), catalogSeason, catalogYear, catalogFormat, catalogStatus].join(':')
@@ -1276,6 +1278,14 @@ export default function Search() {
                   </div>
                 )}
               />
+            </div>
+          )
+        }
+
+        if (catalogBootLoading) {
+          return (
+            <div className="empty-state gui2-catalog-loading-state">
+              <div className="empty-state-title">{ui.catalogBootLoading}</div>
             </div>
           )
         }

@@ -839,6 +839,14 @@ export const wails = {
     if (isWailsRuntimeUnavailable()) return PREVIEW_ANIME_LIBRARY.find((item) => Number(item.id) === Number(id)) ?? null
     return rememberRuntimeCache(['anilist-anime-detail-v2', Number(id) || 0], SOURCE_METADATA_CACHE_TTL_MS, () => window.go.main.App.GetAniListAnimeByID(id))
   },
+  async getAnimeByMalID(malID) {
+    if (isWailsRuntimeUnavailable()) return PREVIEW_ANIME_LIBRARY.find((item) => Number(item.mal_id || item.idMal || 0) === Number(malID)) ?? null
+    return rememberRuntimeCache(['jikan-anime-detail-v1', Number(malID) || 0], SOURCE_METADATA_CACHE_TTL_MS, () => window.go.main.App.GetAnimeByMalID(malID))
+  },
+  async getAnimeRecommendationsByMalID(malID) {
+    if (isWailsRuntimeUnavailable()) return []
+    return rememberRuntimeCache(['jikan-anime-recommendations-v1', Number(malID) || 0], SOURCE_METADATA_CACHE_TTL_MS, () => window.go.main.App.GetAnimeRecommendationsByMalID(malID))
+  },
   async getAniListAnimeCatalogHome(season = '', year = 0) {
     if (isWailsRuntimeUnavailable()) return getPreviewAnimeCatalogHome(season, year)
     return window.go.main.App.GetAniListAnimeCatalogHome(season, year)
@@ -846,6 +854,10 @@ export const wails = {
   async getAniListMangaByID(id) {
     if (isWailsRuntimeUnavailable()) return PREVIEW_MANGA_LIBRARY.find((item) => Number(item.anilist_id || item.id) === Number(id)) ?? null
     return rememberRuntimeCache(['anilist-manga-detail-v3', Number(id) || 0], SOURCE_METADATA_CACHE_TTL_MS, () => window.go.main.App.GetAniListMangaByID(id))
+  },
+  async getMangaRecommendationsByMalID(malID) {
+    if (isWailsRuntimeUnavailable()) return []
+    return rememberRuntimeCache(['jikan-manga-recommendations-v1', Number(malID) || 0], SOURCE_METADATA_CACHE_TTL_MS, () => window.go.main.App.GetMangaRecommendationsByMalID(malID))
   },
   async getAniListMangaCatalogHome(lang = 'es') {
     if (isWailsRuntimeUnavailable()) return getPreviewMangaCatalogHome()
@@ -1144,6 +1156,17 @@ export const wails = {
       mal: { logged_in: false },
     }
     return window.go.main.App.GetAuthStatus()
+  },
+  async getMetadataSourceStatus() {
+    if (isWailsRuntimeUnavailable()) return {
+      anilist_mode: 'normal',
+      fallback_provider: 'none',
+      tracking_remote_available: true,
+      message_key: '',
+      activated_at_unix: 0,
+      cooldown_ends_at_unix: 0,
+    }
+    return window.go.main.App.GetMetadataSourceStatus()
   },
   async loginAniList() {
     if (isWailsRuntimeUnavailable()) return { username: 'dev-user', user_id: 1, avatar: '' }

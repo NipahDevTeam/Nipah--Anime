@@ -3,6 +3,8 @@ import bootIllustration from '../../assets/boot/nipah-boot-cozy-host-transparent
 import { wails } from '../../lib/wails'
 import {
   STARTUP_BACKGROUND_DELAY_MS,
+  getStartupSeason,
+  getStartupWarmupLanguage,
   runStartupWarmup,
   STARTUP_EXIT_MS,
   STARTUP_MIN_VISIBLE_MS,
@@ -11,6 +13,7 @@ import {
   waitForStartupDelay,
 } from './startupWarmup'
 import { BOOT_CATCHPHRASE } from './bootStageModel'
+import { isStartupSnapshotUsable, loadStartupSnapshot } from './startupSnapshotStore'
 
 function BootOverlay({ phase }) {
   return (
@@ -55,21 +58,37 @@ export default function NipahBootRoot({ children, queryClient }) {
       const startedAt = performance.now()
       const deadlineAt = startedAt + STARTUP_REQUIRED_READY_TIMEOUT_MS
       let warmup = null
+      let warmupPromise = null
+      const settings = await Promise.resolve(wails.getSettings?.()).catch(() => ({}))
+      const { season, year } = getStartupSeason()
+      const lang = getStartupWarmupLanguage(settings)
+      const persistedSnapshot = loadStartupSnapshot()
+      const persistedReady = isStartupSnapshotUsable(persistedSnapshot, { lang, season, year })
 
-      do {
-        const warmupPromise = runStartupWarmup(queryClient)
+      if (persistedReady) {
+        queryClient.setQueryData(['gui2-home-startup-snapshot', lang, season, year], persistedSnapshot.snapshot)
+        queryClient.setQueryData(['gui2-home-startup-readiness', lang, season, year], persistedSnapshot.readiness)
+      }
 
-        const waiters = [warmupPromise]
-        if (!warmup) {
-          waiters.push(waitForStartupDelay(STARTUP_MIN_VISIBLE_MS))
-        }
-        await Promise.allSettled(waiters)
-        warmup = await warmupPromise.catch(() => null)
+      warmupPromise = runStartupWarmup(queryClient)
 
-        if (!active || warmup?.ready === true) break
-        if (performance.now() >= deadlineAt) break
-        await waitForStartupDelay(STARTUP_REQUIRED_READY_RETRY_MS)
-      } while (active)
+      if (!persistedReady) {
+        do {
+          const waiters = [warmupPromise]
+          if (!warmup) {
+            waiters.push(waitForStartupDelay(STARTUP_MIN_VISIBLE_MS))
+          }
+          await Promise.allSettled(waiters)
+          warmup = await warmupPromise.catch(() => null)
+
+          if (!active || warmup?.ready === true) break
+          if (performance.now() >= deadlineAt) break
+          await waitForStartupDelay(STARTUP_REQUIRED_READY_RETRY_MS)
+          warmupPromise = runStartupWarmup(queryClient)
+        } while (active)
+      } else {
+        await waitForStartupDelay(STARTUP_MIN_VISIBLE_MS)
+      }
 
       if (!active) return
 
@@ -94,7 +113,8 @@ export default function NipahBootRoot({ children, queryClient }) {
         void waitForStartupDelay(STARTUP_BACKGROUND_DELAY_MS)
           .then(() => {
             if (!active) return null
-            return warmup?.startBackground?.()
+            return Promise.resolve(warmup || warmupPromise)
+              .then((resolvedWarmup) => resolvedWarmup?.startBackground?.())
           })
           .catch(() => {})
       }, STARTUP_EXIT_MS)

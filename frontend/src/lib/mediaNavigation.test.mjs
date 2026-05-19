@@ -26,6 +26,8 @@ assert.equal(normalizedHomePayload.id, 7011)
 assert.equal(normalizedHomePayload.anime_id, 7011)
 assert.equal(normalizedHomePayload.title, 'Neon Requiem')
 assert.equal(normalizedHomePayload.anime_title, 'Neon Requiem')
+assert.equal(normalizedHomePayload.anilistCoverImage, 'https://example.com/neon-large.jpg')
+assert.equal(normalizedHomePayload.anilistBannerImage, 'https://example.com/neon-large.jpg')
 
 const initialSelectedPayload = getInitialSelectedAnimePayload({
   selectedAnime: rawAniListMedia,
@@ -73,10 +75,14 @@ const continueWatchingPayload = normalizeSelectedAnimePayload({
   anilist_id: 7011,
   source_id: 'animeheaven-en',
   anime_title: 'Neon Requiem',
+  cover_image: 'https://example.com/neon-provider-cover.jpg',
+  banner_image: 'https://example.com/neon-provider-banner.jpg',
 }, 'animeheaven-en')
 
 assert.equal(continueWatchingPayload.id, 'series-44')
 assert.equal(continueWatchingPayload.anime_id, 'series-44')
+assert.equal(continueWatchingPayload.anilistCoverImage, 'https://example.com/neon-provider-cover.jpg')
+assert.equal(continueWatchingPayload.anilistBannerImage, 'https://example.com/neon-provider-banner.jpg')
 
 const animeListState = buildAnimeListNavigationState({
   id: 42,
@@ -123,5 +129,19 @@ assert.ok(mangaListState.searchCandidates.includes('Inkbound Reverie'))
 assert.equal(mangaListState.seedItem.anilist_id, 9001)
 assert.equal(mangaListState.seedItem.canonical_title, 'Inkbound Reverie')
 assert.equal(mangaListState.seedItem.resolved_cover_url, 'https://example.com/inkbound.jpg')
+
+const enrichedMangaListState = buildMangaListNavigationState({
+  anilist_id: 9002,
+  title: 'Signal Bloom',
+  title_english: 'Signal Bloom',
+  coverImage: {
+    extraLarge: 'https://example.com/signal-cover-xl.jpg',
+    large: 'https://example.com/signal-cover-lg.jpg',
+  },
+  bannerImage: 'https://example.com/signal-banner.jpg',
+})
+
+assert.equal(enrichedMangaListState.seedItem.resolved_cover_url, 'https://example.com/signal-cover-xl.jpg')
+assert.equal(enrichedMangaListState.seedItem.resolved_banner_url, 'https://example.com/signal-banner.jpg')
 
 console.log('media navigation tests passed')
