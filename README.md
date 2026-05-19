@@ -29,6 +29,7 @@ You can support the project by starring the repository and sharing it with other
 - Vite
 - MPV
 - AniList API
+- Jikan API
 
 ### Feature Highlights
 
@@ -58,6 +59,7 @@ Puedes apoyar el proyecto dándole una estrella al repositorio y compartiéndolo
 - Vite
 - MPV
 - AniList API
+- Jikan API
 
 ### Funcionalidades Destacadas
 
