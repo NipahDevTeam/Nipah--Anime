@@ -15,7 +15,7 @@
 
 ## English
 
-Nipah! Anime is an app for anime streaming, manga reading, AniList sync, and local library management for a smooth desktop-first experience.
+Nipah! Anime is an app for anime streaming, manga reading, AniList sync, and local library management for a smooth desktop experience.
 
 ### Support
 
