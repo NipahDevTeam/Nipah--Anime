@@ -17,14 +17,9 @@
 
 Nipah! Anime is an app for anime streaming, manga reading, AniList sync, and local library management for a smooth desktop-first experience.
 
-### Donations
+### Support
 
-Nipah! Anime is a one-man project, developed and maintained with ongoing care. If the app has been useful to you and you would like to support its continued development, please consider donating:
-
-**BTC**  
-`bc1qqcdz2dx4jl9n04u6gpxcvw2y5050vwepxcymeh`
-
-You can also support the project by starring the repository and sharing it with other anime and manga fans.
+You can support the project by starring the repository and sharing it with other anime and manga fans.
 
 ### Tech Stack
 
@@ -51,14 +46,9 @@ You can also support the project by starring the repository and sharing it with 
 
 Nipah! Anime es una app de streaming de anime, lectura de manga, sincronizacion con AniList y gestion de biblioteca local.
 
-### Donaciones / Apoyo
+### Apoyo
 
-Nipah! Anime es un proyecto desarrollado y mantenido por una sola persona con trabajo constante. Si la app te ha sido util y quieres apoyar su desarrollo, considera hacer una donacion:
-
-**BTC**  
-`bc1qqcdz2dx4jl9n04u6gpxcvw2y5050vwepxcymeh`
-
-También puedes apoyar el proyecto dándole una estrella al repositorio y compartiéndolo con otros fans del anime y el manga.
+Puedes apoyar el proyecto dándole una estrella al repositorio y compartiéndolo con otros fans del anime y el manga.
 
 ### Tech Stack
 
